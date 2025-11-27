@@ -1,12 +1,10 @@
-FROM node:22-alpine AS base
+FROM node:22-slim AS base
 
 WORKDIR /app
 
 # Install dependencies using npm
 COPY package.json package-lock.json* tsconfig.json ./
 RUN npm install
-# Force install the Alpine/musl binary for tokenizers
-RUN npm install @anush008/tokenizers-linux-x64-musl --no-save
 
 # Copy source
 COPY src ./src
@@ -16,7 +14,7 @@ COPY characters ./characters
 RUN npm run build
 
 # Runtime image
-FROM node:22-alpine
+FROM node:22-slim
 
 WORKDIR /app
 
