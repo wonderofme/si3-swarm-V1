@@ -1,4 +1,4 @@
-FROM node:23-alpine AS base
+FROM node:22-alpine AS base
 
 ENV PNPM_HOME=/usr/local/share/pnpm
 ENV PATH=$PNPM_HOME:$PATH
@@ -19,7 +19,7 @@ COPY characters ./characters
 RUN pnpm run build
 
 # Runtime image (can be the same base for simplicity)
-FROM node:23-alpine
+FROM node:22-alpine
 
 ENV PNPM_HOME=/usr/local/share/pnpm
 ENV PATH=$PNPM_HOME:$PATH
