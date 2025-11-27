@@ -1,13 +1,13 @@
 import type { Plugin } from '@elizaos/core';
+import { routerEvaluator } from './evaluator';
+import { querySubAgentAction } from './action';
 
-// Temporary stub router plugin so the codebase compiles cleanly
-// We can later reintroduce custom actions/evaluators using the current ElizaOS Handler/Validator API.
 export function createRouterPlugin(): Plugin {
   return {
     name: 'router',
-    description: 'Router plugin (stubbed; no custom behavior yet).',
-    actions: [],
-    evaluators: [],
+    description: 'Routes queries to sub-agents (MoonDAO/SI3)',
+    actions: [querySubAgentAction],
+    evaluators: [routerEvaluator],
     providers: [],
     services: [],
     clients: []
