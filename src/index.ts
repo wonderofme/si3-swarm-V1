@@ -1,25 +1,48 @@
+// CRITICAL: Set environment variables BEFORE any ElizaOS imports
+// ElizaOS reads settings at module import time, so these must be set first
+process.env.USE_OPENAI_EMBEDDING = 'true';
+process.env.SMALL_OPENAI_MODEL = 'gpt-4o-mini';
+process.env.MEDIUM_OPENAI_MODEL = 'gpt-4o-mini';
+process.env.LARGE_OPENAI_MODEL = 'gpt-4o-mini';
+
+// Load .env file
 import 'dotenv/config';
 
-// Force OpenAI embeddings to match database vector(1536)
+// Re-apply overrides after .env load (in case .env tries to override them)
 process.env.USE_OPENAI_EMBEDDING = 'true';
+process.env.SMALL_OPENAI_MODEL = 'gpt-4o-mini';
+process.env.MEDIUM_OPENAI_MODEL = 'gpt-4o-mini';
+process.env.LARGE_OPENAI_MODEL = 'gpt-4o-mini';
+
+// Debug: Verify env vars are set
+console.log('[Model Override] SMALL_OPENAI_MODEL:', process.env.SMALL_OPENAI_MODEL);
+console.log('[Model Override] MEDIUM_OPENAI_MODEL:', process.env.MEDIUM_OPENAI_MODEL);
+console.log('[Model Override] LARGE_OPENAI_MODEL:', process.env.LARGE_OPENAI_MODEL);
+
+import kaiaCharacter from '../characters/kaia.character.json' with { type: 'json' };
+import moondaoCharacter from '../characters/moondao.character.json' with { type: 'json' };
+import si3Character from '../characters/si3.character.json' with { type: 'json' };
 
 const dbUrl = process.env.DATABASE_URL || '';
 console.log(`[Debug] DATABASE_URL length: ${dbUrl.length}`);
 console.log(`[Debug] DATABASE_URL starts with: ${dbUrl.substring(0, 15)}...`);
 if (dbUrl.includes('base')) console.warn('[Debug] WARNING: URL contains "base"!');
 
-import {
+// Import ElizaOS AFTER env vars are set (using dynamic import to ensure order)
+const elizaCore = await import('@elizaos/core');
+const elizaPostgres = await import('@elizaos/adapter-postgres');
+const elizaDirect = await import('@elizaos/client-direct');
+const elizaTelegram = await import('@elizaos/client-telegram');
+
+const {
   AgentRuntime,
   CacheManager,
   MemoryCacheAdapter,
   ModelProviderName
-} from '@elizaos/core';
-import { PostgresDatabaseAdapter } from '@elizaos/adapter-postgres';
-import { DirectClient } from '@elizaos/client-direct';
-import { TelegramClientInterface } from '@elizaos/client-telegram';
-import kaiaCharacter from '../characters/kaia.character.json' with { type: 'json' };
-import moondaoCharacter from '../characters/moondao.character.json' with { type: 'json' };
-import si3Character from '../characters/si3.character.json' with { type: 'json' };
+} = elizaCore;
+const { PostgresDatabaseAdapter } = elizaPostgres;
+const { DirectClient } = elizaDirect;
+const { TelegramClientInterface } = elizaTelegram;
 
 async function createRuntime(character: any) {
   const db = new PostgresDatabaseAdapter({
