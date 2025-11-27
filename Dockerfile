@@ -1,30 +1,20 @@
 FROM node:22-alpine AS base
 
-ENV PNPM_HOME=/usr/local/share/pnpm
-ENV PATH=$PNPM_HOME:$PATH
-
-RUN corepack enable && corepack prepare pnpm@latest --activate
-
 WORKDIR /app
 
-# Install dependencies
-COPY package.json pnpm-lock.yaml* tsconfig.json ./
-RUN pnpm install --frozen-lockfile || pnpm install
+# Install dependencies using npm (match local environment)
+COPY package.json package-lock.json* tsconfig.json ./
+RUN npm install
 
 # Copy source
 COPY src ./src
 COPY characters ./characters
 
 # Build
-RUN pnpm run build
+RUN npm run build
 
-# Runtime image (can be the same base for simplicity)
+# Runtime image
 FROM node:22-alpine
-
-ENV PNPM_HOME=/usr/local/share/pnpm
-ENV PATH=$PNPM_HOME:$PATH
-
-RUN corepack enable && corepack prepare pnpm@latest --activate
 
 WORKDIR /app
 
@@ -38,6 +28,6 @@ ENV DIRECT_PORT=3000
 
 EXPOSE 3000
 
-CMD ["pnpm", "start"]
+CMD ["node", "dist/index.js"]
 
 
