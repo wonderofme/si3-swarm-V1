@@ -2,9 +2,11 @@ FROM node:22-alpine AS base
 
 WORKDIR /app
 
-# Install dependencies using npm (match local environment)
+# Install dependencies using npm
 COPY package.json package-lock.json* tsconfig.json ./
 RUN npm install
+# Force install the Alpine/musl binary for tokenizers
+RUN npm install @anush008/tokenizers-linux-x64-musl --no-save
 
 # Copy source
 COPY src ./src
