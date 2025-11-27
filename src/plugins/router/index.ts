@@ -1,6 +1,6 @@
 import type { Plugin } from '@elizaos/core';
-import { routerEvaluator } from './evaluator';
-import { querySubAgentAction } from './action';
+import { routerEvaluator } from './evaluator.js';
+import { querySubAgentAction } from './action.js';
 
 export function createRouterPlugin(): Plugin {
   return {
