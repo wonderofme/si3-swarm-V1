@@ -84,7 +84,23 @@ async function startAgents() {
   // Telegram client for Kaia
   if (process.env.TELEGRAM_BOT_TOKEN) {
     console.log('Starting Telegram client for Kaia...');
-    await TelegramClientInterface.start(kaiaRuntime);
+    try {
+      await TelegramClientInterface.start(kaiaRuntime);
+    } catch (error: any) {
+      if (error?.response?.error_code === 409) {
+        console.error('❌ Telegram Error 409: Another bot instance is already running.');
+        console.error('   This usually means:');
+        console.error('   1. Another deployment/container is using the same bot token');
+        console.error('   2. A local instance is still running');
+        console.error('   3. Multiple containers in the same deployment');
+        console.error('   Solution: Ensure only ONE instance is running at a time.');
+        // Don't exit - let the web client continue working
+        console.warn('⚠️  Continuing without Telegram client (web client will still work)');
+      } else {
+        console.error('❌ Failed to start Telegram client:', error);
+        throw error;
+      }
+    }
   } else {
     console.warn('Skipping Telegram client: TELEGRAM_BOT_TOKEN not set');
   }
