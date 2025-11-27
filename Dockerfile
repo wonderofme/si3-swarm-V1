@@ -2,8 +2,8 @@ FROM node:22-alpine AS base
 
 WORKDIR /app
 
-# Install dependencies using npm (match local environment)
-COPY package.json package-lock.json* tsconfig.json ./
+# Install dependencies using npm (skip lockfile to ensure correct platform binaries)
+COPY package.json tsconfig.json ./
 RUN npm install
 
 # Copy source
