@@ -1,4 +1,13 @@
 import 'dotenv/config';
+
+// Force OpenAI embeddings to match database vector(1536)
+process.env.USE_OPENAI_EMBEDDING = 'true';
+
+const dbUrl = process.env.DATABASE_URL || '';
+console.log(`[Debug] DATABASE_URL length: ${dbUrl.length}`);
+console.log(`[Debug] DATABASE_URL starts with: ${dbUrl.substring(0, 15)}...`);
+if (dbUrl.includes('base')) console.warn('[Debug] WARNING: URL contains "base"!');
+
 import {
   AgentRuntime,
   CacheManager,
