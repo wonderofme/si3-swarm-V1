@@ -16,6 +16,7 @@ import {
 } from '@elizaos/core';
 import { PostgresDatabaseAdapter } from '@elizaos/adapter-postgres';
 import { DirectClient } from '@elizaos/client-direct';
+import { TelegramClientInterface } from '@elizaos/client-telegram';
 import kaiaCharacter from '../characters/kaia.character.json' with { type: 'json' };
 import moondaoCharacter from '../characters/moondao.character.json' with { type: 'json' };
 import si3Character from '../characters/si3.character.json' with { type: 'json' };
@@ -56,6 +57,14 @@ async function startAgents() {
   const directClient = new DirectClient();
   directClient.registerAgent(kaiaRuntime);
   directClient.start(Number(process.env.DIRECT_PORT || 3000));
+
+  // Telegram client for Kaia
+  if (process.env.TELEGRAM_BOT_TOKEN) {
+    console.log('Starting Telegram client for Kaia...');
+    await TelegramClientInterface.start(kaiaRuntime);
+  } else {
+    console.warn('Skipping Telegram client: TELEGRAM_BOT_TOKEN not set');
+  }
 
   console.log('Kaia, MoonDAO, and SI<3> runtimes started.');
 }
