@@ -44,6 +44,10 @@ const { PostgresDatabaseAdapter } = elizaPostgres;
 const { DirectClient } = elizaDirect;
 const { TelegramClientInterface } = elizaTelegram;
 
+// Import Plugins
+import { createRouterPlugin } from './plugins/router/index.js';
+import { createOnboardingPlugin } from './plugins/onboarding/index.js';
+
 async function createRuntime(character: any) {
   const db = new PostgresDatabaseAdapter({
     connectionString: process.env.DATABASE_URL as string
@@ -51,12 +55,17 @@ async function createRuntime(character: any) {
 
   const cacheManager = new CacheManager(new MemoryCacheAdapter());
 
+  const plugins = [];
+  if (character.plugins?.includes('router')) plugins.push(createRouterPlugin());
+  if (character.plugins?.includes('onboarding')) plugins.push(createOnboardingPlugin());
+
   const runtime = new AgentRuntime({
     character,
     token: process.env.OPENAI_API_KEY as string,
     modelProvider: ModelProviderName.OPENAI,
     databaseAdapter: db,
-    cacheManager
+    cacheManager,
+    plugins
   });
 
   await runtime.initialize();
@@ -112,4 +121,3 @@ startAgents().catch((err) => {
   console.error('Failed to start agents', err);
   process.exit(1);
 });
-
