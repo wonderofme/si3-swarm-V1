@@ -48,12 +48,30 @@ const { TelegramClientInterface } = elizaTelegram;
 import { createRouterPlugin } from './plugins/router/index.js';
 import { createOnboardingPlugin } from './plugins/onboarding/index.js';
 
+class DbCacheAdapter {
+  constructor(private db: any, private agentId: string) {}
+
+  async get(key: string) {
+    const res = await this.db.getCache({ key, agentId: this.agentId });
+    return res ? JSON.parse(res) : undefined;
+  }
+
+  async set(key: string, value: any) {
+    await this.db.setCache({ key, agentId: this.agentId, value: JSON.stringify(value) });
+  }
+
+  async delete(key: string) {
+    await this.db.deleteCache({ key, agentId: this.agentId });
+  }
+}
+
 async function createRuntime(character: any) {
   const db = new PostgresDatabaseAdapter({
     connectionString: process.env.DATABASE_URL as string
   });
 
-  const cacheManager = new CacheManager(new MemoryCacheAdapter());
+  // Use Postgres-backed cache instead of MemoryCacheAdapter
+  const cacheManager = new CacheManager(new DbCacheAdapter(db, character.id));
 
   const plugins = [];
   if (character.plugins?.includes('router')) plugins.push(createRouterPlugin());
