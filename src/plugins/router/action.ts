@@ -1,4 +1,31 @@
-import { Action, IAgentRuntime, Memory, State, HandlerCallback, elizaLogger, embed } from '@elizaos/core';
+import { Action, IAgentRuntime, Memory, State, HandlerCallback, elizaLogger } from '@elizaos/core';
+
+async function getRemoteEmbedding(text: string, apiKey: string) {
+  try {
+    const response = await fetch('https://api.openai.com/v1/embeddings', {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            input: text,
+            model: process.env.SMALL_OPENAI_MODEL || 'text-embedding-3-small' // Use env or default
+        })
+    });
+    
+    if (!response.ok) {
+      console.error('OpenAI Embedding Failed:', await response.text());
+      return null;
+    }
+
+    const data = await response.json();
+    return data?.data?.[0]?.embedding || null;
+  } catch (e) {
+    console.error('Embedding Error:', e);
+    return null;
+  }
+}
 
 export const querySubAgentAction: Action = {
   name: 'QUERY_SUB_AGENT',
@@ -29,21 +56,23 @@ export const querySubAgentAction: Action = {
       // 2. Retrieve Vector Knowledge (RAG) from Database
       let vectorText = '';
       try {
-        // Use the main runtime's embedder (via utility func), but search using the SUB-AGENT'S ID
-        // Fix: use embed() from core, passing runtime
-        const embedding = await embed(runtime, message.content.text);
+        // Use direct OpenAI fetch to avoid dependency issues with runtime.embed
+        const apiKey = process.env.OPENAI_API_KEY as string;
+        const embedding = await getRemoteEmbedding(message.content.text, apiKey);
         
-        // Fix: Cast databaseAdapter to any because searchKnowledge might not be on IDatabaseAdapter interface
-        const results = await (subAgentRuntime.databaseAdapter as any).searchKnowledge({
-          agentId: subAgentRuntime.agentId,
-          embedding: embedding,
-          match_threshold: 0.7, // Only good matches
-          match_count: 3
-        });
+        if (embedding) {
+            // Fix: Cast databaseAdapter to any because searchKnowledge might not be on IDatabaseAdapter interface
+            const results = await (subAgentRuntime.databaseAdapter as any).searchKnowledge({
+            agentId: subAgentRuntime.agentId,
+            embedding: embedding,
+            match_threshold: 0.7, // Only good matches
+            match_count: 3
+            });
 
-        if (results && results.length > 0) {
-          elizaLogger.log(`[Router] Found ${results.length} RAG matches for ${intent}`);
-          vectorText = results.map((r: any) => r.content.text).join('\n\n');
+            if (results && results.length > 0) {
+            elizaLogger.log(`[Router] Found ${results.length} RAG matches for ${intent}`);
+            vectorText = results.map((r: any) => r.content.text).join('\n\n');
+            }
         }
       } catch (err) {
         elizaLogger.error(`[Router] Failed to search knowledge for ${intent}`, err);
