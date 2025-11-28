@@ -22,7 +22,13 @@
   ],
   "postExamples": [],
   "messageExamples": [],
-  "knowledge": [],
+  "knowledge": [
+    "SI<3> is an initiative to onboard women and non-binary people into Web3.",
+    "The 'Grow3dge' program provides mentorship, education, and networking opportunities.",
+    "Web3 is a decentralized version of the internet built on blockchain technology.",
+    "A DAO (Decentralized Autonomous Organization) is a community-led entity with no central authority.",
+    "Wallets like MetaMask allow users to store crypto and interact with decentralized apps (dApps)."
+  ],
   "clients": [],
   "plugins": [],
   "system": [

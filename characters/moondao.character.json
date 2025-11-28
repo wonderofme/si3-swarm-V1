@@ -21,7 +21,13 @@
   ],
   "postExamples": [],
   "messageExamples": [],
-  "knowledge": [],
+  "knowledge": [
+    "MoonDAO's mission is to decentralize access to space exploration and research.",
+    "MoonDAO has sent people to space on Blue Origin flights.",
+    "MoonDAO is governed by $MOONEY token holders.",
+    "Key projects include funding space research, organizing zero-g flights, and building a network of space enthusiasts.",
+    "MoonDAO's Constitution outlines the principles of decentralized space governance, prioritizing transparency and open access."
+  ],
   "clients": [],
   "plugins": [],
   "system": [

@@ -6,32 +6,46 @@ export const querySubAgentAction: Action = {
   similes: ['ASK_EXPERT', 'ROUTE_QUERY'],
   
   validate: async (runtime: IAgentRuntime, message: Memory, state?: State) => {
-    // Only execute if the evaluator tagged it as non-GENERAL
     const intent = state?.routerIntent as string;
     return intent === 'MOONDAO' || intent === 'SI3';
   },
 
   handler: async (runtime: IAgentRuntime, message: Memory, state?: State, _options?: any, callback?: HandlerCallback) => {
     const intent = state?.routerIntent as string;
-    const targetAgentId = intent === 'MOONDAO' 
-      ? 'd24d3f40-0000-0000-0000-000000000001' // MoonDAO UUID
-      : 'd24d3f40-0000-0000-0000-000000000002'; // SI3 UUID
-
-    console.log(`[Router] Querying sub-agent: ${intent} (${targetAgentId})`);
-
-    // Use the RAG / Knowledge manager to search the *other* agent's knowledge
-    // Note: In a real shared-DB setup, we query the knowledge table filtering by the target agent ID.
-    // ElizaOS's default knowledge manager searches the current agent's knowledge.
-    // We might need to use the database adapter directly if exposed, or just simulate it for now.
+    const subAgentKey = intent === 'MOONDAO' ? 'moondao' : 'si3';
     
-    // Mocking the RAG response for this step (since we haven't uploaded docs yet)
-    const context = `[System: Relevant context from ${intent} agent]\n` +
-                    `This user is asking about ${message.content.text}.\n` +
-                    `(Simulated knowledge retrieval would happen here).`;
+    // Access the sub-agent runtime linked in index.ts
+    const subAgentRuntime = (runtime as any).subAgents?.[subAgentKey];
 
-    // Inject into state so the LLM generation uses it
+    let context = '';
+
+    if (subAgentRuntime) {
+      console.log(`[Router] Querying sub-agent: ${intent}`);
+      
+      // 1. Retrieve Static Knowledge (from character.json)
+      const staticKnowledge = subAgentRuntime.character.knowledge || [];
+      
+      // 2. (Future) Retrieve Vector Knowledge via RAG
+      // const embedding = await runtime.embed(message.content.text);
+      // const vectorKnowledge = await subAgentRuntime.databaseAdapter.searchKnowledge(...)
+      
+      // Combine findings
+      const knowledgeText = staticKnowledge.join('\n- ');
+      
+      context = `\n[Expert Context from ${intent} Agent]:\n` +
+                `- ${knowledgeText}\n` +
+                `[End Context]\n`;
+                
+    } else {
+      console.warn(`[Router] Sub-agent ${intent} not found in runtime links.`);
+      context = `[System: Could not reach ${intent} agent. Please answer based on general knowledge.]`;
+    }
+
+    // Inject into state so the LLM generation uses it to answer
     if (state) {
-      state.knowledge = (state.knowledge || '') + '\n' + context;
+      // We append to 'knowledge' or 'recentMessages' depending on how the template uses it.
+      // Usually 'knowledge' is a dedicated field in the prompt template.
+      state.knowledge = (state.knowledge || '') + context;
     }
 
     return true;
@@ -40,8 +54,7 @@ export const querySubAgentAction: Action = {
   examples: [
     [
       { user: "user", content: { text: "Tell me about MoonDAO governance", action: "QUERY_SUB_AGENT" } },
-      { user: "kaia", content: { text: "Sure! MoonDAO governance is..." } }
+      { user: "kaia", content: { text: "According to MoonDAO's constitution, governance is handled by $MOONEY token holders..." } }
     ]
   ]
 };
-
