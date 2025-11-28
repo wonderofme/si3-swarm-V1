@@ -47,7 +47,7 @@ export const querySubAgentAction: Action = {
     let context = '';
 
     if (subAgentRuntime) {
-      elizaLogger.log(`[Router] Querying sub-agent: ${intent}`);
+      elizaLogger.info(`[Router] Querying sub-agent: ${intent}`);
       
       // 1. Retrieve Static Knowledge (from character.json)
       const staticKnowledge = subAgentRuntime.character.knowledge || [];
@@ -56,22 +56,24 @@ export const querySubAgentAction: Action = {
       // 2. Retrieve Vector Knowledge (RAG) from Database
       let vectorText = '';
       try {
-        // Use direct OpenAI fetch to avoid dependency issues with runtime.embed
+        // Use the main runtime's embedder (via utility func), but search using the SUB-AGENT'S ID
+        // Fix: use embed() from core, passing runtime
+        // Actually we use direct fetch now.
         const apiKey = process.env.OPENAI_API_KEY as string;
         const embedding = await getRemoteEmbedding(message.content.text, apiKey);
         
         if (embedding) {
             // Fix: Cast databaseAdapter to any because searchKnowledge might not be on IDatabaseAdapter interface
             const results = await (subAgentRuntime.databaseAdapter as any).searchKnowledge({
-            agentId: subAgentRuntime.agentId,
-            embedding: embedding,
-            match_threshold: 0.7, // Only good matches
-            match_count: 3
+              agentId: subAgentRuntime.agentId,
+              embedding: embedding,
+              match_threshold: 0.7, // Only good matches
+              match_count: 3
             });
 
             if (results && results.length > 0) {
-            elizaLogger.log(`[Router] Found ${results.length} RAG matches for ${intent}`);
-            vectorText = results.map((r: any) => r.content.text).join('\n\n');
+              elizaLogger.info(`[Router] Found ${results.length} RAG matches for ${intent}`);
+              vectorText = results.map((r: any) => r.content.text).join('\n\n');
             }
         }
       } catch (err) {
