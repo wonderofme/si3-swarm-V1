@@ -1,4 +1,4 @@
-import { Action, IAgentRuntime, Memory, State, HandlerCallback, elizaLogger } from '@elizaos/core';
+import { Action, IAgentRuntime, Memory, State, HandlerCallback } from '@elizaos/core';
 
 async function getRemoteEmbedding(text: string, apiKey: string) {
   try {
@@ -47,7 +47,7 @@ export const querySubAgentAction: Action = {
     let context = '';
 
     if (subAgentRuntime) {
-      elizaLogger.info(`[Router] Querying sub-agent: ${intent}`);
+      console.log(`[Router] Querying sub-agent: ${intent}`);
       
       // 1. Retrieve Static Knowledge (from character.json)
       const staticKnowledge = subAgentRuntime.character.knowledge || [];
@@ -56,14 +56,12 @@ export const querySubAgentAction: Action = {
       // 2. Retrieve Vector Knowledge (RAG) from Database
       let vectorText = '';
       try {
-        // Use the main runtime's embedder (via utility func), but search using the SUB-AGENT'S ID
-        // Fix: use embed() from core, passing runtime
-        // Actually we use direct fetch now.
+        // Use direct OpenAI fetch
         const apiKey = process.env.OPENAI_API_KEY as string;
         const embedding = await getRemoteEmbedding(message.content.text, apiKey);
         
         if (embedding) {
-            // Fix: Cast databaseAdapter to any because searchKnowledge might not be on IDatabaseAdapter interface
+            // Fix: Cast databaseAdapter to any
             const results = await (subAgentRuntime.databaseAdapter as any).searchKnowledge({
               agentId: subAgentRuntime.agentId,
               embedding: embedding,
@@ -72,12 +70,12 @@ export const querySubAgentAction: Action = {
             });
 
             if (results && results.length > 0) {
-              elizaLogger.info(`[Router] Found ${results.length} RAG matches for ${intent}`);
+              console.log(`[Router] Found ${results.length} RAG matches for ${intent}`);
               vectorText = results.map((r: any) => r.content.text).join('\n\n');
             }
         }
       } catch (err) {
-        elizaLogger.error(`[Router] Failed to search knowledge for ${intent}`, err);
+        console.error(`[Router] Failed to search knowledge for ${intent}`, err);
       }
       
       // Combine Findings
