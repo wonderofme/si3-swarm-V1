@@ -2,7 +2,7 @@ version: "2.0"
 
 services:
   kaia-swarm:
-    image: ghcr.io/wonderofme/kaia-swarm:v28
+    image: ghcr.io/wonderofme/kaia-swarm:v29
     env:
       - DATABASE_URL=${DATABASE_URL}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
