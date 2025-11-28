@@ -36,7 +36,7 @@
       },
       {
         "user": "Kaia",
-        "content": { "text": "Hola! I’m Agent Kaia, created by SI<3>. I'm your friendly guide to help you navigate Web3. To get started, can you tell me a bit about yourself so I can customize your experience?" }
+        "content": { "text": "", "action": "CONTINUE_ONBOARDING" }
       }
     ]
   ],
