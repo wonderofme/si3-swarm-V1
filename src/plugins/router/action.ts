@@ -1,4 +1,4 @@
-import { Action, IAgentRuntime, Memory, State, HandlerCallback, elizaLogger } from '@elizaos/core';
+import { Action, IAgentRuntime, Memory, State, HandlerCallback, elizaLogger, embed } from '@elizaos/core';
 
 export const querySubAgentAction: Action = {
   name: 'QUERY_SUB_AGENT',
@@ -29,10 +29,12 @@ export const querySubAgentAction: Action = {
       // 2. Retrieve Vector Knowledge (RAG) from Database
       let vectorText = '';
       try {
-        // Use the main runtime's embedder, but search using the SUB-AGENT'S ID
-        const embedding = await runtime.embed(message.content.text);
+        // Use the main runtime's embedder (via utility func), but search using the SUB-AGENT'S ID
+        // Fix: use embed() from core, passing runtime
+        const embedding = await embed(runtime, message.content.text);
         
-        const results = await subAgentRuntime.databaseAdapter.searchKnowledge({
+        // Fix: Cast databaseAdapter to any because searchKnowledge might not be on IDatabaseAdapter interface
+        const results = await (subAgentRuntime.databaseAdapter as any).searchKnowledge({
           agentId: subAgentRuntime.agentId,
           embedding: embedding,
           match_threshold: 0.7, // Only good matches
