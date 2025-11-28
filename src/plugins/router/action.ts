@@ -1,4 +1,4 @@
-import { Action, IAgentRuntime, Memory, State, HandlerCallback } from '@elizaos/core';
+import { Action, IAgentRuntime, Memory, State, HandlerCallback, elizaLogger } from '@elizaos/core';
 
 export const querySubAgentAction: Action = {
   name: 'QUERY_SUB_AGENT',
@@ -20,20 +20,37 @@ export const querySubAgentAction: Action = {
     let context = '';
 
     if (subAgentRuntime) {
-      console.log(`[Router] Querying sub-agent: ${intent}`);
+      elizaLogger.log(`[Router] Querying sub-agent: ${intent}`);
       
       // 1. Retrieve Static Knowledge (from character.json)
       const staticKnowledge = subAgentRuntime.character.knowledge || [];
+      const staticText = staticKnowledge.join('\n- ');
+
+      // 2. Retrieve Vector Knowledge (RAG) from Database
+      let vectorText = '';
+      try {
+        // Use the main runtime's embedder, but search using the SUB-AGENT'S ID
+        const embedding = await runtime.embed(message.content.text);
+        
+        const results = await subAgentRuntime.databaseAdapter.searchKnowledge({
+          agentId: subAgentRuntime.agentId,
+          embedding: embedding,
+          match_threshold: 0.7, // Only good matches
+          match_count: 3
+        });
+
+        if (results && results.length > 0) {
+          elizaLogger.log(`[Router] Found ${results.length} RAG matches for ${intent}`);
+          vectorText = results.map((r: any) => r.content.text).join('\n\n');
+        }
+      } catch (err) {
+        elizaLogger.error(`[Router] Failed to search knowledge for ${intent}`, err);
+      }
       
-      // 2. (Future) Retrieve Vector Knowledge via RAG
-      // const embedding = await runtime.embed(message.content.text);
-      // const vectorKnowledge = await subAgentRuntime.databaseAdapter.searchKnowledge(...)
-      
-      // Combine findings
-      const knowledgeText = staticKnowledge.join('\n- ');
-      
+      // Combine Findings
       context = `\n[Expert Context from ${intent} Agent]:\n` +
-                `- ${knowledgeText}\n` +
+                `**Static Knowledge:**\n- ${staticText}\n\n` +
+                `**Database Knowledge:**\n${vectorText}\n` +
                 `[End Context]\n`;
                 
     } else {
@@ -41,10 +58,8 @@ export const querySubAgentAction: Action = {
       context = `[System: Could not reach ${intent} agent. Please answer based on general knowledge.]`;
     }
 
-    // Inject into state so the LLM generation uses it to answer
+    // Inject into state
     if (state) {
-      // We append to 'knowledge' or 'recentMessages' depending on how the template uses it.
-      // Usually 'knowledge' is a dedicated field in the prompt template.
       state.knowledge = (state.knowledge || '') + context;
     }
 

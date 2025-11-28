@@ -1,0 +1,157 @@
+0x API
+0xplain
+1inch
+2FA
+3Box Labs
+51% attack
+Aave
+account
+active management
+address
+aggregator
+airdrop
+algorithm
+all-time high (ATH)
+alpha
+altcoin
+AML
+API
+appchain
+arbitrage
+Arbitrum
+artificial intelligence (AI)
+ASIC
+atomic swap
+automated market maker (AMM)
+Avalanche
+base fee
+bear market
+benchmark
+beta (release)
+bid-ask spread
+Binance
+bitcoin
+block
+block explorer
+blockchain
+bridge
+bull market
+burner wallet
+Byzantine fault tolerance
+Celo
+censorship resistance
+centralized exchange (CEX)
+coin
+cold storage
+collateral
+consensus mechanism
+contract
+crypto wallet
+cryptocurrency
+cryptography
+custody
+DAO
+dapp
+DeFi
+decentralization
+decentralized exchange (DEX)
+digital asset
+digital identity
+digital signature
+Distributed Ledger Technology (DLT)
+double spend
+DYOR
+EIP-1559
+encryption
+ENS
+epoch
+ERC-20
+ERC-721
+ERC-1155
+ETH
+Ethereum
+EVM
+exchange
+faucet
+fiat
+finality
+fork
+gas
+gas fee
+gas limit
+genesis block
+governance
+gwei
+halving
+hard fork
+hash
+hash rate
+HODL
+hot wallet
+ICO
+immutability
+inflation
+interoperability
+IPFS
+keypair
+KYC
+layer 1
+layer 2
+ledger
+liquidity
+liquidity pool
+mainnet
+market cap
+MetaMask
+metaverse
+miner
+mining
+mint
+mnemonic phrase
+multi-sig
+NFT
+node
+nonce
+off-chain
+on-chain
+OpenSea
+Optimism
+oracle
+P2P
+paper wallet
+peer-to-peer
+phishing
+Polygon
+Ponzi scheme
+private key
+Proof of Stake (PoS)
+Proof of Work (PoW)
+protocol
+public key
+pump-and-dump
+rug pull
+Satoshi
+scalability
+seed phrase
+sharding
+slippage
+smart contract
+Solana
+stablecoin
+staking
+state channels
+swap
+testnet
+token
+tokenomics
+transaction
+TVL
+validator
+volatility
+wallet
+Web3
+whale
+whitepaper
+yield farming
+zero-knowledge proof
+zk-rollup
