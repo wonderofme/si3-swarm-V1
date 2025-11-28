@@ -51,16 +51,25 @@ import { createOnboardingPlugin } from './plugins/onboarding/index.js';
 class DbCacheAdapter {
   constructor(private db: any, private agentId: string) {}
 
-  async get(key: string) {
+  async get(key: string): Promise<string | undefined> {
     const res = await this.db.getCache({ key, agentId: this.agentId });
-    return res ? JSON.parse(res) : undefined;
+    // db.getCache returns an object (parsed JSON). Adapter expects string.
+    return res ? JSON.stringify(res) : undefined;
   }
 
-  async set(key: string, value: any) {
-    await this.db.setCache({ key, agentId: this.agentId, value: JSON.stringify(value) });
+  async set(key: string, value: string): Promise<void> {
+    // value is a string. db.setCache expects object (it stringifies internally).
+    try {
+      await this.db.setCache({ key, agentId: this.agentId, value: JSON.parse(value) });
+    } catch (e) {
+      console.error('[DbCacheAdapter] Error parsing value for setCache:', e);
+      // Fallback: save as string if parsing fails? 
+      // PostgresDatabaseAdapter might handle string if it's simple.
+      await this.db.setCache({ key, agentId: this.agentId, value });
+    }
   }
 
-  async delete(key: string) {
+  async delete(key: string): Promise<void> {
     await this.db.deleteCache({ key, agentId: this.agentId });
   }
 }
