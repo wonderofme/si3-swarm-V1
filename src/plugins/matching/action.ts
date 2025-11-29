@@ -35,11 +35,23 @@ export const findMatchAction: Action = {
         return true;
     }
 
-    // 3. Format Response
-    const matchText = matches.map(m => `- ${m.name} (Score: ${m.score}): Interested in ${m.interests.join(', ')}`).join('\n');
+    // 3. Format Response (New Match Copy Format)
+    const topMatch = matches[0]; // Get the best match
+    const myName = myProfile.name || 'there';
+    
+    // Build match summary
+    const matchSummary = [
+      `Name: ${topMatch.name}`,
+      `Roles: ${topMatch.role.join(', ')}`,
+      `Interests: ${topMatch.interests.join(', ')}`
+    ].join('\n');
+    
+    // Note: We don't have Telegram handle in the profile yet, so we'll use a placeholder
+    // TODO: Add telegramHandle to UserProfile when we collect it
+    const matchMessage = `Hola, ${myName}! 💜\n\nBased on both of your interests, I have matched you with ${topMatch.name}.\n\n${topMatch.name} - ${matchSummary}\n\nSay hello to your match on Telegram! Don't be shy, reach out and set up a meeting! 🤝\n\nIf you have any questions, please ask me here. Happy connecting! ✨`;
     
     if (callback) {
-        callback({ text: `Here are some people you should meet:\n${matchText}` });
+        callback({ text: matchMessage });
     }
 
     return true;
@@ -52,4 +64,5 @@ export const findMatchAction: Action = {
     ]
   ]
 };
+
 

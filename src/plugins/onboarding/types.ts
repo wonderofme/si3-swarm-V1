@@ -1,6 +1,7 @@
 export type OnboardingStep = 
   | 'NONE'
   | 'ASK_NAME'
+  | 'ASK_LANGUAGE'
   | 'ASK_LOCATION'
   | 'ASK_ROLE'
   | 'ASK_INTERESTS'
@@ -8,11 +9,13 @@ export type OnboardingStep =
   | 'ASK_EVENTS'
   | 'ASK_SOCIALS'
   | 'ASK_GENDER'
+  | 'ASK_NOTIFICATIONS'
   | 'CONFIRMATION'
   | 'COMPLETED';
 
 export interface UserProfile {
   name?: string;
+  language?: string;
   location?: string;
   roles?: string[];
   interests?: string[];
@@ -20,6 +23,7 @@ export interface UserProfile {
   events?: string[];
   socials?: string[];
   gender?: string;
+  notifications?: string;
   isConfirmed?: boolean;
 }
 
@@ -30,4 +34,5 @@ declare module '@elizaos/core' {
     userProfile?: UserProfile;
   }
 }
+
 
