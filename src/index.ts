@@ -47,6 +47,7 @@ const { TelegramClientInterface } = elizaTelegram;
 // Import Plugins
 import { createRouterPlugin } from './plugins/router/index.js';
 import { createOnboardingPlugin } from './plugins/onboarding/index.js';
+import { createMatchingPlugin } from './plugins/matching/index.js';
 
 async function createRuntime(character: any) {
   const db = new PostgresDatabaseAdapter({
@@ -59,6 +60,7 @@ async function createRuntime(character: any) {
   const plugins = [];
   if (character.plugins?.includes('router')) plugins.push(createRouterPlugin());
   if (character.plugins?.includes('onboarding')) plugins.push(createOnboardingPlugin());
+  if (character.plugins?.includes('matching')) plugins.push(createMatchingPlugin());
 
   const runtime = new AgentRuntime({
     character,
