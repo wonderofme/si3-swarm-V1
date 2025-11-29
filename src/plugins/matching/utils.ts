@@ -38,9 +38,13 @@ export async function findMatches(runtime: IAgentRuntime, currentUserId: UUID, u
   
   if (!embedding) return [];
   
-  const results = await runtime.messageManager.searchMemoriesByEmbedding(embedding, {
+  // Use databaseAdapter directly to avoid MemoryManager's room restriction
+  // We want to search GLOBALLY across all rooms/users
+  const results = await runtime.databaseAdapter.searchMemoriesByEmbedding(embedding, {
     match_threshold: 0.6,
-    count: 20
+    count: 20,
+    tableName: 'memories',
+    agentId: runtime.agentId
   });
   
   const candidates: Map<string, MatchCandidate> = new Map();
@@ -48,8 +52,6 @@ export async function findMatches(runtime: IAgentRuntime, currentUserId: UUID, u
   for (const mem of results) {
     if (mem.userId === currentUserId) continue; // Don't match with self
     
-    // Check if this memory is an onboarding profile
-    // We stored data in content.data or content.type
     const isProfile = (mem.content as any).type === ONBOARDING_MEMORY_TYPE;
     
     if (isProfile) {
@@ -82,4 +84,3 @@ function calculateScore(myInterests: string[], theirInterests: string[]): number
   }
   return score;
 }
-
