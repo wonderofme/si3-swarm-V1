@@ -48,14 +48,16 @@ const { TelegramClientInterface } = elizaTelegram;
 import { createRouterPlugin } from './plugins/router/index.js';
 import { createOnboardingPlugin } from './plugins/onboarding/index.js';
 import { createMatchingPlugin } from './plugins/matching/index.js';
+import { DbCacheAdapter } from './adapters/dbCache.js';
 
 async function createRuntime(character: any) {
   const db = new PostgresDatabaseAdapter({
     connectionString: process.env.DATABASE_URL as string
   });
 
-  // Reverted to MemoryCacheAdapter to debug build failure
-  const cacheManager = new CacheManager(new MemoryCacheAdapter());
+  // Use DbCacheAdapter for persistence
+  const agentId = elizaCore.stringToUuid(character.name);
+  const cacheManager = new CacheManager(new DbCacheAdapter(process.env.DATABASE_URL as string, agentId));
 
   const plugins = [];
   if (character.plugins?.includes('router')) plugins.push(createRouterPlugin());
