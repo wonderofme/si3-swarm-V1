@@ -42,11 +42,35 @@ export const continueOnboardingAction: Action = {
       case 'ASK_NAME':
         await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_LANGUAGE', { name: text });
         // Send privacy policy consent after name is collected
-        // Using Markdown format for Telegram links
-        if (callback) {
-          callback({
-            text: `By continuing your interactions with Kaia you give your consent to sharing personal data in accordance with SI<3>'s [Privacy Policy](https://si3.space/policy/privacy)`
-          });
+        // Send via Telegram API directly with inline keyboard button
+        try {
+          const telegramClient = (runtime as any).client;
+          if (telegramClient && telegramClient.sendMessage) {
+            const botToken = process.env.TELEGRAM_BOT_TOKEN;
+            if (botToken) {
+              await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  chat_id: message.roomId,
+                  text: `By continuing your interactions with Kaia you give your consent to sharing personal data in accordance with SI<3>'s Privacy Policy.`,
+                  reply_markup: {
+                    inline_keyboard: [[
+                      { text: 'Privacy Policy', url: 'https://si3.space/policy/privacy' }
+                    ]]
+                  }
+                })
+              });
+            }
+          }
+        } catch (err) {
+          console.error('[Onboarding] Failed to send privacy policy link:', err);
+          // Fallback to plain text
+          if (callback) {
+            callback({
+              text: `By continuing your interactions with Kaia you give your consent to sharing personal data in accordance with SI<3>'s Privacy Policy: https://si3.space/policy/privacy`
+            });
+          }
         }
         break;
 
