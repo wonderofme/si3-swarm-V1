@@ -42,10 +42,10 @@ export const continueOnboardingAction: Action = {
       case 'ASK_NAME':
         await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_LANGUAGE', { name: text });
         // Send privacy policy consent after name is collected
-        // Using HTML format for Telegram compatibility (italic + hyperlink)
+        // Using plain URL - Telegram will auto-link it
         if (callback) {
           callback({
-            text: `By continuing your interactions with Kaia you give your consent to sharing personal data in accordance with SI<3>'s <i><a href="https://si3.space/policy/privacy">Privacy Policy</a></i>.`
+            text: `By continuing your interactions with Kaia you give your consent to sharing personal data in accordance with SI<3>'s Privacy Policy: https://si3.space/policy/privacy`
           });
         }
         break;
