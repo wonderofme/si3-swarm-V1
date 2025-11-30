@@ -17,14 +17,14 @@ export const continueOnboardingAction: Action = {
     const text = message.content.text;
     const roomId = message.roomId;
 
-    // 1. START -> ASK_NAME (with Privacy Policy)
+    // 1. START -> ASK_NAME
     if (currentStep === 'NONE') {
       // Start the flow
       await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_NAME');
       // For the first step, we can use callback to ensure the greeting is perfect
       if (callback) {
         callback({
-          text: "Hola! I'm Agent Kaia, created by SI<3>. I'm your friendly guide to help you navigate Web3. I am able to support you in making meaningful connections and share helpful knowledge and opportunities within our member network. 💜\n\nBy continuing your interactions with Kaia you give your consent to sharing personal data in accordance with the privacy policy.\n\nTo get started, can you tell me a bit about yourself so I can customize your experience?\n\nWhat's your preferred name? (no emoji needed)",
+          text: "Hola! I'm Agent Kaia, created by SI<3>. I'm your friendly guide to help you navigate Web3. I am able to support you in making meaningful connections and share helpful knowledge and opportunities within our member network. 💜\n\nTo get started, I'm going to ask you a number of questions to get to know you and customize your experience.\n\nWhat's your preferred name? (no emoji needed)",
           action: 'CONTINUE_ONBOARDING'
         });
       }
@@ -41,6 +41,13 @@ export const continueOnboardingAction: Action = {
     switch (currentStep) {
       case 'ASK_NAME':
         await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_LANGUAGE', { name: text });
+        // Send privacy policy consent after name is collected
+        // Using HTML format for Telegram compatibility (italic + hyperlink)
+        if (callback) {
+          callback({
+            text: `By continuing your interactions with Kaia you give your consent to sharing personal data in accordance with SI<3>'s <i><a href="https://si3.space/policy/privacy">Privacy Policy</a></i>.`
+          });
+        }
         break;
 
       case 'ASK_LANGUAGE':
