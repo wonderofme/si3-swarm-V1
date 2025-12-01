@@ -94,7 +94,7 @@ async function process7DayNextMatch(
     return;
   }
   
-  const chatId = followUp.userId;
+  const chatId = followUp.roomId || followUp.userId;
   const sent = await sendTelegramMessage(chatId, message, botToken);
   
   if (sent) {

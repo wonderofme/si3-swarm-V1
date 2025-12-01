@@ -149,6 +149,24 @@ export async function getUserMatches(userId: UUID, limit: number = 10): Promise<
 }
 
 /**
+ * Get the most recent sent (but not responded) follow-up for a user
+ * This helps identify which follow-up the user is responding to
+ */
+export async function getRecentSentFollowUp(userId: UUID): Promise<(FollowUpRecord & { matchId: UUID }) | null> {
+  const result = await pool.query(
+    `SELECT f.*
+     FROM follow_ups f
+     WHERE f."userId" = $1
+       AND f.status = 'sent'
+       AND f."sentDate" >= NOW() - INTERVAL '24 hours'
+     ORDER BY f."sentDate" DESC
+     LIMIT 1`,
+    [userId]
+  );
+  return result.rows[0] || null;
+}
+
+/**
  * Get user profile (imported from onboarding utils)
  */
 export { getUserProfile } from '../plugins/onboarding/utils.js';

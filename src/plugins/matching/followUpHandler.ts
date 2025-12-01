@@ -1,5 +1,5 @@
 import { Action, IAgentRuntime, Memory, State, HandlerCallback } from '@elizaos/core';
-import { recordFollowUpResponse, updateMatchStatus, getMatch } from '../../services/matchTracker.js';
+import { recordFollowUpResponse, updateMatchStatus, getMatch, getRecentSentFollowUp, recordMatch, scheduleFollowUps } from '../../services/matchTracker.js';
 import { findMatches } from './utils.js';
 import { getUserProfile } from '../onboarding/utils.js';
 
@@ -29,44 +29,141 @@ export const followUpResponseAction: Action = {
     const text = (message.content.text || '').toLowerCase();
     const userId = message.userId;
     
-    // Find the most recent pending follow-up for this user
-    // We'll need to query the database for this
-    // For now, we'll use a simple approach: check if the message context suggests a follow-up
+    // Find the most recent sent follow-up for this user (within last 24 hours)
+    const recentFollowUp = await getRecentSentFollowUp(userId);
     
-    // This is a simplified version - in production, you'd want to:
-    // 1. Store the followUpId in the message context or state
-    // 2. Query the database for pending follow-ups
-    // 3. Match the response to the correct follow-up
+    if (!recentFollowUp) {
+      // No recent follow-up found - might be a general response, not a follow-up
+      if (callback) {
+        callback({ text: "I'm not sure which follow-up you're responding to. Could you clarify?" });
+      }
+      return false;
+    }
     
-    // For now, we'll handle the response generically
+    // Determine response type
     let responseType: 'yes' | 'no' | 'not_interested' = 'no';
     
     if (text.includes('yes') || text.includes('connected')) {
       responseType = 'yes';
-    } else if (text.includes('not interested')) {
+    } else if (text.includes('not interested') || text.includes('skip')) {
       responseType = 'not_interested';
     }
     
-    // TODO: Get the actual followUpId from context/state
-    // For now, we'll just acknowledge the response
-    const responseMessages: Record<string, string> = {
-      yes: "Great! I'm so glad you connected! 💜 I'll find you another match soon. Keep an eye out for my message! ✨",
-      no: "No worries! Take your time. I'll check back with you in a few days. If you'd like another match, just let me know! 🤝",
-      not_interested: "Understood! I'll skip this match and find you someone else. I'll send you a new match soon! 🚀"
-    };
+    // Record the response in the database
+    await recordFollowUpResponse(recentFollowUp.id, responseType);
     
-    const responseMessage = responseMessages[responseType] || responseMessages.no;
+    // Get the match to update its status
+    const match = await getMatch(recentFollowUp.matchId);
     
-    if (callback) {
-      callback({ text: responseMessage });
+    if (match) {
+      // Update match status based on response
+      if (responseType === 'yes') {
+        await updateMatchStatus(match.id, 'connected');
+      } else if (responseType === 'not_interested') {
+        await updateMatchStatus(match.id, 'not_interested');
+      }
     }
     
-    // TODO: Actually record the response in the database once we have followUpId
-    // await recordFollowUpResponse(followUpId, responseType);
-    // if (responseType === 'yes' || responseType === 'not_interested') {
-    //   // Update match status
-    //   await updateMatchStatus(matchId, responseType === 'yes' ? 'connected' : 'not_interested');
-    // }
+    // Generate appropriate response message
+    let responseMessage = '';
+    
+    if (recentFollowUp.type === '3_day_checkin') {
+      // Response to 3-day check-in
+      if (responseType === 'yes') {
+        responseMessage = "Great! I'm so glad you connected! 💜 I'll find you another match soon. Keep an eye out for my message! ✨";
+        // Schedule a new match for them
+        try {
+          const userProfile = await getUserProfile(runtime, userId);
+          const userInterests = userProfile.interests || [];
+          if (userInterests.length > 0) {
+            const newMatches = await findMatches(runtime, userId, userInterests);
+            if (newMatches.length > 0) {
+              const newMatch = newMatches[0];
+              const matchRecord = await recordMatch(userId, newMatch.userId, message.roomId);
+              await scheduleFollowUps(matchRecord.id, userId);
+              
+              const myName = userProfile.name || 'there';
+              const matchSummary = [
+                `Name: ${newMatch.name}`,
+                `Roles: ${newMatch.role.join(', ')}`,
+                `Interests: ${newMatch.interests.join(', ')}`
+              ].join('\n');
+              
+              responseMessage += `\n\nHere's your next match:\n\n${newMatch.name} - ${matchSummary}\n\nSay hello to your match on Telegram! 🤝`;
+            }
+          }
+        } catch (error) {
+          console.error('[FollowUpHandler] Error finding new match:', error);
+        }
+      } else if (responseType === 'not_interested') {
+        responseMessage = "Understood! I'll skip this match and find you someone else. I'll send you a new match soon! 🚀";
+        // Schedule a new match for them
+        try {
+          const userProfile = await getUserProfile(runtime, userId);
+          const userInterests = userProfile.interests || [];
+          if (userInterests.length > 0) {
+            const newMatches = await findMatches(runtime, userId, userInterests);
+            if (newMatches.length > 0) {
+              const newMatch = newMatches[0];
+              const matchRecord = await recordMatch(userId, newMatch.userId, message.roomId);
+              await scheduleFollowUps(matchRecord.id, userId);
+              
+              const myName = userProfile.name || 'there';
+              const matchSummary = [
+                `Name: ${newMatch.name}`,
+                `Roles: ${newMatch.role.join(', ')}`,
+                `Interests: ${newMatch.interests.join(', ')}`
+              ].join('\n');
+              
+              responseMessage += `\n\nHere's your next match:\n\n${newMatch.name} - ${matchSummary}\n\nSay hello to your match on Telegram! 🤝`;
+            }
+          }
+        } catch (error) {
+          console.error('[FollowUpHandler] Error finding new match:', error);
+        }
+      } else {
+        responseMessage = "No worries! Take your time. I'll check back with you in a few days. If you'd like another match, just let me know! 🤝";
+      }
+    } else if (recentFollowUp.type === '7_day_next_match') {
+      // Response to 7-day next match offer
+      if (responseType === 'yes') {
+        // Find and send them a new match
+        try {
+          const userProfile = await getUserProfile(runtime, userId);
+          const userInterests = userProfile.interests || [];
+          if (userInterests.length > 0) {
+            const newMatches = await findMatches(runtime, userId, userInterests);
+            if (newMatches.length > 0) {
+              const newMatch = newMatches[0];
+              const matchRecord = await recordMatch(userId, newMatch.userId, message.roomId);
+              await scheduleFollowUps(matchRecord.id, userId);
+              
+              const myName = userProfile.name || 'there';
+              const matchSummary = [
+                `Name: ${newMatch.name}`,
+                `Roles: ${newMatch.role.join(', ')}`,
+                `Interests: ${newMatch.interests.join(', ')}`
+              ].join('\n');
+              
+              responseMessage = `Hola ${myName}! 💜\n\nBased on both of your interests, I have matched you with ${newMatch.name}.\n\n${newMatch.name} - ${matchSummary}\n\nSay hello to your match on Telegram! Don't be shy, reach out and set up a meeting! 🤝\n\nIf you have any questions, please ask me here. Happy connecting! ✨`;
+            } else {
+              responseMessage = "I couldn't find any new matches right now, but I'll keep looking! Check back later as more people join! 💜";
+            }
+          } else {
+            responseMessage = "I don't have your interests on file. Please complete onboarding first!";
+          }
+        } catch (error) {
+          console.error('[FollowUpHandler] Error finding new match:', error);
+          responseMessage = "I had trouble finding a match right now. I'll try again soon! 💜";
+        }
+      } else {
+        responseMessage = "No problem! I'll wait. Just let me know when you're ready for another match! 🤝";
+      }
+    }
+    
+    if (callback && responseMessage) {
+      callback({ text: responseMessage });
+    }
     
     return true;
   },
