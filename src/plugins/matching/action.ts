@@ -1,6 +1,7 @@
 import { Action, IAgentRuntime, Memory, State, HandlerCallback } from '@elizaos/core';
 import { findMatches } from './utils.js';
 import { getUserProfile } from '../onboarding/utils.js';
+import { recordMatch, scheduleFollowUps } from '../../services/matchTracker.js';
 
 export const findMatchAction: Action = {
   name: 'FIND_MATCH',
@@ -75,6 +76,17 @@ export const findMatchAction: Action = {
       `Roles: ${topMatch.role.join(', ')}`,
       `Interests: ${topMatch.interests.join(', ')}`
     ].join('\n');
+    
+    // Record the match in the database (include roomId for Telegram chat ID)
+    try {
+      const matchRecord = await recordMatch(message.userId, topMatch.userId, message.roomId);
+      // Schedule follow-ups (3-day and 7-day)
+      await scheduleFollowUps(matchRecord.id, message.userId);
+      console.log(`[Matching] Recorded match ${matchRecord.id} and scheduled follow-ups`);
+    } catch (error) {
+      console.error('[Matching] Failed to record match:', error);
+      // Continue even if recording fails
+    }
     
     // Note: We don't have Telegram handle in the profile yet, so we'll use a placeholder
     // TODO: Add telegramHandle to UserProfile when we collect it

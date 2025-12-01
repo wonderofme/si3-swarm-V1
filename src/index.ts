@@ -49,6 +49,7 @@ import { createRouterPlugin } from './plugins/router/index.js';
 import { createOnboardingPlugin } from './plugins/onboarding/index.js';
 import { createMatchingPlugin } from './plugins/matching/index.js';
 import { DbCacheAdapter } from './adapters/dbCache.js';
+import { startFollowUpScheduler } from './services/followUpScheduler.js';
 
 async function createRuntime(character: any) {
   const db = new PostgresDatabaseAdapter({
@@ -120,6 +121,9 @@ async function startAgents() {
   }
 
   console.log('Kaia, MoonDAO, and SI<3> runtimes started.');
+  
+  // Start follow-up scheduler
+  startFollowUpScheduler(kaiaRuntime);
 }
 
 startAgents().catch((err) => {
