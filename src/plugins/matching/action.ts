@@ -47,8 +47,8 @@ export const findMatchAction: Action = {
     const myInterests = myProfile.interests || [];
     
     // If user typed "Find someone for AI", add AI to search
-    const text = message.content.text;
-    const explicitInterests = text.split(' ').filter(w => w.length > 3 && !['find', 'someone', 'match', 'people'].includes(w.toLowerCase()));
+    const messageText = message.content.text || '';
+    const explicitInterests = messageText.split(' ').filter(w => w.length > 3 && !['find', 'someone', 'match', 'people'].includes(w.toLowerCase()));
     
     const searchTerms = [...new Set([...myInterests, ...explicitInterests])];
     
