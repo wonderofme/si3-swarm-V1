@@ -89,7 +89,11 @@ export const followUpResponseAction: Action = {
                 `Interests: ${newMatch.interests.join(', ')}`
               ].join('\n');
               
-              responseMessage += `\n\nHere's your next match:\n\n${newMatch.name} - ${matchSummary}\n\nSay hello to your match on Telegram! 🤝`;
+              const telegramHandleText = newMatch.telegramHandle 
+                ? `Say hello on Telegram - @${newMatch.telegramHandle}`
+                : `Say hello to your match on Telegram!`;
+              
+              responseMessage += `\n\nHere's your next match:\n\n${newMatch.name} - ${matchSummary}\n\n${telegramHandleText} 🤝`;
             }
           }
         } catch (error) {
@@ -115,7 +119,11 @@ export const followUpResponseAction: Action = {
                 `Interests: ${newMatch.interests.join(', ')}`
               ].join('\n');
               
-              responseMessage += `\n\nHere's your next match:\n\n${newMatch.name} - ${matchSummary}\n\nSay hello to your match on Telegram! 🤝`;
+              const telegramHandleText = newMatch.telegramHandle 
+                ? `Say hello on Telegram - @${newMatch.telegramHandle}`
+                : `Say hello to your match on Telegram!`;
+              
+              responseMessage += `\n\nHere's your next match:\n\n${newMatch.name} - ${matchSummary}\n\n${telegramHandleText} 🤝`;
             }
           }
         } catch (error) {

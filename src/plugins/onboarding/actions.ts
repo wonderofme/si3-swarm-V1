@@ -121,7 +121,28 @@ export const continueOnboardingAction: Action = {
         break;
 
       case 'ASK_SOCIALS':
-        await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_GENDER', { socials: [text] });
+        await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_TELEGRAM_HANDLE', { socials: [text] });
+        break;
+
+      case 'ASK_TELEGRAM_HANDLE':
+        // Extract Telegram handle (remove @ if present, validate format)
+        let telegramHandle = text.trim();
+        if (telegramHandle.startsWith('@')) {
+          telegramHandle = telegramHandle.substring(1);
+        }
+        // Basic validation: alphanumeric and underscores, 5-32 chars
+        if (telegramHandle && /^[a-zA-Z0-9_]{5,32}$/.test(telegramHandle)) {
+          await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_GENDER', { telegramHandle });
+        } else if (telegramHandle.toLowerCase() === 'skip' || telegramHandle === '') {
+          // Allow skipping
+          await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_GENDER', { telegramHandle: undefined });
+        } else {
+          // Invalid format - ask again
+          if (callback) {
+            callback({ text: "Please provide a valid Telegram username (e.g., @username or just username). It should be 5-32 characters, letters, numbers, and underscores only. Or type 'skip' to skip this step." });
+          }
+          return true;
+        }
         break;
 
       case 'ASK_GENDER':
@@ -141,6 +162,7 @@ export const continueOnboardingAction: Action = {
           `Connection Goals: ${profile.connectionGoals?.join(', ') || 'Not provided'}\n` +
           `Conferences Attending: ${profile.events?.join(', ') || 'Not provided'}\n` +
           `Personal Links: ${profile.socials?.join(', ') || 'Not provided'}\n` +
+          `Telegram Handle: ${profile.telegramHandle ? '@' + profile.telegramHandle : 'Not provided'}\n` +
           `Gender Info: ${profile.gender || 'Not provided'}\n` +
           `Notifications for Collabs: ${profile.notifications || 'Not provided'}\n\n` +
           `Edit name\n` +

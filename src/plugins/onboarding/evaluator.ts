@@ -43,6 +43,13 @@ export const onboardingEvaluator: Evaluator = {
       case 'ASK_SOCIALS':
         extractedData = { socials: text };
         break;
+      case 'ASK_TELEGRAM_HANDLE':
+        let handle = text.trim();
+        if (handle.startsWith('@')) {
+          handle = handle.substring(1);
+        }
+        extractedData = { telegramHandle: handle };
+        break;
       case 'ASK_GENDER':
         extractedData = { gender: text };
         break;

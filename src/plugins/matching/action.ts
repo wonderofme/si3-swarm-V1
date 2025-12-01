@@ -88,9 +88,12 @@ export const findMatchAction: Action = {
       // Continue even if recording fails
     }
     
-    // Note: We don't have Telegram handle in the profile yet, so we'll use a placeholder
-    // TODO: Add telegramHandle to UserProfile when we collect it
-    const matchMessage = `Hola, ${myName}! 💜\n\nBased on both of your interests, I have matched you with ${topMatch.name}.\n\n${topMatch.name} - ${matchSummary}\n\nSay hello to your match on Telegram! Don't be shy, reach out and set up a meeting! 🤝\n\nIf you have any questions, please ask me here. Happy connecting! ✨`;
+    // Include Telegram handle if available
+    const telegramHandleText = topMatch.telegramHandle 
+      ? `Say hello on Telegram - @${topMatch.telegramHandle}`
+      : `Say hello to your match on Telegram! Don't be shy, reach out and set up a meeting!`;
+    
+    const matchMessage = `Hola, ${myName}! 💜\n\nBased on both of your interests, I have matched you with ${topMatch.name}.\n\n${topMatch.name} - ${matchSummary}\n\n${telegramHandleText} 🤝\n\nIf you have any questions, please ask me here. Happy connecting! ✨`;
     
     if (callback) {
         callback({ text: matchMessage });

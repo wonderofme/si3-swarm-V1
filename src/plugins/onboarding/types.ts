@@ -8,6 +8,7 @@ export type OnboardingStep =
   | 'ASK_CONNECTION_GOALS'
   | 'ASK_EVENTS'
   | 'ASK_SOCIALS'
+  | 'ASK_TELEGRAM_HANDLE'
   | 'ASK_GENDER'
   | 'ASK_NOTIFICATIONS'
   | 'CONFIRMATION'
@@ -22,6 +23,7 @@ export interface UserProfile {
   connectionGoals?: string[];
   events?: string[];
   socials?: string[];
+  telegramHandle?: string;
   gender?: string;
   notifications?: string;
   isConfirmed?: boolean;

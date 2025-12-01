@@ -7,6 +7,7 @@ export interface MatchCandidate {
   name: string;
   role: string[];
   interests: string[];
+  telegramHandle?: string;
   score: number;
 }
 
@@ -63,6 +64,7 @@ export async function findMatches(runtime: IAgentRuntime, currentUserId: UUID, u
           name: profile.name || 'Anonymous',
           role: profile.roles || [],
           interests: profile.interests || [],
+          telegramHandle: profile.telegramHandle,
           score
         });
       }
