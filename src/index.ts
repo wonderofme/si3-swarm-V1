@@ -106,12 +106,13 @@ async function startAgents() {
   app.get('/api/history/:userId', async (req, res) => {
     try {
       const { userId } = req.params;
-      const { getUserMatches } = await import('./services/matchTracker.js');
+      const { getUserMatches, getOnboardingCompletionDate } = await import('./services/matchTracker.js');
       const { getUserProfile, getOnboardingState } = await import('./plugins/onboarding/utils.js');
       
       const profile = await getUserProfile(kaiaRuntime, userId as any);
       const matches = await getUserMatches(userId as any, 50);
       const { step } = await getOnboardingState(kaiaRuntime, userId as any);
+      const completionDate = await getOnboardingCompletionDate(userId as any);
       
       // Get matched user names
       const matchesWithNames = await Promise.all(matches.map(async (match) => {
@@ -150,6 +151,7 @@ async function startAgents() {
           status: m.status
         })),
         onboardingStatus: step,
+        onboardingCompletionDate: completionDate ? completionDate.toISOString() : null,
         totalMatches: matches.length
       });
     } catch (error: any) {

@@ -171,3 +171,31 @@ export async function getRecentSentFollowUp(userId: UUID): Promise<(FollowUpReco
  */
 export { getUserProfile } from '../plugins/onboarding/utils.js';
 
+/**
+ * Get onboarding completion date from database
+ */
+export async function getOnboardingCompletionDate(userId: UUID): Promise<Date | null> {
+  try {
+    // Query memories table for onboarding completion
+    const result = await pool.query(
+      `SELECT "createdAt" 
+       FROM memories 
+       WHERE "userId" = $1 
+         AND content->>'type' = 'onboarding_state'
+         AND content->'data'->>'step' = 'COMPLETED'
+       ORDER BY "createdAt" DESC 
+       LIMIT 1`,
+      [userId]
+    );
+    
+    if (result.rows.length > 0 && result.rows[0].createdAt) {
+      return new Date(result.rows[0].createdAt);
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('[MatchTracker] Error getting onboarding date:', error);
+    return null;
+  }
+}
+

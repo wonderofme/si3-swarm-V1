@@ -1,5 +1,5 @@
 import { Action, IAgentRuntime, Memory, State, HandlerCallback } from '@elizaos/core';
-import { getUserMatches, getMatch } from '../../services/matchTracker.js';
+import { getUserMatches, getMatch, getOnboardingCompletionDate } from '../../services/matchTracker.js';
 import { getUserProfile, getOnboardingState } from '../onboarding/utils.js';
 import { OnboardingStep } from '../onboarding/types.js';
 
@@ -15,43 +15,6 @@ async function getMatchedUserName(runtime: IAgentRuntime, matchedUserId: string)
   }
 }
 
-/**
- * Get onboarding completion date from memories
- */
-async function getOnboardingCompletionDate(runtime: IAgentRuntime, userId: string): Promise<string | null> {
-  try {
-    // Search for memories with onboarding completion
-    const memories = await runtime.messageManager.getMemories({
-      roomId: userId as any,
-      count: 100,
-      unique: false
-    });
-    
-    // Find the memory where onboarding was completed
-    for (const mem of memories) {
-      const content = mem.content as any;
-      if (content?.type === 'onboarding_state' && content?.data?.step === 'COMPLETED') {
-        return mem.createdAt ? new Date(mem.createdAt).toLocaleDateString() : null;
-      }
-    }
-    
-    // Also check current state
-    const { step } = await getOnboardingState(runtime, userId as any);
-    if (step === 'COMPLETED') {
-      // Try to find when it was completed from cache
-      const cached = await runtime.cacheManager.get(`onboarding_${userId}`);
-      if (cached && (cached as any).step === 'COMPLETED') {
-        // Return current date as approximation
-        return new Date().toLocaleDateString();
-      }
-    }
-    
-    return null;
-  } catch (error) {
-    console.error('[History] Error getting onboarding date:', error);
-    return null;
-  }
-}
 
 export const showHistoryAction: Action = {
   name: 'SHOW_HISTORY',
@@ -85,7 +48,8 @@ export const showHistoryAction: Action = {
       const matches = await getUserMatches(userId, 20);
       
       // 3. Get onboarding completion date
-      const completionDate = await getOnboardingCompletionDate(runtime, userId);
+      const completionDateObj = await getOnboardingCompletionDate(userId);
+      const completionDate = completionDateObj ? completionDateObj.toLocaleDateString() : null;
       
       // 4. Build history message
       let historyMessage = `Hola ${userName}! 💜\n\nHere's your history:\n\n`;
