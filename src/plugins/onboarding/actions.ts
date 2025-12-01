@@ -24,7 +24,7 @@ export const continueOnboardingAction: Action = {
       // For the first step, we can use callback to ensure the greeting is perfect
       if (callback) {
         callback({
-          text: "Hola! I'm Agent Kaia, created by SI<3>. I'm your friendly guide to help you navigate Web3. I am able to support you in making meaningful connections and share helpful knowledge and opportunities within our member network. 💜\n\nBy continuing your interactions with Kaia you give your consent to sharing personal data in accordance with the privacy policy. https://si3.space/policy/privacy\n\nTo get started, can you tell me a bit about yourself so I can customize your experience?\n\nWhat's your preferred name? (no emoji needed)",
+          text: "Hola! I'm Agent Kaia, created by SI<3>. I'm your friendly guide to help you navigate Web3. I am able to support you in making meaningful connections and share helpful knowledge and opportunities within our member network. 💜\n\nBy continuing your interactions with Kaia you give your consent to sharing personal data in accordance with the privacy policy. https://si3.space/policy/privacy\n\nTo get started, can you tell me a bit about yourself so I can customize your experience?\n\nWhat's your preferred name?",
           action: 'CONTINUE_ONBOARDING'
         });
       }
