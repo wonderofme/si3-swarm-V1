@@ -50,6 +50,7 @@ import { createOnboardingPlugin } from './plugins/onboarding/index.js';
 import { createMatchingPlugin } from './plugins/matching/index.js';
 import { DbCacheAdapter } from './adapters/dbCache.js';
 import { startFollowUpScheduler } from './services/followUpScheduler.js';
+import express from 'express';
 
 async function createRuntime(character: any) {
   const db = new PostgresDatabaseAdapter({
@@ -94,7 +95,73 @@ async function startAgents() {
   // Direct (web) client for Kaia
   const directClient = new DirectClient();
   directClient.registerAgent(kaiaRuntime);
-  directClient.start(Number(process.env.DIRECT_PORT || 3000));
+  const directPort = Number(process.env.DIRECT_PORT || 3000);
+  directClient.start(directPort);
+  
+  // Add Express API for history endpoint
+  const app = express();
+  app.use(express.json());
+  
+  // History API endpoint
+  app.get('/api/history/:userId', async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const { getUserMatches } = await import('./services/matchTracker.js');
+      const { getUserProfile, getOnboardingState } = await import('./plugins/onboarding/utils.js');
+      
+      const profile = await getUserProfile(kaiaRuntime, userId as any);
+      const matches = await getUserMatches(userId as any, 50);
+      const { step } = await getOnboardingState(kaiaRuntime, userId as any);
+      
+      // Get matched user names
+      const matchesWithNames = await Promise.all(matches.map(async (match) => {
+        try {
+          const matchedProfile = await getUserProfile(kaiaRuntime, match.matchedUserId);
+          return {
+            ...match,
+            matchedUserName: matchedProfile.name || 'Anonymous',
+            matchedUserTelegram: matchedProfile.telegramHandle
+          };
+        } catch (error) {
+          return {
+            ...match,
+            matchedUserName: 'Unknown',
+            matchedUserTelegram: undefined
+          };
+        }
+      }));
+      
+      res.json({
+        userId,
+        profile: {
+          name: profile.name,
+          location: profile.location,
+          roles: profile.roles,
+          interests: profile.interests,
+          events: profile.events,
+          telegramHandle: profile.telegramHandle
+        },
+        matches: matchesWithNames.map(m => ({
+          id: m.id,
+          matchedUserId: m.matchedUserId,
+          matchedUserName: m.matchedUserName,
+          matchedUserTelegram: m.matchedUserTelegram,
+          matchDate: m.matchDate,
+          status: m.status
+        })),
+        onboardingStatus: step,
+        totalMatches: matches.length
+      });
+    } catch (error: any) {
+      console.error('[API] Error getting history:', error);
+      res.status(500).json({ error: 'Failed to retrieve history' });
+    }
+  });
+  
+  // Start Express server on same port as Direct client (or separate port)
+  app.listen(directPort + 1, () => {
+    console.log(`[API] History endpoint available at http://localhost:${directPort + 1}/api/history/:userId`);
+  });
 
   // Telegram client for Kaia
   if (process.env.TELEGRAM_BOT_TOKEN) {

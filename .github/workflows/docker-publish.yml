@@ -36,6 +36,6 @@ jobs:
           context: .
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/kaia-swarm:v54
+            ghcr.io/${{ github.repository_owner }}/kaia-swarm:v55
 
 
