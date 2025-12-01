@@ -8,7 +8,9 @@ export const findMatchAction: Action = {
   similes: ['SEARCH_PEOPLE', 'NETWORKING'],
   
   validate: async (runtime: IAgentRuntime, message: Memory, state?: State) => {
-    return true;
+    // Only validate if the evaluator detected a match request
+    const matchRequest = state?.matchRequest as string;
+    return matchRequest === 'MATCH_REQUEST';
   },
 
   handler: async (runtime: IAgentRuntime, message: Memory, state?: State, _options?: any, callback?: HandlerCallback) => {

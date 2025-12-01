@@ -15,6 +15,10 @@ export const matchEvaluator: Evaluator = {
   handler: async (runtime: IAgentRuntime, message: Memory, state?: State): Promise<string | null> => {
     const text = message.content.text.toLowerCase();
     if (text.includes('match') || text.includes('who should i') || text.includes('connect me') || text.includes('find someone')) {
+        // Store in state so action can check it
+        if (state) {
+          state.matchRequest = 'MATCH_REQUEST';
+        }
         return 'MATCH_REQUEST';
     }
     return null;
@@ -24,4 +28,6 @@ export const matchEvaluator: Evaluator = {
     return true;
   }
 };
+
+
 
