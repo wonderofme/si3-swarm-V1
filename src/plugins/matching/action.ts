@@ -8,9 +8,22 @@ export const findMatchAction: Action = {
   similes: ['SEARCH_PEOPLE', 'NETWORKING'],
   
   validate: async (runtime: IAgentRuntime, message: Memory, state?: State) => {
-    // Only validate if the evaluator detected a match request
+    // Check if evaluator set state (preferred method)
     const matchRequest = state?.matchRequest as string;
-    return matchRequest === 'MATCH_REQUEST';
+    if (matchRequest === 'MATCH_REQUEST') {
+      return true;
+    }
+    
+    // Fallback: Check message text directly for explicit match keywords
+    const text = (message.content.text || '').toLowerCase();
+    const hasMatchKeywords = text.includes('match') || 
+                            text.includes('who should i') || 
+                            text.includes('connect me') || 
+                            text.includes('find someone') ||
+                            text.includes('find me') ||
+                            text.includes('introduce me');
+    
+    return hasMatchKeywords;
   },
 
   handler: async (runtime: IAgentRuntime, message: Memory, state?: State, _options?: any, callback?: HandlerCallback) => {
