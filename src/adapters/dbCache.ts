@@ -27,27 +27,26 @@ export class DbCacheAdapter implements ICacheAdapter {
         );
       `);
       
-      // Check and migrate columns if needed
-      const columnCheck = await client.query(`
-        SELECT column_name 
-        FROM information_schema.columns 
-        WHERE table_name = '${this.tableName}' 
-      `);
-      
-      const columns = columnCheck.rows.map((r: any) => r.column_name);
-      
-      // Migrate agentId -> agent_id
-      if (columns.includes('agentId') && !columns.includes('agent_id')) {
-        await client.query(`ALTER TABLE ${this.tableName} RENAME COLUMN "agentId" TO agent_id;`);
-      }
+      // Safely migrate schema using DO block
+      await client.query(`
+        DO $$ 
+        BEGIN 
+          -- Rename agentId to agent_id if it exists
+          IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = '${this.tableName}' AND column_name = 'agentId') THEN
+            ALTER TABLE ${this.tableName} RENAME COLUMN "agentId" TO agent_id;
+          END IF;
 
-      // Add missing timestamp columns
-      if (!columns.includes('created_at')) {
-        await client.query(`ALTER TABLE ${this.tableName} ADD COLUMN created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;`);
-      }
-      if (!columns.includes('updated_at')) {
-        await client.query(`ALTER TABLE ${this.tableName} ADD COLUMN updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;`);
-      }
+          -- Add created_at if missing
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = '${this.tableName}' AND column_name = 'created_at') THEN
+            ALTER TABLE ${this.tableName} ADD COLUMN created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+          END IF;
+
+          -- Add updated_at if missing
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = '${this.tableName}' AND column_name = 'updated_at') THEN
+            ALTER TABLE ${this.tableName} ADD COLUMN updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+          END IF;
+        END $$;
+      `);
 
     } catch (error) {
       console.error('Error initializing cache table:', error);
