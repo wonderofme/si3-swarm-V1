@@ -27,25 +27,28 @@ export class DbCacheAdapter implements ICacheAdapter {
         );
       `);
       
-      // If the table exists with camelCase agentId, we need to handle it
-      // Check if agentId column exists and migrate if needed
+      // Check and migrate columns if needed
       const columnCheck = await client.query(`
         SELECT column_name 
         FROM information_schema.columns 
         WHERE table_name = '${this.tableName}' 
-        AND column_name IN ('agentId', 'agent_id')
       `);
       
-      const hasAgentId = columnCheck.rows.some((r: any) => r.column_name === 'agentId');
-      const hasAgent_id = columnCheck.rows.some((r: any) => r.column_name === 'agent_id');
+      const columns = columnCheck.rows.map((r: any) => r.column_name);
       
-      if (hasAgentId && !hasAgent_id) {
-        // Migrate from camelCase to snake_case
-        await client.query(`
-          ALTER TABLE ${this.tableName} 
-          RENAME COLUMN "agentId" TO agent_id;
-        `);
+      // Migrate agentId -> agent_id
+      if (columns.includes('agentId') && !columns.includes('agent_id')) {
+        await client.query(`ALTER TABLE ${this.tableName} RENAME COLUMN "agentId" TO agent_id;`);
       }
+
+      // Add missing timestamp columns
+      if (!columns.includes('created_at')) {
+        await client.query(`ALTER TABLE ${this.tableName} ADD COLUMN created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;`);
+      }
+      if (!columns.includes('updated_at')) {
+        await client.query(`ALTER TABLE ${this.tableName} ADD COLUMN updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;`);
+      }
+
     } catch (error) {
       console.error('Error initializing cache table:', error);
     } finally {
