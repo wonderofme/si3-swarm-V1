@@ -97,11 +97,8 @@ async function createRuntime(character: any) {
   }
 
 
-  // Use DbCacheAdapter for persistence
-  // Use the ID from the character file if available, otherwise generate one
-  const agentId = character.id || (await import('@elizaos/core')).stringToUuid(character.name);
-  
-  const cacheManager = new CacheManager(new DbCacheAdapter(process.env.DATABASE_URL as string, agentId));
+  // Use in-memory cache temporarily to debug message sending issues
+  const cacheManager = new CacheManager(new MemoryCacheAdapter());
 
   const plugins = [];
   if (character.plugins?.includes('router')) plugins.push(createRouterPlugin());
