@@ -75,14 +75,23 @@ async function process7DayNextMatch(followUp: any, runtime: IAgentRuntime) {
 }
 
 export async function processDueFollowUps(runtime: IAgentRuntime) {
-  const dueFollowUps = await getDueFollowUps(runtime);
-  
-  for (const followUp of dueFollowUps) {
-    if (followUp.type === '3_day_checkin') {
-      await process3DayCheckIn(followUp, runtime);
-    } else if (followUp.type === '7_day_next_match') {
-      await process7DayNextMatch(followUp, runtime);
+  try {
+    const dueFollowUps = await getDueFollowUps(runtime);
+    
+    for (const followUp of dueFollowUps) {
+      if (followUp.type === '3_day_checkin') {
+        await process3DayCheckIn(followUp, runtime);
+      } else if (followUp.type === '7_day_next_match') {
+        await process7DayNextMatch(followUp, runtime);
+      }
     }
+  } catch (error: any) {
+    // Handle missing database tables gracefully
+    if (error?.message?.includes('does not exist') || error?.code === '42703') {
+      console.warn('[FollowUp Scheduler] Database tables not created yet. Run migration: database/migrations/001_create_matches_and_followups.sql');
+      return;
+    }
+    console.error('[FollowUp Scheduler] Error processing follow-ups:', error);
   }
 }
 

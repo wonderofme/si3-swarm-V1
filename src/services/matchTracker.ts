@@ -60,20 +60,28 @@ export async function recordMatch(
 
 export async function getDueFollowUps(runtime: IAgentRuntime): Promise<FollowUpRecord[]> {
   const adapter = runtime.databaseAdapter as any;
-  const { rows } = await adapter.query(
-    `SELECT * FROM follow_ups WHERE status = 'pending' AND scheduled_for <= NOW()`
-  );
-  
-  return rows.map((row: any) => ({
-    id: row.id,
-    matchId: row.match_id,
-    userId: row.user_id,
-    type: row.type,
-    scheduledFor: row.scheduled_for,
-    sentAt: row.sent_at,
-    status: row.status,
-    response: row.response
-  }));
+  try {
+    const { rows } = await adapter.query(
+      `SELECT * FROM follow_ups WHERE status = 'pending' AND scheduled_for <= NOW()`
+    );
+    
+    return rows.map((row: any) => ({
+      id: row.id,
+      matchId: row.match_id,
+      userId: row.user_id,
+      type: row.type,
+      scheduledFor: row.scheduled_for,
+      sentAt: row.sent_at,
+      status: row.status,
+      response: row.response
+    }));
+  } catch (error: any) {
+    // If table doesn't exist, return empty array
+    if (error?.message?.includes('does not exist') || error?.code === '42703') {
+      return [];
+    }
+    throw error;
+  }
 }
 
 export async function markFollowUpSent(runtime: IAgentRuntime, followUpId: string): Promise<void> {
