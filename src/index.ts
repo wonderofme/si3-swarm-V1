@@ -98,16 +98,10 @@ async function createRuntime(character: any) {
 
 
   // Use DbCacheAdapter for persistence
-  const agentId = character.name === 'Kaia' ? 'd24d3f40-0000-0000-0000-000000000000' : undefined;
-  // Note: ElizaOS generates UUID from name usually, but we want to be explicit if possible or just use the name-based one.
-  // For now, we'll pass the name-based ID logic inside DbCacheAdapter if needed, but here we pass the string.
-  // Actually, DbCacheAdapter takes agentId. Let's compute it or use a placeholder.
-  // The standard is `elizaCore.stringToUuid(character.name)`.
-  // We need to import stringToUuid.
-  const { stringToUuid } = await import('@elizaos/core');
-  const uuid = stringToUuid(character.name);
+  // Use the ID from the character file if available, otherwise generate one
+  const agentId = character.id || (await import('@elizaos/core')).stringToUuid(character.name);
   
-  const cacheManager = new CacheManager(new DbCacheAdapter(process.env.DATABASE_URL as string, uuid));
+  const cacheManager = new CacheManager(new DbCacheAdapter(process.env.DATABASE_URL as string, agentId));
 
   const plugins = [];
   if (character.plugins?.includes('router')) plugins.push(createRouterPlugin());
