@@ -11,7 +11,8 @@ RUN apt-get update && apt-get install -y \
 
 # Install dependencies using npm (match local environment)
 COPY package.json package-lock.json* tsconfig.json ./
-RUN npm install --include=optional
+# Force reinstall to get correct platform-specific native modules
+RUN npm install --include=optional --force
 
 # Copy source
 COPY src ./src
@@ -32,6 +33,8 @@ COPY --from=base /app/characters ./characters
 
 ENV NODE_ENV=production
 ENV DIRECT_PORT=3000
+# Disable fastembed to avoid native module issues (use OpenAI embeddings instead)
+ENV USE_OPENAI_EMBEDDING=true
 
 EXPOSE 3000
 
