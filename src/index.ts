@@ -22,47 +22,34 @@ import { DbCacheAdapter } from './adapters/dbCache.js';
 import { startFollowUpScheduler } from './services/followUpScheduler.js';
 
 async function runMigrations(db: PostgresDatabaseAdapter) {
-  console.log('Checking database migrations...');
+  console.log('Running database migrations...');
   try {
-    // Check if matches table exists
-    const check = await db.query(`
-      SELECT EXISTS (
-        SELECT FROM information_schema.tables 
-        WHERE table_schema = 'public' 
-        AND table_name = 'matches'
+    // Always run these checks/creations to ensure schema is up to date
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS matches (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID NOT NULL,
+        matched_user_id UUID NOT NULL,
+        room_id UUID,
+        match_date TIMESTAMPTZ DEFAULT NOW(),
+        status TEXT NOT NULL DEFAULT 'pending'
       );
+
+      CREATE TABLE IF NOT EXISTS follow_ups (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        match_id UUID REFERENCES matches(id),
+        user_id UUID NOT NULL,
+        type TEXT NOT NULL,
+        scheduled_for TIMESTAMPTZ NOT NULL,
+        sent_at TIMESTAMPTZ,
+        status TEXT NOT NULL DEFAULT 'pending',
+        response TEXT
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_matches_user_id ON matches(user_id);
+      CREATE INDEX IF NOT EXISTS idx_follow_ups_scheduled_for ON follow_ups(scheduled_for) WHERE status = 'pending';
     `);
-    
-    if (!check.rows[0].exists) {
-      console.log('Running initial migration...');
-      await db.query(`
-        CREATE TABLE IF NOT EXISTS matches (
-          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-          user_id UUID NOT NULL,
-          matched_user_id UUID NOT NULL,
-          room_id UUID,
-          match_date TIMESTAMPTZ DEFAULT NOW(),
-          status TEXT NOT NULL DEFAULT 'pending'
-        );
-
-        CREATE TABLE IF NOT EXISTS follow_ups (
-          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-          match_id UUID REFERENCES matches(id),
-          user_id UUID NOT NULL,
-          type TEXT NOT NULL,
-          scheduled_for TIMESTAMPTZ NOT NULL,
-          sent_at TIMESTAMPTZ,
-          status TEXT NOT NULL DEFAULT 'pending',
-          response TEXT
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_matches_user_id ON matches(user_id);
-        CREATE INDEX IF NOT EXISTS idx_follow_ups_scheduled_for ON follow_ups(scheduled_for) WHERE status = 'pending';
-      `);
-      console.log('Migration completed successfully.');
-    } else {
-      console.log('Database already migrated.');
-    }
+    console.log('Migration steps executed successfully.');
   } catch (error) {
     console.error('Error running migrations:', error);
   }
