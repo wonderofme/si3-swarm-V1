@@ -8,7 +8,6 @@ import { OnboardingStep, UserProfile } from './types.js';
 function generateSummaryText(profile: UserProfile): string {
   return `Here's your summary. Does it look right?\n\n` +
     `Name: ${profile.name || 'Not provided'}\n` +
-    `Language: ${profile.language || 'Not provided'}\n` +
     `Location: ${profile.location || 'Not provided'}\n` +
     `Professional Roles: ${profile.roles?.join(', ') || 'Not provided'}\n` +
     `Learning Goals: ${profile.interests?.join(', ') || 'Not provided'}\n` +
@@ -47,6 +46,15 @@ export const continueOnboardingAction: Action = {
     const profile = await getUserProfile(runtime, message.userId);
     const isEditing = profile.isEditing || false;
 
+    // Check for restart commands at any point
+    if (text.toLowerCase().includes('restart') || 
+        text.toLowerCase().includes('pretend this is my first') ||
+        text.toLowerCase().includes('start over') ||
+        text.toLowerCase().includes('begin again')) {
+      await updateOnboardingStep(runtime, message.userId, roomId, 'NONE', {});
+      return true;
+    }
+
     // 1. START -> ASK_NAME (LLM handles the greeting message based on system prompt)
     if (currentStep === 'NONE') {
       await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_NAME');
@@ -57,20 +65,34 @@ export const continueOnboardingAction: Action = {
     // 2. Handle Answers & Advance
     switch (currentStep) {
       case 'ASK_NAME':
+        // Check for restart commands
+        if (text.toLowerCase().includes('restart') || 
+            text.toLowerCase().includes('pretend this is my first') ||
+            text.toLowerCase().includes('start over') ||
+            text.toLowerCase().includes('begin again')) {
+          await updateOnboardingStep(runtime, message.userId, roomId, 'NONE', {});
+          return true;
+        }
+        
         if (isEditing) {
           await updateOnboardingStep(runtime, message.userId, roomId, 'CONFIRMATION', { name: text, isEditing: false, editingField: undefined });
           const updatedProfile = await getUserProfile(runtime, message.userId);
           if (callback) callback({ text: generateSummaryText(updatedProfile) });
         } else {
-          await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_LANGUAGE', { name: text });
+          await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_LOCATION', { name: text });
         }
         break;
 
-      case 'ASK_LANGUAGE':
-        await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_LOCATION', { language: text });
-        break;
-
       case 'ASK_LOCATION':
+        // Check for restart commands
+        if (text.toLowerCase().includes('restart') || 
+            text.toLowerCase().includes('pretend this is my first') ||
+            text.toLowerCase().includes('start over') ||
+            text.toLowerCase().includes('begin again')) {
+          await updateOnboardingStep(runtime, message.userId, roomId, 'NONE', {});
+          return true;
+        }
+        
         if (isEditing) {
           await updateOnboardingStep(runtime, message.userId, roomId, 'CONFIRMATION', { location: text, isEditing: false, editingField: undefined });
           const updatedProfile = await getUserProfile(runtime, message.userId);
@@ -81,6 +103,15 @@ export const continueOnboardingAction: Action = {
         break;
 
       case 'ASK_ROLE':
+        // Check for restart commands
+        if (text.toLowerCase().includes('restart') || 
+            text.toLowerCase().includes('pretend this is my first') ||
+            text.toLowerCase().includes('start over') ||
+            text.toLowerCase().includes('begin again')) {
+          await updateOnboardingStep(runtime, message.userId, roomId, 'NONE', {});
+          return true;
+        }
+        
         // Parse multiple selections
         const roleParts = text.split(/[,\s]+and\s+/i);
         const roleNumbers = roleParts[0].split(/[,\s]+/).filter(s => /^\d+$/.test(s.trim()));
@@ -104,6 +135,15 @@ export const continueOnboardingAction: Action = {
         break;
 
       case 'ASK_INTERESTS':
+        // Check for restart commands
+        if (text.toLowerCase().includes('restart') || 
+            text.toLowerCase().includes('pretend this is my first') ||
+            text.toLowerCase().includes('start over') ||
+            text.toLowerCase().includes('begin again')) {
+          await updateOnboardingStep(runtime, message.userId, roomId, 'NONE', {});
+          return true;
+        }
+        
         // Parse multiple selections
         const interestParts = text.split(/[,\s]+and\s+/i);
         const interestNumbers = interestParts[0].split(/[,\s]+/).filter(s => /^\d+$/.test(s.trim()));
@@ -126,6 +166,15 @@ export const continueOnboardingAction: Action = {
         break;
 
       case 'ASK_CONNECTION_GOALS':
+        // Check for restart commands
+        if (text.toLowerCase().includes('restart') || 
+            text.toLowerCase().includes('pretend this is my first') ||
+            text.toLowerCase().includes('start over') ||
+            text.toLowerCase().includes('begin again')) {
+          await updateOnboardingStep(runtime, message.userId, roomId, 'NONE', {});
+          return true;
+        }
+        
         // Parse multiple selections
         const goalParts = text.split(/[,\s]+and\s+/i);
         const goalNumbers = goalParts[0].split(/[,\s]+/).filter(s => /^\d+$/.test(s.trim()));
@@ -148,6 +197,15 @@ export const continueOnboardingAction: Action = {
         break;
 
       case 'ASK_EVENTS':
+        // Check for restart commands
+        if (text.toLowerCase().includes('restart') || 
+            text.toLowerCase().includes('pretend this is my first') ||
+            text.toLowerCase().includes('start over') ||
+            text.toLowerCase().includes('begin again')) {
+          await updateOnboardingStep(runtime, message.userId, roomId, 'NONE', {});
+          return true;
+        }
+        
         if (isEditing) {
           await updateOnboardingStep(runtime, message.userId, roomId, 'CONFIRMATION', { events: [text], isEditing: false, editingField: undefined });
           const updatedProfile = await getUserProfile(runtime, message.userId);
@@ -158,6 +216,15 @@ export const continueOnboardingAction: Action = {
         break;
 
       case 'ASK_SOCIALS':
+        // Check for restart commands
+        if (text.toLowerCase().includes('restart') || 
+            text.toLowerCase().includes('pretend this is my first') ||
+            text.toLowerCase().includes('start over') ||
+            text.toLowerCase().includes('begin again')) {
+          await updateOnboardingStep(runtime, message.userId, roomId, 'NONE', {});
+          return true;
+        }
+        
         if (isEditing) {
           await updateOnboardingStep(runtime, message.userId, roomId, 'CONFIRMATION', { socials: [text], isEditing: false, editingField: undefined });
           const updatedProfile = await getUserProfile(runtime, message.userId);
@@ -168,6 +235,15 @@ export const continueOnboardingAction: Action = {
         break;
 
       case 'ASK_TELEGRAM_HANDLE':
+        // Check for restart commands
+        if (text.toLowerCase().includes('restart') || 
+            text.toLowerCase().includes('pretend this is my first') ||
+            text.toLowerCase().includes('start over') ||
+            text.toLowerCase().includes('begin again')) {
+          await updateOnboardingStep(runtime, message.userId, roomId, 'NONE', {});
+          return true;
+        }
+        
         let telegramHandle = text.trim();
         if (telegramHandle.startsWith('@')) telegramHandle = telegramHandle.substring(1);
         
@@ -188,6 +264,15 @@ export const continueOnboardingAction: Action = {
         break;
 
       case 'ASK_GENDER':
+        // Check for restart commands
+        if (text.toLowerCase().includes('restart') || 
+            text.toLowerCase().includes('pretend this is my first') ||
+            text.toLowerCase().includes('start over') ||
+            text.toLowerCase().includes('begin again')) {
+          await updateOnboardingStep(runtime, message.userId, roomId, 'NONE', {});
+          return true;
+        }
+        
         if (isEditing) {
           await updateOnboardingStep(runtime, message.userId, roomId, 'CONFIRMATION', { gender: text, isEditing: false, editingField: undefined });
           const updatedProfile = await getUserProfile(runtime, message.userId);
@@ -198,12 +283,30 @@ export const continueOnboardingAction: Action = {
         break;
 
       case 'ASK_NOTIFICATIONS':
+        // Check for restart commands
+        if (text.toLowerCase().includes('restart') || 
+            text.toLowerCase().includes('pretend this is my first') ||
+            text.toLowerCase().includes('start over') ||
+            text.toLowerCase().includes('begin again')) {
+          await updateOnboardingStep(runtime, message.userId, roomId, 'NONE', {});
+          return true;
+        }
+        
         await updateOnboardingStep(runtime, message.userId, roomId, 'CONFIRMATION', { notifications: text, isEditing: false, editingField: undefined });
         const finalProfile = await getUserProfile(runtime, message.userId);
         if (callback) callback({ text: generateSummaryText(finalProfile) });
         break;
 
       case 'CONFIRMATION':
+        // Check for restart commands
+        if (text.toLowerCase().includes('restart') || 
+            text.toLowerCase().includes('pretend this is my first') ||
+            text.toLowerCase().includes('start over') ||
+            text.toLowerCase().includes('begin again')) {
+          await updateOnboardingStep(runtime, message.userId, roomId, 'NONE', {});
+          return true;
+        }
+        
         if (text.toLowerCase().includes('confirm') || text.toLowerCase().includes('yes') || text.toLowerCase().includes('check')) {
           await updateOnboardingStep(runtime, message.userId, roomId, 'COMPLETED', { isConfirmed: true, isEditing: false, editingField: undefined });
           if (callback) {
