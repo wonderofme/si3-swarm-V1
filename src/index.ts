@@ -21,10 +21,62 @@ import { createMatchingPlugin } from './plugins/matching/index.js';
 import { DbCacheAdapter } from './adapters/dbCache.js';
 import { startFollowUpScheduler } from './services/followUpScheduler.js';
 
+async function runMigrations(db: PostgresDatabaseAdapter) {
+  console.log('Checking database migrations...');
+  try {
+    // Check if matches table exists
+    const check = await db.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'matches'
+      );
+    `);
+    
+    if (!check.rows[0].exists) {
+      console.log('Running initial migration...');
+      await db.query(`
+        CREATE TABLE IF NOT EXISTS matches (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          user_id UUID NOT NULL,
+          matched_user_id UUID NOT NULL,
+          room_id UUID,
+          match_date TIMESTAMPTZ DEFAULT NOW(),
+          status TEXT NOT NULL DEFAULT 'pending'
+        );
+
+        CREATE TABLE IF NOT EXISTS follow_ups (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          match_id UUID REFERENCES matches(id),
+          user_id UUID NOT NULL,
+          type TEXT NOT NULL,
+          scheduled_for TIMESTAMPTZ NOT NULL,
+          sent_at TIMESTAMPTZ,
+          status TEXT NOT NULL DEFAULT 'pending',
+          response TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_matches_user_id ON matches(user_id);
+        CREATE INDEX IF NOT EXISTS idx_follow_ups_scheduled_for ON follow_ups(scheduled_for) WHERE status = 'pending';
+      `);
+      console.log('Migration completed successfully.');
+    } else {
+      console.log('Database already migrated.');
+    }
+  } catch (error) {
+    console.error('Error running migrations:', error);
+  }
+}
+
 async function createRuntime(character: any) {
   const db = new PostgresDatabaseAdapter({
     connectionString: process.env.DATABASE_URL as string
   });
+  
+  if (character.name === 'Kaia') {
+    await runMigrations(db);
+  }
+
 
   // Use DbCacheAdapter for persistence
   const agentId = character.name === 'Kaia' ? 'd24d3f40-0000-0000-0000-000000000000' : undefined;
