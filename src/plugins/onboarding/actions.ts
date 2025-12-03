@@ -47,14 +47,10 @@ export const continueOnboardingAction: Action = {
     const profile = await getUserProfile(runtime, message.userId);
     const isEditing = profile.isEditing || false;
 
-    // 1. START -> ASK_NAME
+    // 1. START -> ASK_NAME (LLM handles the greeting message based on system prompt)
     if (currentStep === 'NONE') {
       await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_NAME');
-      if (callback) {
-        callback({
-          text: "Hola! I'm Agent Kaia, created by SI<3>. I'm your friendly guide to help you navigate Web3. I am able to support you in making meaningful connections and share helpful knowledge and opportunities within our member network. 💜\n\nBy continuing your interactions with Kaia you give your consent to sharing personal data in accordance with the privacy policy. https://si3.space/policy/privacy\n\nTo get started, can you tell me a bit about yourself so I can customize your experience?\n\nWhat's your preferred name?"
-        });
-      }
+      // Don't call callback here - LLM generates the greeting based on system prompt
       return true;
     }
 
