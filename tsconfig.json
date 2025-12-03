@@ -9,8 +9,7 @@
     "skipLibCheck": true,
     "outDir": "dist",
     "rootDir": "src",
-    "resolveJsonModule": true,
-    "lib": ["ES2022", "DOM"]
+    "resolveJsonModule": true
   },
   "include": ["src", "characters"]
 }

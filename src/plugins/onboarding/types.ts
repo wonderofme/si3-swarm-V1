@@ -27,6 +27,9 @@ export interface UserProfile {
   gender?: string;
   notifications?: string;
   isConfirmed?: boolean;
+  isEditing?: boolean;
+  editingField?: string;
+  onboardingCompletedAt?: Date;
 }
 
 // Extend the standard State to include our onboarding context
@@ -36,5 +39,4 @@ declare module '@elizaos/core' {
     userProfile?: UserProfile;
   }
 }
-
 

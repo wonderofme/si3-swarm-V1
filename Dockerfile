@@ -1,8 +1,8 @@
-FROM node:22-slim AS base
+FROM node:22-alpine AS base
 
 WORKDIR /app
 
-# Install dependencies using npm
+# Install dependencies using npm (match local environment)
 COPY package.json package-lock.json* tsconfig.json ./
 RUN npm install
 
@@ -14,7 +14,7 @@ COPY characters ./characters
 RUN npm run build
 
 # Runtime image
-FROM node:22-slim
+FROM node:22-alpine
 
 WORKDIR /app
 

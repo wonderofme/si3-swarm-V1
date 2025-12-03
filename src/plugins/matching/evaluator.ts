@@ -2,24 +2,17 @@ import { Evaluator, IAgentRuntime, Memory, State } from '@elizaos/core';
 
 export const matchEvaluator: Evaluator = {
   name: 'match_evaluator',
-  description: 'Detects if user is asking for matching/networking.',
-  similes: ['find people', 'networking', 'matchmaking', 'who should i meet'],
-  examples: [
-    {
-        context: "User asks for connections",
-        messages: [{ user: "user", content: { text: "Who should I talk to about DeFi?" } }],
-        outcome: "MATCH_REQUEST"
-    }
-  ],
+  description: 'Detects if the user is explicitly asking for a match or introduction.',
+  similes: ['find match', 'connect me', 'introduce me'],
+  examples: [],
   
-  handler: async (runtime: IAgentRuntime, message: Memory, state?: State): Promise<string | null> => {
-    const text = message.content.text.toLowerCase();
-    if (text.includes('match') || text.includes('who should i') || text.includes('connect me') || text.includes('find someone')) {
-        // Store in state so action can check it
-        if (state) {
-          state.matchRequest = 'MATCH_REQUEST';
-        }
-        return 'MATCH_REQUEST';
+  handler: async (runtime: IAgentRuntime, message: Memory, state?: State): Promise<any> => {
+    const text = (message.content.text || '').toLowerCase();
+    if (text.includes('match') || text.includes('connect') || text.includes('introduce') || text.includes('find someone')) {
+      if (state) {
+        state.matchRequest = 'MATCH_REQUEST';
+      }
+      return 'MATCH_REQUEST';
     }
     return null;
   },
@@ -28,6 +21,4 @@ export const matchEvaluator: Evaluator = {
     return true;
   }
 };
-
-
 

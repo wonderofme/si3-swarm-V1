@@ -1,18 +1,16 @@
 import { Plugin } from '@elizaos/core';
-import { onboardingEvaluator } from './evaluator.js';
 import { continueOnboardingAction } from './actions.js';
+import { onboardingEvaluator } from './evaluator.js';
 
 export function createOnboardingPlugin(): Plugin {
   return {
     name: 'onboarding',
-    description: 'Handles user onboarding flow state and profile collection.',
-    evaluators: [onboardingEvaluator],
+    description: 'Handles user onboarding workflow.',
     actions: [continueOnboardingAction],
-    services: [],
+    evaluators: [onboardingEvaluator],
     providers: [],
+    services: [],
     clients: []
   };
 }
-
-
 

@@ -1,4 +1,4 @@
-import { IAgentRuntime, UUID, Memory } from '@elizaos/core';
+import { IAgentRuntime, UUID } from '@elizaos/core';
 import { OnboardingStep, UserProfile } from './types.js';
 
 const ONBOARDING_MEMORY_TYPE = 'onboarding_state';
@@ -30,11 +30,15 @@ export async function updateOnboardingStep(
     }
   };
 
+  // Set completion date if completing
+  if (step === 'COMPLETED' && !currentProfile.onboardingCompletedAt) {
+    newState.profile.onboardingCompletedAt = new Date();
+  }
+
   // Save to Cache (Primary persistence for state machine)
   await runtime.cacheManager.set(`onboarding_${userId}`, newState);
   
   // Also save as a persistent memory log (so we have history)
-  // We use the ROOM ID from the message to ensure FK constraints are met.
   await runtime.messageManager.createMemory({
     id: undefined, // auto-gen
     userId,
@@ -57,3 +61,4 @@ export async function getOnboardingStep(runtime: IAgentRuntime, userId: UUID): P
   const state = await getOnboardingState(runtime, userId);
   return state.step;
 }
+

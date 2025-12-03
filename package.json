@@ -6,8 +6,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
-    "dev": "node --loader ts-node/esm src/index.ts",
-    "postinstall": "node scripts/patch-zod.js || true"
+    "dev": "node --loader ts-node/esm src/index.ts"
   },
   "dependencies": {
     "@elizaos/adapter-postgres": "^0.1.0",
@@ -15,19 +14,11 @@
     "@elizaos/client-telegram": "^0.1.0",
     "@elizaos/core": "^0.1.0",
     "bcryptjs": "^2.4.3",
-    "cheerio": "^1.1.2",
     "dotenv": "^16.4.5",
     "express": "^4.21.0",
     "jsonwebtoken": "^9.0.2",
-    "openai": "^4.73.0",
     "pg": "^8.13.0",
-    "sharp": "^0.34.5",
-    "zod": "3.25.32",
-    "zod-to-json-schema": "3.22.3"
-  },
-  "overrides": {
-    "zod": "3.25.32",
-    "zod-to-json-schema": "3.22.3"
+    "sharp": "^0.34.5"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
@@ -35,8 +26,5 @@
     "@types/node": "^22.7.4",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.6.3"
-  },
-  "optionalDependencies": {
-    "@anush008/tokenizers-linux-x64-musl": "*"
   }
 }

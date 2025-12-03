@@ -8,14 +8,12 @@ import { showHistoryAction } from './historyAction.js';
 export function createMatchingPlugin(): Plugin {
   return {
     name: 'matching',
-    description: 'Connects users based on interests.',
+    description: 'Connects users based on interests and manages follow-ups.',
     evaluators: [matchEvaluator, historyEvaluator],
     actions: [findMatchAction, followUpResponseAction, showHistoryAction],
-    services: [],
     providers: [],
+    services: [],
     clients: []
   };
 }
-
-
 

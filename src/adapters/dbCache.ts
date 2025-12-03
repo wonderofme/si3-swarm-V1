@@ -1,68 +1,61 @@
-import type { ICacheAdapter, UUID } from '@elizaos/core';
-import pkg from 'pg';
-const { Pool } = pkg;
+import { ICacheAdapter } from '@elizaos/core';
+import pg from 'pg';
 
 export class DbCacheAdapter implements ICacheAdapter {
-    private pool: pkg.Pool;
-    private agentId: UUID;
+  private pool: pg.Pool;
+  private agentId: string;
+  private tableName: string = 'cache';
 
-    constructor(connectionString: string, agentId: UUID) {
-        this.pool = new Pool({ connectionString });
-        this.agentId = agentId;
+  constructor(connectionString: string, agentId: string) {
+    this.pool = new pg.Pool({ connectionString });
+    this.agentId = agentId;
+  }
+
+  async get(key: string): Promise<string | undefined> {
+    const client = await this.pool.connect();
+    try {
+      const res = await client.query(
+        `SELECT value FROM ${this.tableName} WHERE key = $1 AND agent_id = $2`,
+        [key, this.agentId]
+      );
+      return res.rows[0]?.value;
+    } catch (error) {
+      console.error('Error getting cache key:', key, error);
+      return undefined;
+    } finally {
+      client.release();
     }
+  }
 
-    async get(key: string): Promise<string | undefined> {
-        const client = await this.pool.connect();
-        try {
-            const { rows } = await client.query(
-                'SELECT "value" FROM "cache" WHERE "key" = $1 AND "agentId" = $2',
-                [key, this.agentId]
-            );
-            if (rows.length > 0) {
-                const val = rows[0].value;
-                return typeof val === 'object' ? JSON.stringify(val) : String(val);
-            }
-            return undefined;
-        } catch (error) {
-            console.error('[DbCacheAdapter] Error getting key:', key, error);
-            return undefined;
-        } finally {
-            client.release();
-        }
+  async set(key: string, value: string): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query(
+        `INSERT INTO ${this.tableName} (key, agent_id, value) 
+         VALUES ($1, $2, $3) 
+         ON CONFLICT (key, agent_id) 
+         DO UPDATE SET value = $3`,
+        [key, this.agentId, value]
+      );
+    } catch (error) {
+      console.error('Error setting cache key:', key, error);
+    } finally {
+      client.release();
     }
+  }
 
-    async set(key: string, value: string): Promise<void> {
-        const client = await this.pool.connect();
-        try {
-            let valToStore = value;
-            try {
-                valToStore = JSON.parse(value);
-            } catch {}
-
-            await client.query(
-                `INSERT INTO "cache" ("key", "agentId", "value", "createdAt")
-                 VALUES ($1, $2, $3, NOW())
-                 ON CONFLICT ("key", "agentId")
-                 DO UPDATE SET "value" = $3, "createdAt" = NOW()`,
-                [key, this.agentId, valToStore]
-            );
-        } catch (error) {
-            console.error('[DbCacheAdapter] Error setting key:', key, error);
-        } finally {
-            client.release();
-        }
+  async delete(key: string): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query(
+        `DELETE FROM ${this.tableName} WHERE key = $1 AND agent_id = $2`,
+        [key, this.agentId]
+      );
+    } catch (error) {
+      console.error('Error deleting cache key:', key, error);
+    } finally {
+      client.release();
     }
-
-    async delete(key: string): Promise<void> {
-        const client = await this.pool.connect();
-        try {
-            await client.query(
-                'DELETE FROM "cache" WHERE "key" = $1 AND "agentId" = $2',
-                [key, this.agentId]
-            );
-        } finally {
-            client.release();
-        }
-    }
+  }
 }
 
