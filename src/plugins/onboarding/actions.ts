@@ -77,10 +77,24 @@ export const continueOnboardingAction: Action = {
     // START -> ASK_NAME
     if (currentStep === 'NONE') {
       console.log('[Onboarding Action] Step is NONE, sending greeting');
-      await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_NAME');
-      if (callback) {
-        console.log('[Onboarding Action] Calling callback with greeting');
-        callback({ text: msgs.GREETING });
+      // Check if name already exists, skip to language if it does
+      if (profile.name) {
+        if (profile.language) {
+          // Both name and language exist, skip to location
+          await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_LOCATION');
+          if (callback) callback({ text: msgs.LOCATION });
+        } else {
+          // Name exists but language doesn't, ask for language
+          await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_LANGUAGE');
+          if (callback) callback({ text: msgs.LANGUAGE });
+        }
+      } else {
+        // No name, start with greeting
+        await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_NAME');
+        if (callback) {
+          console.log('[Onboarding Action] Calling callback with greeting');
+          callback({ text: msgs.GREETING });
+        }
       }
       return true;
     }
@@ -94,14 +108,34 @@ export const continueOnboardingAction: Action = {
           const updatedProfile1 = await getUserProfile(runtime, message.userId);
           if (callback) callback({ text: generateSummaryText(updatedProfile1) });
         } else {
-          await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_LANGUAGE', { name: text });
-          console.log('[Onboarding Action] Calling callback with LANGUAGE message');
-          if (callback) callback({ text: msgs.LANGUAGE });
+          // Check if name already exists (shouldn't happen, but handle gracefully)
+          if (profile.name && !text) {
+            // Name already exists, skip to language
+            if (profile.language) {
+              await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_LOCATION');
+              if (callback) callback({ text: msgs.LOCATION });
+            } else {
+              await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_LANGUAGE');
+              if (callback) callback({ text: msgs.LANGUAGE });
+            }
+          } else {
+            await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_LANGUAGE', { name: text });
+            console.log('[Onboarding Action] Calling callback with LANGUAGE message');
+            if (callback) callback({ text: msgs.LANGUAGE });
+          }
         }
         break;
 
       case 'ASK_LANGUAGE':
         console.log('[Onboarding Action] Processing ASK_LANGUAGE, user said:', text);
+        // Check if language already exists
+        if (profile.language && !text) {
+          // Language already exists, skip to location
+          const existingLangMsgs = getMessages(profile.language);
+          await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_LOCATION');
+          if (callback) callback({ text: existingLangMsgs.LOCATION });
+          break;
+        }
         const langCode = parseLanguageCode(text);
         if (!langCode) {
           // Invalid language selection, ask again
@@ -121,7 +155,9 @@ export const continueOnboardingAction: Action = {
           const updatedProfile2 = await getUserProfile(runtime, message.userId);
           if (callback) callback({ text: generateSummaryText(updatedProfile2) });
         } else {
-          await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_ROLE', { location: text });
+          // Handle "next" to skip optional question
+          const locationValue = text.toLowerCase().trim() === 'next' ? undefined : text;
+          await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_ROLE', { location: locationValue });
           if (callback) callback({ text: msgs.ROLES });
         }
         break;
@@ -199,7 +235,9 @@ export const continueOnboardingAction: Action = {
           const updatedProfile6 = await getUserProfile(runtime, message.userId);
           if (callback) callback({ text: generateSummaryText(updatedProfile6) });
         } else {
-          await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_SOCIALS', { events: [text] });
+          // Handle "next" to skip optional question
+          const eventsValue = text.toLowerCase().trim() === 'next' ? [] : [text];
+          await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_SOCIALS', { events: eventsValue });
           if (callback) callback({ text: msgs.SOCIALS });
         }
         break;
@@ -210,7 +248,9 @@ export const continueOnboardingAction: Action = {
           const updatedProfile7 = await getUserProfile(runtime, message.userId);
           if (callback) callback({ text: generateSummaryText(updatedProfile7) });
         } else {
-          await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_TELEGRAM_HANDLE', { socials: [text] });
+          // Handle "next" to skip optional question
+          const socialsValue = text.toLowerCase().trim() === 'next' ? [] : [text];
+          await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_TELEGRAM_HANDLE', { socials: socialsValue });
           if (callback) callback({ text: msgs.TELEGRAM });
         }
         break;
@@ -236,7 +276,9 @@ export const continueOnboardingAction: Action = {
           const updatedProfile9 = await getUserProfile(runtime, message.userId);
           if (callback) callback({ text: generateSummaryText(updatedProfile9) });
         } else {
-          await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_NOTIFICATIONS', { gender: text });
+          // Handle "next" to skip optional question
+          const genderValue = text.toLowerCase().trim() === 'next' ? undefined : text;
+          await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_NOTIFICATIONS', { gender: genderValue });
           if (callback) callback({ text: msgs.NOTIFICATIONS });
         }
         break;

@@ -36,6 +36,7 @@ export interface Messages {
   EDIT_GENDER: string;
   EDIT_NOTIFICATIONS: string;
   CONFIRM: string;
+  NEXT_INSTRUCTION: string;
 }
 
 const translations: Record<LanguageCode, Messages> = {
@@ -53,7 +54,9 @@ Let's get started! What's your preferred name?`,
 4. French
 
 Reply with the number (for example: 1)`,
-    LOCATION: `What's your location (city and country)? 📍 (optional)`,
+    LOCATION: `What's your location (city and country)? 📍 (optional)
+
+To move on to the next question, type 'Next'`,
     ROLES: `To be able to match you with members and opportunities, can you tell me a bit about yourself by selecting the options that best describe you? You may select more than one.
 
 1. Founder/Builder
@@ -91,8 +94,12 @@ Reply with the number before the topic (for example: 2,3). If you have a topic t
 6. Other
 
 Reply with the number before the connection type (for example: 3, 4). If you have a connection type that is not listed, type that as text (for example 3,4 and Cybersecurity).`,
-    EVENTS: `I can also share a list of people that are attending the same events and conferences that you are attending! Can you share any events that you will be attending coming up (event name, month, and location)? (optional)`,
-    SOCIALS: `Can you share your digital links and/or social media profiles so we can share those with those that you are matched with? (optional)`,
+    EVENTS: `I could try to connect you with others attending the same events and conferences! Can you share any events that you will be attending coming up (event name, month, and location)? (optional)
+
+To move on to the next question, type 'Next'`,
+    SOCIALS: `Can you share your digital links and/or social media profiles so we can share those with those that you are matched with? (optional)
+
+To move on to the next question, type 'Next'`,
     TELEGRAM: `What's your Telegram handle so matches can reach you? (e.g., @username)`,
     GENDER: `We are an ecosystem that values the inclusion of under-represented groups in Web3. We are engaging in industry-related market research to support these groups in achieving more equitable access to funding, growth and career opportunities.
 
@@ -101,7 +108,9 @@ If you would like to share your gender data (anonymously) within our research, p
 1. She/Her
 2. He/Him
 3. They/Them
-4. Other`,
+4. Other
+
+To move on to the next question, type 'Next'`,
     NOTIFICATIONS: `One last thing…would you be interested in receiving notifications for project and mission collaboration opportunities initiated by SI<3> and it's partners? You're also welcome to share your organization's opportunities to broadcast to potentially interested members.
 
 1. Yes!
@@ -130,7 +139,8 @@ If you would like to share your gender data (anonymously) within our research, p
     EDIT_TELEGRAM: `Edit telegram handle`,
     EDIT_GENDER: `Edit gender info`,
     EDIT_NOTIFICATIONS: `Edit notifications for collabs`,
-    CONFIRM: `✅ Confirm`
+    CONFIRM: `✅ Confirm`,
+    NEXT_INSTRUCTION: `To move on to the next question, type 'Next'`
   },
   es: {
     GREETING: `¡Hola! Soy la Agente Kaia, creada por SI<3>. Soy tu guía amigable para ayudarte a navegar Web3. Estoy aquí para apoyarte a hacer conexiones significativas y compartir conocimientos útiles y oportunidades dentro de nuestra red de miembros. 💜
@@ -146,7 +156,9 @@ Al continuar tus interacciones conmigo, das tu consentimiento para compartir dat
 4. Francés
 
 Responde con el número (por ejemplo: 1)`,
-    LOCATION: `¿Cuál es tu ubicación (ciudad y país)? 📍 (opcional)`,
+    LOCATION: `¿Cuál es tu ubicación (ciudad y país)? 📍 (opcional)
+
+Para pasar a la siguiente pregunta, escribe 'Next'`,
     ROLES: `Para poder conectarte con miembros y oportunidades, ¿puedes contarme un poco sobre ti seleccionando las opciones que mejor te describen? Puedes seleccionar más de una.
 
 1. Fundador/Constructor
@@ -184,8 +196,12 @@ Responde con el número antes del tema (por ejemplo: 2,3). Si tienes un tema que
 6. Otro
 
 Responde con el número antes del tipo de conexión (por ejemplo: 3, 4). Si tienes un tipo de conexión que no está en la lista, escríbelo como texto (por ejemplo 3,4 y Ciberseguridad).`,
-    EVENTS: `¡También puedo compartir una lista de personas que asistirán a los mismos eventos y conferencias que tú! ¿Puedes compartir algún evento al que asistirás próximamente (nombre del evento, mes y ubicación)? (opcional)`,
-    SOCIALS: `¿Puedes compartir tus enlaces digitales y/o perfiles de redes sociales para que podamos compartirlos con aquellos con los que te conectemos? (opcional)`,
+    EVENTS: `¡Podría intentar conectarte con otros que asistirán a los mismos eventos y conferencias! ¿Puedes compartir algún evento al que asistirás próximamente (nombre del evento, mes y ubicación)? (opcional)
+
+Para pasar a la siguiente pregunta, escribe 'Next'`,
+    SOCIALS: `¿Puedes compartir tus enlaces digitales y/o perfiles de redes sociales para que podamos compartirlos con aquellos con los que te conectemos? (opcional)
+
+Para pasar a la siguiente pregunta, escribe 'Next'`,
     TELEGRAM: `¿Cuál es tu nombre de usuario de Telegram para que las conexiones puedan contactarte? (por ejemplo: @usuario)`,
     GENDER: `Somos un ecosistema que valora la inclusión de grupos subrepresentados en Web3. Estamos realizando investigaciones de mercado relacionadas con la industria para apoyar a estos grupos a lograr un acceso más equitativo a financiamiento, crecimiento y oportunidades profesionales.
 
@@ -194,7 +210,9 @@ Si deseas compartir tus datos de género (de forma anónima) en nuestra investig
 1. Ella
 2. Él
 3. Ellos/Ellas
-4. Otro`,
+4. Otro
+
+Para pasar a la siguiente pregunta, escribe 'Next'`,
     NOTIFICATIONS: `Una última cosa... ¿estarías interesado en recibir notificaciones de oportunidades de colaboración de proyectos y misiones iniciadas por SI<3> y sus socios? También puedes compartir las oportunidades de tu organización para difundirlas a miembros potencialmente interesados.
 
 1. ¡Sí!
@@ -223,7 +241,8 @@ Si deseas compartir tus datos de género (de forma anónima) en nuestra investig
     EDIT_TELEGRAM: `Editar nombre de usuario de Telegram`,
     EDIT_GENDER: `Editar información de género`,
     EDIT_NOTIFICATIONS: `Editar notificaciones para colaboraciones`,
-    CONFIRM: `✅ Confirmar`
+    CONFIRM: `✅ Confirmar`,
+    NEXT_INSTRUCTION: `Para pasar a la siguiente pregunta, escribe 'Next'`
   },
   pt: {
     GREETING: `Olá! Sou a Agente Kaia, criada pela SI<3>. Sou sua guia amigável para ajudá-lo a navegar na Web3. Estou aqui para apoiá-lo a fazer conexões significativas e compartilhar conhecimentos úteis e oportunidades dentro de nossa rede de membros. 💜
@@ -239,7 +258,9 @@ Vamos começar! Qual é o seu nome preferido?`,
 4. Francês
 
 Responda com o número (por exemplo: 1)`,
-    LOCATION: `Qual é a sua localização (cidade e país)? 📍 (opcional)`,
+    LOCATION: `Qual é a sua localização (cidade e país)? 📍 (opcional)
+
+Para passar para a próxima pergunta, digite 'Next'`,
     ROLES: `Para poder conectá-lo com membros e oportunidades, você pode me contar um pouco sobre si mesmo selecionando as opções que melhor o descrevem? Você pode selecionar mais de uma.
 
 1. Fundador/Construtor
@@ -277,8 +298,12 @@ Responda com o número antes do tópico (por exemplo: 2,3). Se você tem um tóp
 6. Outro
 
 Responda com o número antes do tipo de conexão (por exemplo: 3, 4). Se você tem um tipo de conexão que não está na lista, digite isso como texto (por exemplo 3,4 e Cibersegurança).`,
-    EVENTS: `Também posso compartilhar uma lista de pessoas que estão participando dos mesmos eventos e conferências que você! Você pode compartilhar algum evento que participará em breve (nome do evento, mês e localização)? (opcional)`,
-    SOCIALS: `Você pode compartilhar seus links digitais e/ou perfis de redes sociais para que possamos compartilhá-los com aqueles com quem você for conectado? (opcional)`,
+    EVENTS: `Eu poderia tentar conectá-lo com outros que estão participando dos mesmos eventos e conferências! Você pode compartilhar algum evento que participará em breve (nome do evento, mês e localização)? (opcional)
+
+Para passar para a próxima pergunta, digite 'Next'`,
+    SOCIALS: `Você pode compartilhar seus links digitais e/ou perfis de redes sociais para que possamos compartilhá-los com aqueles com quem você for conectado? (opcional)
+
+Para passar para a próxima pergunta, digite 'Next'`,
     TELEGRAM: `Qual é o seu nome de usuário do Telegram para que as conexões possam entrar em contato? (por exemplo: @usuario)`,
     GENDER: `Somos um ecossistema que valoriza a inclusão de grupos sub-representados na Web3. Estamos realizando pesquisas de mercado relacionadas à indústria para apoiar esses grupos a alcançar acesso mais equitativo a financiamento, crescimento e oportunidades de carreira.
 
@@ -287,7 +312,9 @@ Se você gostaria de compartilhar seus dados de gênero (anonimamente) em nossa 
 1. Ela
 2. Ele
 3. Eles/Elas
-4. Outro`,
+4. Outro
+
+Para passar para a próxima pergunta, digite 'Next'`,
     NOTIFICATIONS: `Uma última coisa... você estaria interessado em receber notificações de oportunidades de colaboração de projetos e missões iniciadas pela SI<3> e seus parceiros? Você também pode compartilhar as oportunidades da sua organização para transmitir a membros potencialmente interessados.
 
 1. Sim!
@@ -316,7 +343,8 @@ Se você gostaria de compartilhar seus dados de gênero (anonimamente) em nossa 
     EDIT_TELEGRAM: `Editar nome de usuário do Telegram`,
     EDIT_GENDER: `Editar informações de gênero`,
     EDIT_NOTIFICATIONS: `Editar notificações para colaborações`,
-    CONFIRM: `✅ Confirmar`
+    CONFIRM: `✅ Confirmar`,
+    NEXT_INSTRUCTION: `Para passar para a próxima pergunta, digite 'Next'`
   },
   fr: {
     GREETING: `Bonjour! Je suis l'Agent Kaia, créée par SI<3>. Je suis votre guide amical pour vous aider à naviguer dans Web3. Je suis là pour vous soutenir dans la création de connexions significatives et partager des connaissances utiles et des opportunités au sein de notre réseau de membres. 💜
@@ -332,7 +360,9 @@ Commençons! Quel est votre nom préféré?`,
 4. Français
 
 Répondez avec le numéro (par exemple: 1)`,
-    LOCATION: `Quelle est votre localisation (ville et pays)? 📍 (optionnel)`,
+    LOCATION: `Quelle est votre localisation (ville et pays)? 📍 (optionnel)
+
+Pour passer à la question suivante, tapez 'Next'`,
     ROLES: `Pour pouvoir vous mettre en relation avec des membres et des opportunités, pouvez-vous me parler un peu de vous en sélectionnant les options qui vous décrivent le mieux? Vous pouvez en sélectionner plusieurs.
 
 1. Fondateur/Constructeur
@@ -370,8 +400,12 @@ Répondez avec le numéro avant le sujet (par exemple: 2,3). Si vous avez un suj
 6. Autre
 
 Répondez avec le numéro avant le type de connexion (par exemple: 3, 4). Si vous avez un type de connexion qui n'est pas dans la liste, tapez-le en texte (par exemple 3,4 et Cybersécurité).`,
-    EVENTS: `Je peux également partager une liste de personnes qui assistent aux mêmes événements et conférences que vous! Pouvez-vous partager des événements auxquels vous assisterez prochainement (nom de l'événement, mois et lieu)? (optionnel)`,
-    SOCIALS: `Pouvez-vous partager vos liens numériques et/ou profils de réseaux sociaux afin que nous puissions les partager avec ceux avec qui vous êtes mis en relation? (optionnel)`,
+    EVENTS: `Je pourrais essayer de vous connecter avec d'autres qui assistent aux mêmes événements et conférences! Pouvez-vous partager des événements auxquels vous assisterez prochainement (nom de l'événement, mois et lieu)? (optionnel)
+
+Pour passer à la question suivante, tapez 'Next'`,
+    SOCIALS: `Pouvez-vous partager vos liens numériques et/ou profils de réseaux sociaux afin que nous puissions les partager avec ceux avec qui vous êtes mis en relation? (optionnel)
+
+Pour passer à la question suivante, tapez 'Next'`,
     TELEGRAM: `Quel est votre nom d'utilisateur Telegram pour que les correspondances puissent vous contacter? (par exemple: @utilisateur)`,
     GENDER: `Nous sommes un écosystème qui valorise l'inclusion de groupes sous-représentés dans Web3. Nous menons des recherches de marché liées à l'industrie pour soutenir ces groupes à atteindre un accès plus équitable au financement, à la croissance et aux opportunités de carrière.
 
@@ -380,7 +414,9 @@ Si vous souhaitez partager vos données de genre (anonymement) dans notre recher
 1. Elle
 2. Il
 3. Ils/Elles
-4. Autre`,
+4. Autre
+
+Pour passer à la question suivante, tapez 'Next'`,
     NOTIFICATIONS: `Une dernière chose... seriez-vous intéressé à recevoir des notifications pour les opportunités de collaboration de projets et de missions initiées par SI<3> et ses partenaires? Vous êtes également invité à partager les opportunités de votre organisation pour les diffuser aux membres potentiellement intéressés.
 
 1. Oui!
@@ -409,7 +445,8 @@ Si vous souhaitez partager vos données de genre (anonymement) dans notre recher
     EDIT_TELEGRAM: `Modifier le nom d'utilisateur Telegram`,
     EDIT_GENDER: `Modifier les informations de genre`,
     EDIT_NOTIFICATIONS: `Modifier les notifications pour collaborations`,
-    CONFIRM: `✅ Confirmer`
+    CONFIRM: `✅ Confirmer`,
+    NEXT_INSTRUCTION: `Pour passer à la question suivante, tapez 'Next'`
   }
 };
 

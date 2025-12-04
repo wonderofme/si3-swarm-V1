@@ -25,7 +25,7 @@ export const showHistoryAction: Action = {
       const matches = await getUserMatches(userId, 20);
       const { step } = await getOnboardingState(runtime, userId);
       
-      let historyMessage = `Hola ${profile.name || 'there'}! 💜\n\nHere's your history:\n\n`;
+      let historyMessage = `Hola ${profile.name || 'there'}! 💜\n\nYour Grow3dge Profile:\n\n`;
 
       // Match History
       historyMessage += `**Your Matches (${matches.length}):**\n`;

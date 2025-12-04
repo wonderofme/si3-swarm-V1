@@ -9,8 +9,10 @@ export const changeLanguageAction: Action = {
   
   validate: async (runtime: IAgentRuntime, message: Memory, state?: State) => {
     const text = message.content.text?.toLowerCase() || '';
-    const languageKeywords = ['change language', 'switch language', 'set language', 'update language', 'language to', 'idioma', 'langue', 'idioma para'];
-    return languageKeywords.some(keyword => text.includes(keyword));
+    // Only trigger on explicit language change commands - must include both a command word AND language intent
+    const languageCommandKeywords = ['change language', 'switch language', 'set language', 'update language', 'language to', 'cambiar idioma', 'cambiar el idioma', 'trocar idioma', 'changer la langue'];
+    // Must have explicit command, not just language words
+    return languageCommandKeywords.some(keyword => text.includes(keyword));
   },
 
   handler: async (runtime: IAgentRuntime, message: Memory, state?: State, _options?: any, callback?: HandlerCallback) => {
