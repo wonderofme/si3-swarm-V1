@@ -1,6 +1,7 @@
 import { Plugin } from '@elizaos/core';
 import { continueOnboardingAction } from './actions.js';
 import { onboardingEvaluator } from './evaluator.js';
+import { onboardingProvider } from './provider.js';
 
 export function createOnboardingPlugin(): Plugin {
   return {
@@ -8,7 +9,7 @@ export function createOnboardingPlugin(): Plugin {
     description: 'Handles user onboarding workflow.',
     actions: [continueOnboardingAction],
     evaluators: [onboardingEvaluator],
-    providers: [],
+    providers: [onboardingProvider],
     services: [],
     clients: []
   };
