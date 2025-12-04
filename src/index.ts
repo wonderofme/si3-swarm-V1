@@ -2,7 +2,6 @@ import 'dotenv/config';
 import {
   AgentRuntime,
   CacheManager,
-  MemoryCacheAdapter,
   ModelProviderName
 } from '@elizaos/core';
 import { PostgresDatabaseAdapter } from '@elizaos/adapter-postgres';
@@ -96,9 +95,9 @@ async function createRuntime(character: any) {
     await runMigrations(db);
   }
 
-
-  // Use in-memory cache temporarily to debug message sending issues
-  const cacheManager = new CacheManager(new MemoryCacheAdapter());
+  // Use database-backed cache for persistent storage
+  const agentId = character.id || character.name;
+  const cacheManager = new CacheManager(new DbCacheAdapter(process.env.DATABASE_URL as string, agentId));
 
   const plugins = [];
   if (character.plugins?.includes('router')) plugins.push(createRouterPlugin());
