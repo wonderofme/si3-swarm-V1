@@ -76,10 +76,7 @@ If you would like to share your gender data (anonymously) within our research, p
 };
 
 export const onboardingProvider: Provider = {
-  name: 'onboarding_context',
-  description: 'Provides current onboarding step and exact message to output',
-
-  get: async (runtime: IAgentRuntime, message: Memory, state?: State): Promise<string> => {
+  get: async (runtime: IAgentRuntime, message: Memory, state?: State): Promise<string | null> => {
     const userId = message.userId;
     const step = await getOnboardingStep(runtime, userId);
     const profile = await getUserProfile(runtime, userId);
