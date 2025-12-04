@@ -115,39 +115,53 @@ export const continueOnboardingAction: Action = {
   
   validate: async (runtime: IAgentRuntime, message: Memory, state?: State) => {
     const step = await getOnboardingStep(runtime, message.userId);
+    console.log('[Onboarding Action] Validate - step:', step, 'isValid:', step !== 'COMPLETED');
     return step !== 'COMPLETED';
   },
 
   handler: async (runtime: IAgentRuntime, message: Memory, state?: State, _options?: any, callback?: HandlerCallback) => {
+    console.log('[Onboarding Action] Handler started');
     let currentStep = await getOnboardingStep(runtime, message.userId);
+    console.log('[Onboarding Action] Current step:', currentStep);
     const text = message.content.text;
     const roomId = message.roomId;
     const profile = await getUserProfile(runtime, message.userId);
     const isEditing = profile.isEditing || false;
+    console.log('[Onboarding Action] Has callback:', !!callback);
 
     // Check for restart commands
     if (isRestartCommand(text)) {
+      console.log('[Onboarding Action] Restart command detected');
       await updateOnboardingStep(runtime, message.userId, roomId, 'NONE', {});
-      if (callback) callback({ text: MESSAGES.GREETING });
+      if (callback) {
+        console.log('[Onboarding Action] Sending greeting via callback');
+        callback({ text: MESSAGES.GREETING });
+      }
       return true;
     }
 
     // START -> ASK_NAME
     if (currentStep === 'NONE') {
+      console.log('[Onboarding Action] Step is NONE, sending greeting');
       await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_NAME');
-      if (callback) callback({ text: MESSAGES.GREETING });
+      if (callback) {
+        console.log('[Onboarding Action] Calling callback with greeting');
+        callback({ text: MESSAGES.GREETING });
+      }
       return true;
     }
 
     // Process user input and advance to next step
     switch (currentStep) {
       case 'ASK_NAME':
+        console.log('[Onboarding Action] Processing ASK_NAME, user said:', text);
         if (isEditing) {
           await updateOnboardingStep(runtime, message.userId, roomId, 'CONFIRMATION', { name: text, isEditing: false, editingField: undefined });
           const updatedProfile1 = await getUserProfile(runtime, message.userId);
           if (callback) callback({ text: generateSummaryText(updatedProfile1) });
         } else {
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_LOCATION', { name: text });
+          console.log('[Onboarding Action] Calling callback with LOCATION message');
           if (callback) callback({ text: MESSAGES.LOCATION });
         }
         break;
