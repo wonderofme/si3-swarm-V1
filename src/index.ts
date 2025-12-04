@@ -52,6 +52,9 @@ async function runMigrations(db: PostgresDatabaseAdapter) {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='matches' AND column_name='room_id') THEN
           ALTER TABLE matches ADD COLUMN room_id UUID;
         END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='matches' AND column_name='match_date') THEN
+          ALTER TABLE matches ADD COLUMN match_date TIMESTAMPTZ DEFAULT NOW();
+        END IF;
       END $$;
     `);
 

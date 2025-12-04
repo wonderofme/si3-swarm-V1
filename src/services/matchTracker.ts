@@ -157,16 +157,41 @@ export async function getUserMatches(userId: string, limit: number = 20): Promis
   const pool = new pg.default.Pool({ connectionString: process.env.DATABASE_URL });
   
   try {
-    const { rows } = await pool.query(
-      `SELECT * FROM matches WHERE user_id = $1 ORDER BY match_date DESC LIMIT $2`,
-      [userId, limit]
-    );
+    // Try snake_case first, fallback to camelCase if needed
+    let rows;
+    try {
+      const result = await pool.query(
+        `SELECT id, user_id, matched_user_id, room_id, match_date, status 
+         FROM matches 
+         WHERE user_id = $1 
+         ORDER BY match_date DESC 
+         LIMIT $2`,
+        [userId, limit]
+      );
+      rows = result.rows;
+    } catch (e: any) {
+      // If match_date doesn't exist, try matchDate (camelCase)
+      if (e.message?.includes('match_date')) {
+        const result = await pool.query(
+          `SELECT id, user_id, matched_user_id, room_id, "matchDate", status 
+           FROM matches 
+           WHERE user_id = $1 
+           ORDER BY "matchDate" DESC 
+           LIMIT $2`,
+          [userId, limit]
+        );
+        rows = result.rows;
+      } else {
+        throw e;
+      }
+    }
+    
     return rows.map((row: any) => ({
        id: row.id,
        userId: row.user_id,
        matchedUserId: row.matched_user_id,
        roomId: row.room_id,
-       matchDate: row.match_date,
+       matchDate: row.match_date || row.matchDate,
        status: row.status
     }));
   } finally {
