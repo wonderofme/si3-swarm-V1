@@ -80,7 +80,9 @@ export const onboardingProvider: Provider = {
     try {
       const userId = message.userId;
       const step = await getOnboardingStep(runtime, userId);
-      const profile = await getUserProfile(runtime, userId);
+      const rawProfile = await getUserProfile(runtime, userId);
+      // Ensure profile is always an object with safe defaults
+      const profile = rawProfile || {};
       const messageText = message.content.text?.toLowerCase() || '';
     
     // Check for restart commands

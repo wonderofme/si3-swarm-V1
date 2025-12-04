@@ -6,9 +6,13 @@ const ONBOARDING_MEMORY_TYPE = 'onboarding_state';
 export async function getOnboardingState(runtime: IAgentRuntime, userId: UUID): Promise<{ step: OnboardingStep, profile: UserProfile }> {
   try {
     const cached = await runtime.cacheManager.get(`onboarding_${userId}`);
-    if (cached) {
-      // CacheManager handles JSON parsing internally
-      return cached as { step: OnboardingStep, profile: UserProfile };
+    if (cached && typeof cached === 'object') {
+      // Ensure profile exists and is an object
+      const state = cached as { step?: OnboardingStep, profile?: UserProfile };
+      return {
+        step: state.step || 'NONE',
+        profile: state.profile || {}
+      };
     }
   } catch (error) {
     console.error('[Onboarding] Error getting state:', error);
@@ -60,11 +64,11 @@ export async function updateOnboardingStep(
 
 export async function getUserProfile(runtime: IAgentRuntime, userId: UUID): Promise<UserProfile> {
   const state = await getOnboardingState(runtime, userId);
-  return state.profile;
+  return state.profile || {};
 }
 
 export async function getOnboardingStep(runtime: IAgentRuntime, userId: UUID): Promise<OnboardingStep> {
   const state = await getOnboardingState(runtime, userId);
-  return state.step;
+  return state.step || 'NONE';
 }
 
