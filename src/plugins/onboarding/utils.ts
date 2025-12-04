@@ -7,9 +7,8 @@ export async function getOnboardingState(runtime: IAgentRuntime, userId: UUID): 
   try {
     const cached = await runtime.cacheManager.get(`onboarding_${userId}`);
     if (cached) {
-      // Cache returns string, need to parse
-      const parsed = typeof cached === 'string' ? JSON.parse(cached) : cached;
-      return parsed as { step: OnboardingStep, profile: UserProfile };
+      // CacheManager handles JSON parsing internally
+      return cached as { step: OnboardingStep, profile: UserProfile };
     }
   } catch (error) {
     console.error('[Onboarding] Error getting state:', error);
@@ -42,7 +41,8 @@ export async function updateOnboardingStep(
   }
 
   // Save to Cache (Primary persistence for state machine)
-  await runtime.cacheManager.set(`onboarding_${userId}`, JSON.stringify(newState));
+  // CacheManager handles JSON stringification internally
+  await runtime.cacheManager.set(`onboarding_${userId}`, newState as any);
   
   // Also save as a persistent memory log (so we have history)
   await runtime.messageManager.createMemory({

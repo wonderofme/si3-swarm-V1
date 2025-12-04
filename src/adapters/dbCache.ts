@@ -76,7 +76,10 @@ export class DbCacheAdapter implements ICacheAdapter {
           throw e;
         }
       }
-      return res.rows[0]?.value;
+      // PostgreSQL JSONB returns objects, but CacheManager expects strings
+      // JSON.stringify to return a string that CacheManager can parse
+      const value = res.rows[0]?.value;
+      return value !== undefined ? JSON.stringify(value) : undefined;
     } catch (error) {
       console.error('Error getting cache key:', key, error);
       return undefined;
