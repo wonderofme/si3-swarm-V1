@@ -2,6 +2,80 @@ import { Action, IAgentRuntime, Memory, State, HandlerCallback } from '@elizaos/
 import { getOnboardingStep, updateOnboardingStep, getUserProfile } from './utils.js';
 import { OnboardingStep, UserProfile } from './types.js';
 
+// Define exact messages for each step
+const MESSAGES = {
+  GREETING: `Hola! I'm Agent Kaia, created by SI<3>. I'm your friendly guide to help you navigate Web3. I am here to support you in making meaningful connections and share helpful knowledge and opportunities within our member network. 💜
+
+By continuing your interactions with me, you give your consent to sharing personal data in accordance with our privacy policy. https://si3.space/policy/privacy
+
+Let's get started! What's your preferred name?`,
+
+  LOCATION: `What's your location (city and country)? 📍 (optional)`,
+
+  ROLES: `To be able to match you with members and opportunities, can you tell me a bit about yourself by selecting the options that best describe you? You may select more than one.
+
+1. Founder/Builder
+2. Marketing/BD/Partnerships
+3. DAO Council Member/Delegate
+4. Community Leader
+5. Investor/Grant Program Operator
+6. Early Web3 Explorer
+7. Media
+8. Artist
+9. Developer
+10. Other
+
+Reply with the number before the role (for example: 1, 4). If you have a role that is not listed, type that as text (for example: 1,4 and xx)`,
+
+  INTERESTS: `As I am getting to know you better, can you please share what you are excited to explore in the Grow3dge program? You can select more than one topic.
+
+1. Web3 Growth Marketing
+2. Business Development & Partnerships
+3. Education 3.0
+4. AI
+5. Cybersecurity
+6. DAO's
+7. Tokenomics
+8. Fundraising
+9. Other
+
+Reply with the number before the topic (for example: 2,3). If you have a topic that is not listed, type that as text (for example: 2,3 and DevRel)`,
+
+  GOALS: `I'd love to help you find the right connections - what are you looking for? 🤝
+
+1. Startups to invest in
+2. Investors/grant program operators
+3. Marketing support
+4. BD & Partnerships
+5. Communities and/or DAO's to join
+6. Other
+
+Reply with the number before the connection type (for example: 3, 4). If you have a connection type that is not listed, type that as text (for example 3,4 and Cybersecurity).`,
+
+  EVENTS: `I can also share a list of people that are attending the same events and conferences that you are attending! Can you share any events that you will be attending coming up (event name, month, and location)? (optional)`,
+
+  SOCIALS: `Can you share your digital links and/or social media profiles so we can share those with those that you are matched with? (optional)`,
+
+  TELEGRAM: `What's your Telegram handle so matches can reach you? (e.g., @username)`,
+
+  GENDER: `We are an ecosystem that values the inclusion of under-represented groups in Web3. We are engaging in industry-related market research to support these groups in achieving more equitable access to funding, growth and career opportunities.
+
+If you would like to share your gender data (anonymously) within our research, please provide how you identify: (optional)
+
+1. She/Her
+2. He/Him
+3. They/Them
+4. Other`,
+
+  NOTIFICATIONS: `One last thing…would you be interested in receiving notifications for project and mission collaboration opportunities initiated by SI<3> and it's partners? You're also welcome to share your organization's opportunities to broadcast to potentially interested members.
+
+1. Yes!
+2. No, thanks
+3. Not sure yet, check in with me another time`,
+
+  COMPLETION: `Thank you so much for onboarding! To get started, I will match you with members of our network where you both may be a fit for what you are looking for.`
+};
+
 /**
  * Generate the confirmation summary text
  */
@@ -26,7 +100,16 @@ function generateSummaryText(profile: UserProfile): string {
     `Edit personal links\n` +
     `Edit gender info\n` +
     `Edit notifications for collabs\n\n` +
-    `Confirm (check)`;
+    `✅ Confirm`;
+}
+
+// Check for restart commands
+function isRestartCommand(text: string): boolean {
+  const lower = text.toLowerCase();
+  return lower.includes('restart') || 
+         lower.includes('pretend this is my first') ||
+         lower.includes('start over') ||
+         lower.includes('begin again');
 }
 
 export const continueOnboardingAction: Action = {
@@ -47,71 +130,44 @@ export const continueOnboardingAction: Action = {
     const isEditing = profile.isEditing || false;
 
     // Check for restart commands at any point
-    if (text.toLowerCase().includes('restart') || 
-        text.toLowerCase().includes('pretend this is my first') ||
-        text.toLowerCase().includes('start over') ||
-        text.toLowerCase().includes('begin again')) {
+    if (isRestartCommand(text)) {
       await updateOnboardingStep(runtime, message.userId, roomId, 'NONE', {});
+      if (callback) callback({ text: MESSAGES.GREETING });
       return true;
     }
 
-    // 1. START -> ASK_NAME (LLM handles the greeting message based on system prompt)
+    // 1. START -> ASK_NAME
     if (currentStep === 'NONE') {
       await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_NAME');
-      // Don't call callback here - LLM generates the greeting based on system prompt
+      if (callback) callback({ text: MESSAGES.GREETING });
       return true;
     }
 
     // 2. Handle Answers & Advance
     switch (currentStep) {
       case 'ASK_NAME':
-        // Check for restart commands
-        if (text.toLowerCase().includes('restart') || 
-            text.toLowerCase().includes('pretend this is my first') ||
-            text.toLowerCase().includes('start over') ||
-            text.toLowerCase().includes('begin again')) {
-          await updateOnboardingStep(runtime, message.userId, roomId, 'NONE', {});
-          return true;
-        }
-        
         if (isEditing) {
           await updateOnboardingStep(runtime, message.userId, roomId, 'CONFIRMATION', { name: text, isEditing: false, editingField: undefined });
           const updatedProfile = await getUserProfile(runtime, message.userId);
           if (callback) callback({ text: generateSummaryText(updatedProfile) });
         } else {
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_LOCATION', { name: text });
+          if (callback) callback({ text: MESSAGES.LOCATION });
         }
         break;
 
       case 'ASK_LOCATION':
-        // Check for restart commands
-        if (text.toLowerCase().includes('restart') || 
-            text.toLowerCase().includes('pretend this is my first') ||
-            text.toLowerCase().includes('start over') ||
-            text.toLowerCase().includes('begin again')) {
-          await updateOnboardingStep(runtime, message.userId, roomId, 'NONE', {});
-          return true;
-        }
-        
         if (isEditing) {
           await updateOnboardingStep(runtime, message.userId, roomId, 'CONFIRMATION', { location: text, isEditing: false, editingField: undefined });
           const updatedProfile = await getUserProfile(runtime, message.userId);
           if (callback) callback({ text: generateSummaryText(updatedProfile) });
         } else {
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_ROLE', { location: text });
+          if (callback) callback({ text: MESSAGES.ROLES });
         }
         break;
 
       case 'ASK_ROLE':
-        // Check for restart commands
-        if (text.toLowerCase().includes('restart') || 
-            text.toLowerCase().includes('pretend this is my first') ||
-            text.toLowerCase().includes('start over') ||
-            text.toLowerCase().includes('begin again')) {
-          await updateOnboardingStep(runtime, message.userId, roomId, 'NONE', {});
-          return true;
-        }
-        
         // Parse multiple selections
         const roleParts = text.split(/[,\s]+and\s+/i);
         const roleNumbers = roleParts[0].split(/[,\s]+/).filter(s => /^\d+$/.test(s.trim()));
@@ -131,19 +187,11 @@ export const continueOnboardingAction: Action = {
           if (callback) callback({ text: generateSummaryText(updatedProfile) });
         } else {
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_INTERESTS', { roles }); 
+          if (callback) callback({ text: MESSAGES.INTERESTS });
         }
         break;
 
       case 'ASK_INTERESTS':
-        // Check for restart commands
-        if (text.toLowerCase().includes('restart') || 
-            text.toLowerCase().includes('pretend this is my first') ||
-            text.toLowerCase().includes('start over') ||
-            text.toLowerCase().includes('begin again')) {
-          await updateOnboardingStep(runtime, message.userId, roomId, 'NONE', {});
-          return true;
-        }
-        
         // Parse multiple selections
         const interestParts = text.split(/[,\s]+and\s+/i);
         const interestNumbers = interestParts[0].split(/[,\s]+/).filter(s => /^\d+$/.test(s.trim()));
@@ -162,19 +210,11 @@ export const continueOnboardingAction: Action = {
           if (callback) callback({ text: generateSummaryText(updatedProfile) });
         } else {
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_CONNECTION_GOALS', { interests });
+          if (callback) callback({ text: MESSAGES.GOALS });
         }
         break;
 
       case 'ASK_CONNECTION_GOALS':
-        // Check for restart commands
-        if (text.toLowerCase().includes('restart') || 
-            text.toLowerCase().includes('pretend this is my first') ||
-            text.toLowerCase().includes('start over') ||
-            text.toLowerCase().includes('begin again')) {
-          await updateOnboardingStep(runtime, message.userId, roomId, 'NONE', {});
-          return true;
-        }
-        
         // Parse multiple selections
         const goalParts = text.split(/[,\s]+and\s+/i);
         const goalNumbers = goalParts[0].split(/[,\s]+/).filter(s => /^\d+$/.test(s.trim()));
@@ -193,57 +233,33 @@ export const continueOnboardingAction: Action = {
           if (callback) callback({ text: generateSummaryText(updatedProfile) });
         } else {
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_EVENTS', { connectionGoals });
+          if (callback) callback({ text: MESSAGES.EVENTS });
         }
         break;
 
       case 'ASK_EVENTS':
-        // Check for restart commands
-        if (text.toLowerCase().includes('restart') || 
-            text.toLowerCase().includes('pretend this is my first') ||
-            text.toLowerCase().includes('start over') ||
-            text.toLowerCase().includes('begin again')) {
-          await updateOnboardingStep(runtime, message.userId, roomId, 'NONE', {});
-          return true;
-        }
-        
         if (isEditing) {
           await updateOnboardingStep(runtime, message.userId, roomId, 'CONFIRMATION', { events: [text], isEditing: false, editingField: undefined });
           const updatedProfile = await getUserProfile(runtime, message.userId);
           if (callback) callback({ text: generateSummaryText(updatedProfile) });
         } else {
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_SOCIALS', { events: [text] });
+          if (callback) callback({ text: MESSAGES.SOCIALS });
         }
         break;
 
       case 'ASK_SOCIALS':
-        // Check for restart commands
-        if (text.toLowerCase().includes('restart') || 
-            text.toLowerCase().includes('pretend this is my first') ||
-            text.toLowerCase().includes('start over') ||
-            text.toLowerCase().includes('begin again')) {
-          await updateOnboardingStep(runtime, message.userId, roomId, 'NONE', {});
-          return true;
-        }
-        
         if (isEditing) {
           await updateOnboardingStep(runtime, message.userId, roomId, 'CONFIRMATION', { socials: [text], isEditing: false, editingField: undefined });
           const updatedProfile = await getUserProfile(runtime, message.userId);
           if (callback) callback({ text: generateSummaryText(updatedProfile) });
         } else {
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_TELEGRAM_HANDLE', { socials: [text] });
+          if (callback) callback({ text: MESSAGES.TELEGRAM });
         }
         break;
 
       case 'ASK_TELEGRAM_HANDLE':
-        // Check for restart commands
-        if (text.toLowerCase().includes('restart') || 
-            text.toLowerCase().includes('pretend this is my first') ||
-            text.toLowerCase().includes('start over') ||
-            text.toLowerCase().includes('begin again')) {
-          await updateOnboardingStep(runtime, message.userId, roomId, 'NONE', {});
-          return true;
-        }
-        
         let telegramHandle = text.trim();
         if (telegramHandle.startsWith('@')) telegramHandle = telegramHandle.substring(1);
         
@@ -256,6 +272,7 @@ export const continueOnboardingAction: Action = {
              if (callback) callback({ text: generateSummaryText(updatedProfile) });
            } else {
              await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_GENDER', { telegramHandle: handleToSave });
+             if (callback) callback({ text: MESSAGES.GENDER });
            }
         } else {
           if (callback) callback({ text: "Please provide a valid Telegram username (e.g., @username). Or type 'skip'." });
@@ -264,74 +281,47 @@ export const continueOnboardingAction: Action = {
         break;
 
       case 'ASK_GENDER':
-        // Check for restart commands
-        if (text.toLowerCase().includes('restart') || 
-            text.toLowerCase().includes('pretend this is my first') ||
-            text.toLowerCase().includes('start over') ||
-            text.toLowerCase().includes('begin again')) {
-          await updateOnboardingStep(runtime, message.userId, roomId, 'NONE', {});
-          return true;
-        }
-        
         if (isEditing) {
           await updateOnboardingStep(runtime, message.userId, roomId, 'CONFIRMATION', { gender: text, isEditing: false, editingField: undefined });
           const updatedProfile = await getUserProfile(runtime, message.userId);
           if (callback) callback({ text: generateSummaryText(updatedProfile) });
         } else {
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_NOTIFICATIONS', { gender: text });
+          if (callback) callback({ text: MESSAGES.NOTIFICATIONS });
         }
         break;
 
       case 'ASK_NOTIFICATIONS':
-        // Check for restart commands
-        if (text.toLowerCase().includes('restart') || 
-            text.toLowerCase().includes('pretend this is my first') ||
-            text.toLowerCase().includes('start over') ||
-            text.toLowerCase().includes('begin again')) {
-          await updateOnboardingStep(runtime, message.userId, roomId, 'NONE', {});
-          return true;
-        }
-        
         await updateOnboardingStep(runtime, message.userId, roomId, 'CONFIRMATION', { notifications: text, isEditing: false, editingField: undefined });
         const finalProfile = await getUserProfile(runtime, message.userId);
         if (callback) callback({ text: generateSummaryText(finalProfile) });
         break;
 
       case 'CONFIRMATION':
-        // Check for restart commands
-        if (text.toLowerCase().includes('restart') || 
-            text.toLowerCase().includes('pretend this is my first') ||
-            text.toLowerCase().includes('start over') ||
-            text.toLowerCase().includes('begin again')) {
-          await updateOnboardingStep(runtime, message.userId, roomId, 'NONE', {});
-          return true;
-        }
-        
         if (text.toLowerCase().includes('confirm') || text.toLowerCase().includes('yes') || text.toLowerCase().includes('check')) {
           await updateOnboardingStep(runtime, message.userId, roomId, 'COMPLETED', { isConfirmed: true, isEditing: false, editingField: undefined });
-          if (callback) {
-            callback({ text: "Thank you so much for onboarding! To get started, I will match you with members of our network where you both may be a fit for what you are looking for. 🚀" });
-          }
+          if (callback) callback({ text: MESSAGES.COMPLETION });
         } else if (text.toLowerCase().includes('edit')) {
           // Detect field to edit
           const lowerText = text.toLowerCase();
           let editStep: OnboardingStep | null = null;
           let editField: string | undefined = undefined;
+          let editMessage: string = '';
           
-          if (lowerText.includes('name')) { editStep = 'ASK_NAME'; editField = 'name'; }
-          else if (lowerText.includes('location')) { editStep = 'ASK_LOCATION'; editField = 'location'; }
-          else if (lowerText.includes('professional') || lowerText.includes('role')) { editStep = 'ASK_ROLE'; editField = 'roles'; }
-          else if (lowerText.includes('learning') || lowerText.includes('interest')) { editStep = 'ASK_INTERESTS'; editField = 'interests'; }
-          else if (lowerText.includes('connection') || lowerText.includes('goal')) { editStep = 'ASK_CONNECTION_GOALS'; editField = 'connectionGoals'; }
-          else if (lowerText.includes('conference') || lowerText.includes('event')) { editStep = 'ASK_EVENTS'; editField = 'events'; }
-          else if (lowerText.includes('personal') || lowerText.includes('link') || lowerText.includes('social')) { editStep = 'ASK_SOCIALS'; editField = 'socials'; }
-          else if (lowerText.includes('telegram')) { editStep = 'ASK_TELEGRAM_HANDLE'; editField = 'telegramHandle'; }
-          else if (lowerText.includes('gender')) { editStep = 'ASK_GENDER'; editField = 'gender'; }
-          else if (lowerText.includes('notification') || lowerText.includes('collab')) { editStep = 'ASK_NOTIFICATIONS'; editField = 'notifications'; }
+          if (lowerText.includes('name')) { editStep = 'ASK_NAME'; editField = 'name'; editMessage = "What's your preferred name?"; }
+          else if (lowerText.includes('location')) { editStep = 'ASK_LOCATION'; editField = 'location'; editMessage = MESSAGES.LOCATION; }
+          else if (lowerText.includes('professional') || lowerText.includes('role')) { editStep = 'ASK_ROLE'; editField = 'roles'; editMessage = MESSAGES.ROLES; }
+          else if (lowerText.includes('learning') || lowerText.includes('interest')) { editStep = 'ASK_INTERESTS'; editField = 'interests'; editMessage = MESSAGES.INTERESTS; }
+          else if (lowerText.includes('connection') || lowerText.includes('goal')) { editStep = 'ASK_CONNECTION_GOALS'; editField = 'connectionGoals'; editMessage = MESSAGES.GOALS; }
+          else if (lowerText.includes('conference') || lowerText.includes('event')) { editStep = 'ASK_EVENTS'; editField = 'events'; editMessage = MESSAGES.EVENTS; }
+          else if (lowerText.includes('personal') || lowerText.includes('link') || lowerText.includes('social')) { editStep = 'ASK_SOCIALS'; editField = 'socials'; editMessage = MESSAGES.SOCIALS; }
+          else if (lowerText.includes('telegram')) { editStep = 'ASK_TELEGRAM_HANDLE'; editField = 'telegramHandle'; editMessage = MESSAGES.TELEGRAM; }
+          else if (lowerText.includes('gender')) { editStep = 'ASK_GENDER'; editField = 'gender'; editMessage = MESSAGES.GENDER; }
+          else if (lowerText.includes('notification') || lowerText.includes('collab')) { editStep = 'ASK_NOTIFICATIONS'; editField = 'notifications'; editMessage = MESSAGES.NOTIFICATIONS; }
           
           if (editStep) {
             await updateOnboardingStep(runtime, message.userId, roomId, editStep, { isEditing: true, editingField: editField });
-            // The LLM will see the new state and ask the appropriate question
+            if (callback) callback({ text: editMessage });
           } else {
             if (callback) callback({ text: "What would you like to edit? Please tell me which field (e.g., 'Edit name' or 'Edit location')." });
           }
@@ -343,4 +333,3 @@ export const continueOnboardingAction: Action = {
   },
   examples: []
 };
-
