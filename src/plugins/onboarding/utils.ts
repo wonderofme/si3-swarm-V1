@@ -4,9 +4,15 @@ import { OnboardingStep, UserProfile } from './types.js';
 const ONBOARDING_MEMORY_TYPE = 'onboarding_state';
 
 export async function getOnboardingState(runtime: IAgentRuntime, userId: UUID): Promise<{ step: OnboardingStep, profile: UserProfile }> {
-  const cached = await runtime.cacheManager.get(`onboarding_${userId}`);
-  if (cached) {
-    return cached as { step: OnboardingStep, profile: UserProfile };
+  try {
+    const cached = await runtime.cacheManager.get(`onboarding_${userId}`);
+    if (cached) {
+      // Cache returns string, need to parse
+      const parsed = typeof cached === 'string' ? JSON.parse(cached) : cached;
+      return parsed as { step: OnboardingStep, profile: UserProfile };
+    }
+  } catch (error) {
+    console.error('[Onboarding] Error getting state:', error);
   }
   
   return { step: 'NONE', profile: {} };
@@ -36,7 +42,7 @@ export async function updateOnboardingStep(
   }
 
   // Save to Cache (Primary persistence for state machine)
-  await runtime.cacheManager.set(`onboarding_${userId}`, newState);
+  await runtime.cacheManager.set(`onboarding_${userId}`, JSON.stringify(newState));
   
   // Also save as a persistent memory log (so we have history)
   await runtime.messageManager.createMemory({

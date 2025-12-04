@@ -77,10 +77,11 @@ If you would like to share your gender data (anonymously) within our research, p
 
 export const onboardingProvider: Provider = {
   get: async (runtime: IAgentRuntime, message: Memory, state?: State): Promise<string | null> => {
-    const userId = message.userId;
-    const step = await getOnboardingStep(runtime, userId);
-    const profile = await getUserProfile(runtime, userId);
-    const messageText = message.content.text?.toLowerCase() || '';
+    try {
+      const userId = message.userId;
+      const step = await getOnboardingStep(runtime, userId);
+      const profile = await getUserProfile(runtime, userId);
+      const messageText = message.content.text?.toLowerCase() || '';
     
     // Check for restart commands
     if (messageText.includes('restart') || 
@@ -187,5 +188,9 @@ ${MESSAGES.COMPLETION}`
     };
     
     return stepToMessage[step] || `[ONBOARDING STEP: ${step}. Follow the script for this step.]`;
+    } catch (error) {
+      console.error('[Onboarding Provider] Error:', error);
+      return null;
+    }
   }
 };
