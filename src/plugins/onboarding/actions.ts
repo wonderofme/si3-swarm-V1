@@ -1,103 +1,33 @@
 import { Action, IAgentRuntime, Memory, State, HandlerCallback } from '@elizaos/core';
 import { getOnboardingStep, updateOnboardingStep, getUserProfile } from './utils.js';
 import { OnboardingStep, UserProfile } from './types.js';
-
-// Define exact messages for each step
-const MESSAGES = {
-  GREETING: `Hola! I'm Agent Kaia, created by SI<3>. I'm your friendly guide to help you navigate Web3. I am here to support you in making meaningful connections and share helpful knowledge and opportunities within our member network. 💜
-
-By continuing your interactions with me, you give your consent to sharing personal data in accordance with our privacy policy. https://si3.space/policy/privacy
-
-Let's get started! What's your preferred name?`,
-
-  LOCATION: `What's your location (city and country)? 📍 (optional)`,
-
-  ROLES: `To be able to match you with members and opportunities, can you tell me a bit about yourself by selecting the options that best describe you? You may select more than one.
-
-1. Founder/Builder
-2. Marketing/BD/Partnerships
-3. DAO Council Member/Delegate
-4. Community Leader
-5. Investor/Grant Program Operator
-6. Early Web3 Explorer
-7. Media
-8. Artist
-9. Developer
-10. Other
-
-Reply with the number before the role (for example: 1, 4). If you have a role that is not listed, type that as text (for example: 1,4 and xx)`,
-
-  INTERESTS: `As I am getting to know you better, can you please share what you are excited to explore in the Grow3dge program? You can select more than one topic.
-
-1. Web3 Growth Marketing
-2. Business Development & Partnerships
-3. Education 3.0
-4. AI
-5. Cybersecurity
-6. DAO's
-7. Tokenomics
-8. Fundraising
-9. Other
-
-Reply with the number before the topic (for example: 2,3). If you have a topic that is not listed, type that as text (for example: 2,3 and DevRel)`,
-
-  GOALS: `I'd love to help you find the right connections - what are you looking for? 🤝
-
-1. Startups to invest in
-2. Investors/grant program operators
-3. Marketing support
-4. BD & Partnerships
-5. Communities and/or DAO's to join
-6. Other
-
-Reply with the number before the connection type (for example: 3, 4). If you have a connection type that is not listed, type that as text (for example 3,4 and Cybersecurity).`,
-
-  EVENTS: `I can also share a list of people that are attending the same events and conferences that you are attending! Can you share any events that you will be attending coming up (event name, month, and location)? (optional)`,
-
-  SOCIALS: `Can you share your digital links and/or social media profiles so we can share those with those that you are matched with? (optional)`,
-
-  TELEGRAM: `What's your Telegram handle so matches can reach you? (e.g., @username)`,
-
-  GENDER: `We are an ecosystem that values the inclusion of under-represented groups in Web3. We are engaging in industry-related market research to support these groups in achieving more equitable access to funding, growth and career opportunities.
-
-If you would like to share your gender data (anonymously) within our research, please provide how you identify: (optional)
-
-1. She/Her
-2. He/Him
-3. They/Them
-4. Other`,
-
-  NOTIFICATIONS: `One last thing…would you be interested in receiving notifications for project and mission collaboration opportunities initiated by SI<3> and it's partners? You're also welcome to share your organization's opportunities to broadcast to potentially interested members.
-
-1. Yes!
-2. No, thanks
-3. Not sure yet, check in with me another time`,
-
-  COMPLETION: `Thank you so much for onboarding! To get started, I will match you with members of our network where you both may be a fit for what you are looking for.`
-};
+import { getMessages, parseLanguageCode, LanguageCode } from './translations.js';
 
 function generateSummaryText(profile: UserProfile): string {
-  return `Here's your summary. Does it look right?\n\n` +
-    `Name: ${profile.name || 'Not provided'}\n` +
-    `Location: ${profile.location || 'Not provided'}\n` +
-    `Professional Roles: ${profile.roles?.join(', ') || 'Not provided'}\n` +
-    `Learning Goals: ${profile.interests?.join(', ') || 'Not provided'}\n` +
-    `Connection Goals: ${profile.connectionGoals?.join(', ') || 'Not provided'}\n` +
-    `Conferences Attending: ${profile.events?.join(', ') || 'Not provided'}\n` +
-    `Personal Links: ${profile.socials?.join(', ') || 'Not provided'}\n` +
-    `Telegram Handle: ${profile.telegramHandle ? '@' + profile.telegramHandle : 'Not provided'}\n` +
-    `Gender Info: ${profile.gender || 'Not provided'}\n` +
-    `Notifications for Collabs: ${profile.notifications || 'Not provided'}\n\n` +
-    `Edit name\n` +
-    `Edit location\n` +
-    `Edit professional roles\n` +
-    `Edit learning Goals\n` +
-    `Edit connection Goals\n` +
-    `Edit conferences attending\n` +
-    `Edit personal links\n` +
-    `Edit gender info\n` +
-    `Edit notifications for collabs\n\n` +
-    `✅ Confirm`;
+  const lang = profile.language || 'en';
+  const msgs = getMessages(lang);
+  return `${msgs.SUMMARY_TITLE}\n\n` +
+    `${msgs.SUMMARY_NAME} ${profile.name || msgs.SUMMARY_NOT_PROVIDED}\n` +
+    `${msgs.SUMMARY_LOCATION} ${profile.location || msgs.SUMMARY_NOT_PROVIDED}\n` +
+    `${msgs.SUMMARY_ROLES} ${profile.roles?.join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
+    `${msgs.SUMMARY_INTERESTS} ${profile.interests?.join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
+    `${msgs.SUMMARY_GOALS} ${profile.connectionGoals?.join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
+    `${msgs.SUMMARY_EVENTS} ${profile.events?.join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
+    `${msgs.SUMMARY_SOCIALS} ${profile.socials?.join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
+    `${msgs.SUMMARY_TELEGRAM} ${profile.telegramHandle ? '@' + profile.telegramHandle : msgs.SUMMARY_NOT_PROVIDED}\n` +
+    `${msgs.SUMMARY_GENDER} ${profile.gender || msgs.SUMMARY_NOT_PROVIDED}\n` +
+    `${msgs.SUMMARY_NOTIFICATIONS} ${profile.notifications || msgs.SUMMARY_NOT_PROVIDED}\n\n` +
+    `${msgs.EDIT_NAME}\n` +
+    `${msgs.EDIT_LOCATION}\n` +
+    `${msgs.EDIT_ROLES}\n` +
+    `${msgs.EDIT_INTERESTS}\n` +
+    `${msgs.EDIT_GOALS}\n` +
+    `${msgs.EDIT_EVENTS}\n` +
+    `${msgs.EDIT_SOCIALS}\n` +
+    `${msgs.EDIT_TELEGRAM}\n` +
+    `${msgs.EDIT_GENDER}\n` +
+    `${msgs.EDIT_NOTIFICATIONS}\n\n` +
+    `${msgs.CONFIRM}`;
 }
 
 function isRestartCommand(text: string): boolean {
@@ -129,13 +59,17 @@ export const continueOnboardingAction: Action = {
     const isEditing = profile.isEditing || false;
     console.log('[Onboarding Action] Has callback:', !!callback);
 
+    // Get user's language preference (default to English)
+    const userLang: LanguageCode = profile.language || 'en';
+    const msgs = getMessages(userLang);
+
     // Check for restart commands
     if (isRestartCommand(text)) {
       console.log('[Onboarding Action] Restart command detected');
       await updateOnboardingStep(runtime, message.userId, roomId, 'NONE', {});
       if (callback) {
         console.log('[Onboarding Action] Sending greeting via callback');
-        callback({ text: MESSAGES.GREETING });
+        callback({ text: msgs.GREETING });
       }
       return true;
     }
@@ -146,7 +80,7 @@ export const continueOnboardingAction: Action = {
       await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_NAME');
       if (callback) {
         console.log('[Onboarding Action] Calling callback with greeting');
-        callback({ text: MESSAGES.GREETING });
+        callback({ text: msgs.GREETING });
       }
       return true;
     }
@@ -160,10 +94,25 @@ export const continueOnboardingAction: Action = {
           const updatedProfile1 = await getUserProfile(runtime, message.userId);
           if (callback) callback({ text: generateSummaryText(updatedProfile1) });
         } else {
-          await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_LOCATION', { name: text });
-          console.log('[Onboarding Action] Calling callback with LOCATION message');
-          if (callback) callback({ text: MESSAGES.LOCATION });
+          await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_LANGUAGE', { name: text });
+          console.log('[Onboarding Action] Calling callback with LANGUAGE message');
+          if (callback) callback({ text: msgs.LANGUAGE });
         }
+        break;
+
+      case 'ASK_LANGUAGE':
+        console.log('[Onboarding Action] Processing ASK_LANGUAGE, user said:', text);
+        const langCode = parseLanguageCode(text);
+        if (!langCode) {
+          // Invalid language selection, ask again
+          if (callback) callback({ text: msgs.LANGUAGE });
+          break;
+        }
+        // Update language and move to location step
+        await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_LOCATION', { language: langCode });
+        // Get messages in the selected language
+        const selectedLangMsgs = getMessages(langCode);
+        if (callback) callback({ text: selectedLangMsgs.LOCATION });
         break;
 
       case 'ASK_LOCATION':
@@ -173,7 +122,7 @@ export const continueOnboardingAction: Action = {
           if (callback) callback({ text: generateSummaryText(updatedProfile2) });
         } else {
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_ROLE', { location: text });
-          if (callback) callback({ text: MESSAGES.ROLES });
+          if (callback) callback({ text: msgs.ROLES });
         }
         break;
 
@@ -196,7 +145,7 @@ export const continueOnboardingAction: Action = {
           if (callback) callback({ text: generateSummaryText(updatedProfile3) });
         } else {
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_INTERESTS', { roles }); 
-          if (callback) callback({ text: MESSAGES.INTERESTS });
+          if (callback) callback({ text: msgs.INTERESTS });
         }
         break;
 
@@ -218,7 +167,7 @@ export const continueOnboardingAction: Action = {
           if (callback) callback({ text: generateSummaryText(updatedProfile4) });
         } else {
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_CONNECTION_GOALS', { interests });
-          if (callback) callback({ text: MESSAGES.GOALS });
+          if (callback) callback({ text: msgs.GOALS });
         }
         break;
 
@@ -240,7 +189,7 @@ export const continueOnboardingAction: Action = {
           if (callback) callback({ text: generateSummaryText(updatedProfile5) });
         } else {
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_EVENTS', { connectionGoals });
-          if (callback) callback({ text: MESSAGES.EVENTS });
+          if (callback) callback({ text: msgs.EVENTS });
         }
         break;
 
@@ -251,7 +200,7 @@ export const continueOnboardingAction: Action = {
           if (callback) callback({ text: generateSummaryText(updatedProfile6) });
         } else {
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_SOCIALS', { events: [text] });
-          if (callback) callback({ text: MESSAGES.SOCIALS });
+          if (callback) callback({ text: msgs.SOCIALS });
         }
         break;
 
@@ -262,7 +211,7 @@ export const continueOnboardingAction: Action = {
           if (callback) callback({ text: generateSummaryText(updatedProfile7) });
         } else {
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_TELEGRAM_HANDLE', { socials: [text] });
-          if (callback) callback({ text: MESSAGES.TELEGRAM });
+          if (callback) callback({ text: msgs.TELEGRAM });
         }
         break;
 
@@ -277,7 +226,7 @@ export const continueOnboardingAction: Action = {
           if (callback) callback({ text: generateSummaryText(updatedProfile8) });
         } else {
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_GENDER', { telegramHandle: handleToSave });
-          if (callback) callback({ text: MESSAGES.GENDER });
+          if (callback) callback({ text: msgs.GENDER });
         }
         break;
 
@@ -288,7 +237,7 @@ export const continueOnboardingAction: Action = {
           if (callback) callback({ text: generateSummaryText(updatedProfile9) });
         } else {
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_NOTIFICATIONS', { gender: text });
-          if (callback) callback({ text: MESSAGES.NOTIFICATIONS });
+          if (callback) callback({ text: msgs.NOTIFICATIONS });
         }
         break;
 
@@ -301,29 +250,29 @@ export const continueOnboardingAction: Action = {
       case 'CONFIRMATION':
         if (text.toLowerCase().includes('confirm') || text.toLowerCase().includes('yes') || text.toLowerCase().includes('check')) {
           await updateOnboardingStep(runtime, message.userId, roomId, 'COMPLETED', { isConfirmed: true, isEditing: false, editingField: undefined });
-          if (callback) callback({ text: MESSAGES.COMPLETION });
+          if (callback) callback({ text: msgs.COMPLETION });
         } else if (text.toLowerCase().includes('edit')) {
           const lowerText = text.toLowerCase();
           let editStep: OnboardingStep | null = null;
           let editField: string | undefined = undefined;
           let editMessage: string = '';
           
-          if (lowerText.includes('name')) { editStep = 'ASK_NAME'; editField = 'name'; editMessage = "What's your preferred name?"; }
-          else if (lowerText.includes('location')) { editStep = 'ASK_LOCATION'; editField = 'location'; editMessage = MESSAGES.LOCATION; }
-          else if (lowerText.includes('professional') || lowerText.includes('role')) { editStep = 'ASK_ROLE'; editField = 'roles'; editMessage = MESSAGES.ROLES; }
-          else if (lowerText.includes('learning') || lowerText.includes('interest')) { editStep = 'ASK_INTERESTS'; editField = 'interests'; editMessage = MESSAGES.INTERESTS; }
-          else if (lowerText.includes('connection') || lowerText.includes('goal')) { editStep = 'ASK_CONNECTION_GOALS'; editField = 'connectionGoals'; editMessage = MESSAGES.GOALS; }
-          else if (lowerText.includes('conference') || lowerText.includes('event')) { editStep = 'ASK_EVENTS'; editField = 'events'; editMessage = MESSAGES.EVENTS; }
-          else if (lowerText.includes('personal') || lowerText.includes('link') || lowerText.includes('social')) { editStep = 'ASK_SOCIALS'; editField = 'socials'; editMessage = MESSAGES.SOCIALS; }
-          else if (lowerText.includes('telegram')) { editStep = 'ASK_TELEGRAM_HANDLE'; editField = 'telegramHandle'; editMessage = MESSAGES.TELEGRAM; }
-          else if (lowerText.includes('gender')) { editStep = 'ASK_GENDER'; editField = 'gender'; editMessage = MESSAGES.GENDER; }
-          else if (lowerText.includes('notification') || lowerText.includes('collab')) { editStep = 'ASK_NOTIFICATIONS'; editField = 'notifications'; editMessage = MESSAGES.NOTIFICATIONS; }
+          if (lowerText.includes('name')) { editStep = 'ASK_NAME'; editField = 'name'; editMessage = msgs.GREETING.split('\n').pop() || "What's your preferred name?"; }
+          else if (lowerText.includes('location')) { editStep = 'ASK_LOCATION'; editField = 'location'; editMessage = msgs.LOCATION; }
+          else if (lowerText.includes('professional') || lowerText.includes('role')) { editStep = 'ASK_ROLE'; editField = 'roles'; editMessage = msgs.ROLES; }
+          else if (lowerText.includes('learning') || lowerText.includes('interest')) { editStep = 'ASK_INTERESTS'; editField = 'interests'; editMessage = msgs.INTERESTS; }
+          else if (lowerText.includes('connection') || lowerText.includes('goal')) { editStep = 'ASK_CONNECTION_GOALS'; editField = 'connectionGoals'; editMessage = msgs.GOALS; }
+          else if (lowerText.includes('conference') || lowerText.includes('event')) { editStep = 'ASK_EVENTS'; editField = 'events'; editMessage = msgs.EVENTS; }
+          else if (lowerText.includes('personal') || lowerText.includes('link') || lowerText.includes('social')) { editStep = 'ASK_SOCIALS'; editField = 'socials'; editMessage = msgs.SOCIALS; }
+          else if (lowerText.includes('telegram')) { editStep = 'ASK_TELEGRAM_HANDLE'; editField = 'telegramHandle'; editMessage = msgs.TELEGRAM; }
+          else if (lowerText.includes('gender')) { editStep = 'ASK_GENDER'; editField = 'gender'; editMessage = msgs.GENDER; }
+          else if (lowerText.includes('notification') || lowerText.includes('collab')) { editStep = 'ASK_NOTIFICATIONS'; editField = 'notifications'; editMessage = msgs.NOTIFICATIONS; }
           
           if (editStep) {
             await updateOnboardingStep(runtime, message.userId, roomId, editStep, { isEditing: true, editingField: editField });
             if (callback) callback({ text: editMessage });
           } else {
-            if (callback) callback({ text: "What would you like to edit? (e.g., 'Edit name' or 'Edit location')" });
+            if (callback) callback({ text: msgs.SUMMARY_TITLE }); // Fallback message
           }
         }
         break;

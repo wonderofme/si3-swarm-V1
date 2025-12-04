@@ -14,9 +14,11 @@ export type OnboardingStep =
   | 'CONFIRMATION'
   | 'COMPLETED';
 
+import { LanguageCode } from './translations.js';
+
 export interface UserProfile {
   name?: string;
-  language?: string;
+  language?: LanguageCode;
   location?: string;
   roles?: string[];
   interests?: string[];
