@@ -21,7 +21,7 @@ export const onboardingProvider: Provider = {
         messageText.includes('begin again') ||
         messageText.includes('can we start') ||
         messageText.includes('start the onboarding')) {
-      return `[ONBOARDING INSTRUCTION: User requested restart. Use action CONTINUE_ONBOARDING with empty text \"\". Do NOT output any message text - the action callback sends the greeting.]`;
+      return `[CRITICAL ONBOARDING RESTART: User explicitly requested to restart onboarding. You MUST use action: CONTINUE_ONBOARDING. Output ONLY: {"text": "", "action": "CONTINUE_ONBOARDING"}. Do NOT generate any text response. The action handler will send the greeting message. This is MANDATORY - you must output the action in your JSON response.]`;
     }
     
     if (step === 'COMPLETED') {

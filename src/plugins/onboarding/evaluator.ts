@@ -10,6 +10,21 @@ export const onboardingEvaluator: Evaluator = {
   handler: async (runtime: IAgentRuntime, message: Memory, state?: State): Promise<any> => {
     const userId = message.userId;
     const step = await getOnboardingStep(runtime, userId);
+    const text = message.content.text?.toLowerCase() || '';
+    
+    // Check for restart commands - if detected, force onboarding step to NONE
+    if (text.includes('restart') || 
+        text.includes('pretend this is my first') ||
+        text.includes('start over') ||
+        text.includes('begin again') ||
+        text.includes('can we start') ||
+        text.includes('start the onboarding')) {
+      if (state) {
+        state.onboardingStep = 'NONE';
+        state.forceOnboardingAction = true; // Flag to force action
+      }
+      return 'NONE';
+    }
     
     if (step === 'NONE' || step === 'COMPLETED') {
       return null;
