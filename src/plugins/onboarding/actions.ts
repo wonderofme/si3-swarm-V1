@@ -47,18 +47,18 @@ export const continueOnboardingAction: Action = {
   
   validate: async (runtime: IAgentRuntime, message: Memory, state?: State) => {
     const step = await getOnboardingStep(runtime, message.userId);
-    const text = message.content.text?.toLowerCase() || '';
+    const text = (message.content.text || '').trim();
     
     // Always allow if restart command is detected (even if COMPLETED)
     if (isRestartCommand(text)) {
-      console.log('[Onboarding Action] Validate - restart command detected, allowing action');
+      console.log('[Onboarding Action] Validate - restart command detected:', text, '- allowing action');
       return true;
     }
     
     // Allow if not completed, or if user is editing
     const profile = await getUserProfile(runtime, message.userId);
     const isValid = step !== 'COMPLETED' || profile.isEditing === true;
-    console.log('[Onboarding Action] Validate - step:', step, 'isEditing:', profile.isEditing, 'isValid:', isValid);
+    console.log('[Onboarding Action] Validate - step:', step, 'isEditing:', profile.isEditing, 'isValid:', isValid, 'text:', text.substring(0, 50));
     return isValid;
   },
 
