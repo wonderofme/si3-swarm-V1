@@ -208,6 +208,10 @@ async function startAgents() {
   if (process.env.TELEGRAM_BOT_TOKEN) {
     console.log('Starting Telegram client for Kaia...');
     try {
+        // Setup restart handler before starting Telegram client
+        const { setupTelegramRestartHandler } = await import('./services/telegramRestartHandler.js');
+        await setupTelegramRestartHandler(kaiaRuntime);
+        
         await TelegramClientInterface.start(kaiaRuntime);
     } catch (error: any) {
         console.error('❌ Failed to start Telegram client:', error);
