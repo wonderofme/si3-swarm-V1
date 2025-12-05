@@ -14,13 +14,12 @@ async function safeCallback(
   if (!callback) return;
   
   try {
-    const result = await callback({ text });
+    await callback({ text });
     // Record that message was sent AFTER callback completes
     // The interceptor will handle blocking duplicates
     if (roomId) {
       recordMessageSent(roomId, text);
     }
-    return result;
   } catch (error) {
     console.error('[Onboarding Action] Callback error:', error);
   }
