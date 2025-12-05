@@ -46,12 +46,22 @@ export async function setupTelegramRestartHandler(runtime: IAgentRuntime) {
   } else {
     // Fallback: patch createMemory to at least log restart attempts
     const originalCreateMemory = runtime.messageManager.createMemory.bind(runtime.messageManager);
+    let isHandlingRestart = false; // Flag to prevent infinite loops
     
     runtime.messageManager.createMemory = async (memory: Memory) => {
-      if (memory.userId !== runtime.agentId && memory.content.text && isRestartCommand(memory.content.text)) {
+      // Only intercept user messages (not agent messages) and only if not already handling a restart
+      if (!isHandlingRestart && 
+          memory.userId !== runtime.agentId && 
+          memory.content.text && 
+          isRestartCommand(memory.content.text)) {
         console.log('[Telegram Restart Handler] Restart command detected in memory creation');
-        // Try to handle it
-        await interceptRestartCommand(runtime, memory);
+        isHandlingRestart = true; // Set flag to prevent recursion
+        try {
+          // Try to handle it
+          await interceptRestartCommand(runtime, memory);
+        } finally {
+          isHandlingRestart = false; // Reset flag
+        }
       }
       
       return await originalCreateMemory(memory);

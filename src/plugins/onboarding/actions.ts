@@ -86,14 +86,14 @@ export const continueOnboardingAction: Action = {
       };
       await runtime.cacheManager.set(`onboarding_${message.userId}`, freshState as any);
       
-      // Also create a memory log
+      // Also create a memory log (but don't include "restart" in text to avoid triggering interceptor)
       await runtime.messageManager.createMemory({
         id: undefined,
         userId: message.userId,
         agentId: runtime.agentId,
         roomId: roomId,
         content: {
-          text: 'Onboarding Reset: User requested restart',
+          text: 'Onboarding Reset: User requested to begin again',
           data: freshState,
           type: 'onboarding_state'
         }
