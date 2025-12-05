@@ -44,30 +44,11 @@ export async function setupTelegramRestartHandler(runtime: IAgentRuntime) {
     
     console.log('[Telegram Restart Handler] Patched processMessage');
   } else {
-    // Fallback: patch createMemory to at least log restart attempts
-    const originalCreateMemory = runtime.messageManager.createMemory.bind(runtime.messageManager);
-    let isHandlingRestart = false; // Flag to prevent infinite loops
-    
-    runtime.messageManager.createMemory = async (memory: Memory) => {
-      // Only intercept user messages (not agent messages) and only if not already handling a restart
-      if (!isHandlingRestart && 
-          memory.userId !== runtime.agentId && 
-          memory.content.text && 
-          isRestartCommand(memory.content.text)) {
-        console.log('[Telegram Restart Handler] Restart command detected in memory creation');
-        isHandlingRestart = true; // Set flag to prevent recursion
-        try {
-          // Try to handle it
-          await interceptRestartCommand(runtime, memory);
-        } finally {
-          isHandlingRestart = false; // Reset flag
-        }
-      }
-      
-      return await originalCreateMemory(memory);
-    };
-    
-    console.log('[Telegram Restart Handler] Patched createMemory (fallback)');
+    // Fallback: We can't patch processMessage, so we'll need to intercept at the Telegram client level
+    // For now, just log that we're using fallback mode
+    // The restart will be handled by the action's validate function and the LLM should call it
+    console.log('[Telegram Restart Handler] processMessage not available, using LLM-based restart handling');
+    console.log('[Telegram Restart Handler] Restart commands will be handled via action validation');
   }
   
   console.log('[Telegram Restart Handler] Restart interceptor installed');
