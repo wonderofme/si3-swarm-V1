@@ -118,40 +118,60 @@ export const continueOnboardingAction: Action = {
         if (profile.language) {
           // Both name and language exist, skip to location
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_LOCATION');
-          if (callback) callback({ text: msgs.LOCATION });
+          if (callback) {
+            await callback({ text: msgs.LOCATION });
+          } else {
+            // Fallback: send directly via Telegram if no callback
+            await sendTelegramMessage(runtime, roomId, msgs.LOCATION);
+          }
         } else {
           // Name exists but language doesn't, ask for language
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_LANGUAGE');
-          if (callback) callback({ text: msgs.LANGUAGE });
+          if (callback) {
+            await callback({ text: msgs.LANGUAGE });
+          } else {
+            await sendTelegramMessage(runtime, roomId, msgs.LANGUAGE);
+          }
         }
       } else {
         // No name, start with greeting
         await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_NAME');
+        console.log('[Onboarding Action] Calling callback with greeting');
+        console.log('[Onboarding Action] Greeting text:', msgs.GREETING.substring(0, 50) + '...');
+        
         if (callback) {
-          console.log('[Onboarding Action] Calling callback with greeting');
-          console.log('[Onboarding Action] Greeting text:', msgs.GREETING.substring(0, 50) + '...');
-          // Ensure callback creates memory that Telegram client will send
-          const callbackResult = await callback({ text: msgs.GREETING });
-          console.log('[Onboarding Action] Callback result:', callbackResult);
-          
-          // Also create memory directly to ensure Telegram client picks it up
-          if (roomId) {
-            try {
-              await runtime.messageManager.createMemory({
-                id: undefined,
-                userId: runtime.agentId,
-                agentId: runtime.agentId,
-                roomId: roomId,
-                content: {
-                  text: msgs.GREETING,
-                  source: 'telegram'
-                }
-              });
-              console.log('[Onboarding Action] Created memory for greeting message');
-            } catch (error) {
-              console.error('[Onboarding Action] Error creating memory:', error);
-            }
+          try {
+            const callbackResult = await callback({ text: msgs.GREETING });
+            console.log('[Onboarding Action] Callback result:', callbackResult);
+          } catch (error) {
+            console.error('[Onboarding Action] Callback error:', error);
           }
+        }
+        
+        // Always create memory directly to ensure Telegram client picks it up
+        if (roomId) {
+          try {
+            await runtime.messageManager.createMemory({
+              id: undefined,
+              userId: runtime.agentId,
+              agentId: runtime.agentId,
+              roomId: roomId,
+              content: {
+                text: msgs.GREETING,
+                source: 'telegram'
+              }
+            });
+            console.log('[Onboarding Action] Created memory for greeting message, roomId:', roomId);
+            
+            // Also send directly via Telegram as backup
+            await sendTelegramMessage(runtime, roomId, msgs.GREETING);
+          } catch (error) {
+            console.error('[Onboarding Action] Error creating memory:', error);
+            // Fallback: try direct Telegram send
+            await sendTelegramMessage(runtime, roomId, msgs.GREETING);
+          }
+        } else {
+          console.error('[Onboarding Action] No roomId available, cannot send message');
         }
       }
       return true;
