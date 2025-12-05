@@ -9,7 +9,7 @@ const sentMessagesCache = new Map<string, number>();
 const lastMessagePerRoom = new Map<string, number>();
 
 const DEDUP_WINDOW_MS = 5000; // 5 seconds for exact duplicates
-const BLOCK_WINDOW_MS = 3000; // 3 seconds to block ANY message after action callback
+const BLOCK_WINDOW_MS = 2000; // 2 seconds to block ANY message after action callback (reduced to allow faster responses)
 
 /**
  * Creates a simple hash of the message text for deduplication

@@ -212,6 +212,10 @@ async function startAgents() {
         const { setupTelegramRestartHandler } = await import('./services/telegramRestartHandler.js');
         await setupTelegramRestartHandler(kaiaRuntime);
         
+        // Setup message interceptor for deduplication
+        const { setupTelegramMessageInterceptor } = await import('./services/telegramMessageInterceptor.js');
+        await setupTelegramMessageInterceptor(kaiaRuntime);
+        
         await TelegramClientInterface.start(kaiaRuntime);
     } catch (error: any) {
         console.error('❌ Failed to start Telegram client:', error);
