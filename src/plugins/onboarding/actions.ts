@@ -275,12 +275,12 @@ export const continueOnboardingAction: Action = {
         if (isEditing) {
           await updateOnboardingStep(runtime, message.userId, roomId, 'CONFIRMATION', { events: [text], isEditing: false, editingField: undefined });
           const updatedProfile6 = await getUserProfile(runtime, message.userId);
-          if (callback) callback({ text: generateSummaryText(updatedProfile6) });
+          await safeCallback(callback, runtime, roomId, generateSummaryText(updatedProfile6));
         } else {
           // Handle "next" to skip optional question
           const eventsValue = text.toLowerCase().trim() === 'next' ? [] : [text];
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_SOCIALS', { events: eventsValue });
-          if (callback) callback({ text: msgs.SOCIALS });
+          await safeCallback(callback, runtime, roomId, msgs.SOCIALS);
         }
         break;
 
@@ -288,12 +288,12 @@ export const continueOnboardingAction: Action = {
         if (isEditing) {
           await updateOnboardingStep(runtime, message.userId, roomId, 'CONFIRMATION', { socials: [text], isEditing: false, editingField: undefined });
           const updatedProfile7 = await getUserProfile(runtime, message.userId);
-          if (callback) callback({ text: generateSummaryText(updatedProfile7) });
+          await safeCallback(callback, runtime, roomId, generateSummaryText(updatedProfile7));
         } else {
           // Handle "next" to skip optional question
           const socialsValue = text.toLowerCase().trim() === 'next' ? [] : [text];
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_TELEGRAM_HANDLE', { socials: socialsValue });
-          if (callback) callback({ text: msgs.TELEGRAM });
+          await safeCallback(callback, runtime, roomId, msgs.TELEGRAM);
         }
         break;
 
@@ -316,12 +316,12 @@ export const continueOnboardingAction: Action = {
         if (isEditing) {
           await updateOnboardingStep(runtime, message.userId, roomId, 'CONFIRMATION', { gender: text, isEditing: false, editingField: undefined });
           const updatedProfile9 = await getUserProfile(runtime, message.userId);
-          if (callback) callback({ text: generateSummaryText(updatedProfile9) });
+          await safeCallback(callback, runtime, roomId, generateSummaryText(updatedProfile9));
         } else {
           // Handle "next" to skip optional question
           const genderValue = text.toLowerCase().trim() === 'next' ? undefined : text;
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_NOTIFICATIONS', { gender: genderValue });
-          if (callback) callback({ text: msgs.NOTIFICATIONS });
+          await safeCallback(callback, runtime, roomId, msgs.NOTIFICATIONS);
         }
         break;
 
