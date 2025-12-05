@@ -71,6 +71,8 @@ export const continueOnboardingAction: Action = {
     const profile = await getUserProfile(runtime, message.userId);
     const isEditing = profile.isEditing || false;
     console.log('[Onboarding Action] Has callback:', !!callback);
+    console.log('[Onboarding Action] roomId:', roomId);
+    console.log('[Onboarding Action] userId:', message.userId);
 
     // Get user's language preference (default to English)
     const userLang: LanguageCode = profile.language || 'en';
@@ -127,7 +129,29 @@ export const continueOnboardingAction: Action = {
         await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_NAME');
         if (callback) {
           console.log('[Onboarding Action] Calling callback with greeting');
-          callback({ text: msgs.GREETING });
+          console.log('[Onboarding Action] Greeting text:', msgs.GREETING.substring(0, 50) + '...');
+          // Ensure callback creates memory that Telegram client will send
+          const callbackResult = await callback({ text: msgs.GREETING });
+          console.log('[Onboarding Action] Callback result:', callbackResult);
+          
+          // Also create memory directly to ensure Telegram client picks it up
+          if (roomId) {
+            try {
+              await runtime.messageManager.createMemory({
+                id: undefined,
+                userId: runtime.agentId,
+                agentId: runtime.agentId,
+                roomId: roomId,
+                content: {
+                  text: msgs.GREETING,
+                  source: 'telegram'
+                }
+              });
+              console.log('[Onboarding Action] Created memory for greeting message');
+            } catch (error) {
+              console.error('[Onboarding Action] Error creating memory:', error);
+            }
+          }
         }
       }
       return true;
