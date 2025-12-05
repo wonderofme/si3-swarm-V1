@@ -40,8 +40,38 @@ export function recordActionMessageSent(roomId: string | undefined): void {
 }
 
 /**
+ * Records that a message was actually sent (called AFTER message is sent)
+ */
+export function recordMessageSent(roomId: string | undefined, text: string): void {
+  if (!roomId) return;
+  const now = Date.now();
+  
+  // Record exact duplicate
+  const messageHash = hashMessage(text);
+  const cacheKey = `${roomId}:${messageHash}`;
+  sentMessagesCache.set(cacheKey, now);
+  
+  // Record action message time
+  lastMessagePerRoom.set(roomId, now);
+  
+  // Clean up old entries
+  const cleanupThreshold = now - (DEDUP_WINDOW_MS * 2);
+  for (const [key, timestamp] of sentMessagesCache.entries()) {
+    if (timestamp < cleanupThreshold) {
+      sentMessagesCache.delete(key);
+    }
+  }
+  for (const [key, timestamp] of lastMessagePerRoom.entries()) {
+    if (timestamp < cleanupThreshold) {
+      lastMessagePerRoom.delete(key);
+    }
+  }
+}
+
+/**
  * Checks if a message should be blocked (either exact duplicate or too soon after action)
  * Returns true if message should be skipped
+ * NOTE: This does NOT record the message - call recordMessageSent() AFTER sending
  */
 export function isDuplicateMessage(
   runtime: IAgentRuntime,
@@ -67,17 +97,6 @@ export function isDuplicateMessage(
   if (lastSent && (now - lastSent) < DEDUP_WINDOW_MS) {
     console.log('[Message Dedup] Exact duplicate detected, skipping:', text.substring(0, 50));
     return true; // Duplicate detected
-  }
-  
-  // Record this message as sent (for exact duplicate detection)
-  sentMessagesCache.set(cacheKey, now);
-  
-  // Clean up old entries (older than 10 seconds)
-  const cleanupThreshold = now - (DEDUP_WINDOW_MS * 2);
-  for (const [key, timestamp] of sentMessagesCache.entries()) {
-    if (timestamp < cleanupThreshold) {
-      sentMessagesCache.delete(key);
-    }
   }
   
   return false; // Not a duplicate

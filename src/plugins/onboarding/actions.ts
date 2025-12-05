@@ -2,9 +2,9 @@ import { Action, IAgentRuntime, Memory, State, HandlerCallback } from '@elizaos/
 import { getOnboardingStep, updateOnboardingStep, getUserProfile } from './utils.js';
 import { OnboardingStep, UserProfile } from './types.js';
 import { getMessages, parseLanguageCode, LanguageCode } from './translations.js';
-import { isDuplicateMessage, recordActionMessageSent } from '../../services/messageDeduplication.js';
+import { recordMessageSent } from '../../services/messageDeduplication.js';
 
-// Helper to safely call callback with deduplication
+// Helper to safely call callback - deduplication is handled at memory creation level
 async function safeCallback(
   callback: HandlerCallback | undefined,
   runtime: IAgentRuntime,
@@ -13,17 +13,14 @@ async function safeCallback(
 ): Promise<void> {
   if (!callback) return;
   
-  if (isDuplicateMessage(runtime, roomId, text)) {
-    console.log('[Onboarding Action] Duplicate message detected, skipping:', text.substring(0, 50));
-    return;
-  }
-  
   try {
-    await callback({ text });
-    // Record that action callback was used - this blocks LLM responses for a short period
+    const result = await callback({ text });
+    // Record that message was sent AFTER callback completes
+    // The interceptor will handle blocking duplicates
     if (roomId) {
-      recordActionMessageSent(roomId);
+      recordMessageSent(roomId, text);
     }
+    return result;
   } catch (error) {
     console.error('[Onboarding Action] Callback error:', error);
   }
