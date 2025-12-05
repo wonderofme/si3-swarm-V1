@@ -9,7 +9,7 @@ const sentMessagesCache = new Map<string, number>();
 const lastMessagePerRoom = new Map<string, number>();
 
 const DEDUP_WINDOW_MS = 5000; // 5 seconds for exact duplicates
-const BLOCK_WINDOW_MS = 2000; // 2 seconds to block ANY message after action callback (reduced to allow faster responses)
+const BLOCK_WINDOW_MS = 1500; // 1.5 seconds to block ANY message after a message was sent (prevents LLM duplicates)
 
 /**
  * Creates a simple hash of the message text for deduplication
@@ -82,10 +82,10 @@ export function isDuplicateMessage(
   
   const now = Date.now();
   
-  // First check: Block ANY message if action callback was used recently
-  const lastActionTime = lastMessagePerRoom.get(roomId);
-  if (lastActionTime && (now - lastActionTime) < BLOCK_WINDOW_MS) {
-    console.log('[Message Dedup] Blocking message - too soon after action callback:', text.substring(0, 50));
+  // First check: Block ANY message if a message was sent recently (prevents LLM from sending duplicate after action callback)
+  const lastMessageTime = lastMessagePerRoom.get(roomId);
+  if (lastMessageTime && (now - lastMessageTime) < BLOCK_WINDOW_MS) {
+    console.log('[Message Dedup] Blocking message - too soon after previous message:', text.substring(0, 50));
     return true; // Block this message
   }
   

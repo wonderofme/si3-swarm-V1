@@ -27,13 +27,19 @@ export async function setupTelegramMessageInterceptor(runtime: IAgentRuntime) {
         });
       }
       
-      // Not a duplicate - record it and create normally
-      // Record AFTER we've confirmed it's not a duplicate, but BEFORE creating memory
-      // This ensures the next duplicate check will catch it
+      // Not a duplicate - create memory normally
+      // We'll record it AFTER the memory is created (in a then() callback)
+      // This ensures we only record messages that are actually created
+      const createdMemory = await originalCreateMemory(memory);
+      
+      // Record AFTER memory is created (but message might not be sent yet by Telegram)
+      // This is the best we can do without hooking into Telegram client
       recordMessageSent(roomId, text);
+      
+      return createdMemory;
     }
     
-    // Normal memory creation
+    // Normal memory creation (not an agent message or no text)
     return await originalCreateMemory(memory);
   };
   

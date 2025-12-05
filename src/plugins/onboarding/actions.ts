@@ -15,11 +15,8 @@ async function safeCallback(
   
   try {
     await callback({ text });
-    // Record that message was sent AFTER callback completes
-    // The interceptor will handle blocking duplicates
-    if (roomId) {
-      recordMessageSent(roomId, text);
-    }
+    // Don't record here - the interceptor handles recording when memory is created
+    // This prevents double-recording
   } catch (error) {
     console.error('[Onboarding Action] Callback error:', error);
   }
