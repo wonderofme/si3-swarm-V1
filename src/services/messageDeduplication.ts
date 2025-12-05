@@ -1,9 +1,15 @@
 import { IAgentRuntime } from '@elizaos/core';
 
 // In-memory cache to track recently sent messages
-// Key: `${roomId}:${messageHash}`, Value: timestamp
+// Key: `${roomId}:${messageHash}`, Value: timestamp (for exact duplicates)
 const sentMessagesCache = new Map<string, number>();
-const DEDUP_WINDOW_MS = 5000; // 5 seconds
+
+// Track last message sent time per roomId (for blocking ALL messages after action)
+// Key: `roomId`, Value: timestamp
+const lastMessagePerRoom = new Map<string, number>();
+
+const DEDUP_WINDOW_MS = 5000; // 5 seconds for exact duplicates
+const BLOCK_WINDOW_MS = 3000; // 3 seconds to block ANY message after action callback
 
 /**
  * Creates a simple hash of the message text for deduplication
@@ -15,8 +21,27 @@ function hashMessage(text: string): string {
 }
 
 /**
- * Checks if a message with the same content was recently sent to the same room
- * Returns true if message should be skipped (duplicate detected)
+ * Records that a message was sent via action callback
+ * This blocks ALL subsequent messages to the same room for a short period
+ */
+export function recordActionMessageSent(roomId: string | undefined): void {
+  if (!roomId) return;
+  const now = Date.now();
+  lastMessagePerRoom.set(roomId, now);
+  console.log('[Message Dedup] Recorded action message sent for roomId:', roomId);
+  
+  // Clean up old entries
+  const cleanupThreshold = now - (BLOCK_WINDOW_MS * 2);
+  for (const [key, timestamp] of lastMessagePerRoom.entries()) {
+    if (timestamp < cleanupThreshold) {
+      lastMessagePerRoom.delete(key);
+    }
+  }
+}
+
+/**
+ * Checks if a message should be blocked (either exact duplicate or too soon after action)
+ * Returns true if message should be skipped
  */
 export function isDuplicateMessage(
   runtime: IAgentRuntime,
@@ -25,18 +50,26 @@ export function isDuplicateMessage(
 ): boolean {
   if (!roomId) return false;
   
-  const messageHash = hashMessage(text);
-  const cacheKey = `${roomId}:${messageHash}`;
   const now = Date.now();
   
-  // Check if we sent this message recently
+  // First check: Block ANY message if action callback was used recently
+  const lastActionTime = lastMessagePerRoom.get(roomId);
+  if (lastActionTime && (now - lastActionTime) < BLOCK_WINDOW_MS) {
+    console.log('[Message Dedup] Blocking message - too soon after action callback:', text.substring(0, 50));
+    return true; // Block this message
+  }
+  
+  // Second check: Exact duplicate detection
+  const messageHash = hashMessage(text);
+  const cacheKey = `${roomId}:${messageHash}`;
+  
   const lastSent = sentMessagesCache.get(cacheKey);
   if (lastSent && (now - lastSent) < DEDUP_WINDOW_MS) {
-    console.log('[Message Dedup] Duplicate message detected, skipping:', text.substring(0, 50));
+    console.log('[Message Dedup] Exact duplicate detected, skipping:', text.substring(0, 50));
     return true; // Duplicate detected
   }
   
-  // Record this message as sent
+  // Record this message as sent (for exact duplicate detection)
   sentMessagesCache.set(cacheKey, now);
   
   // Clean up old entries (older than 10 seconds)

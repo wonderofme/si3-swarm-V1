@@ -2,7 +2,7 @@ import { Action, IAgentRuntime, Memory, State, HandlerCallback } from '@elizaos/
 import { getOnboardingStep, updateOnboardingStep, getUserProfile } from './utils.js';
 import { OnboardingStep, UserProfile } from './types.js';
 import { getMessages, parseLanguageCode, LanguageCode } from './translations.js';
-import { isDuplicateMessage } from '../../services/messageDeduplication.js';
+import { isDuplicateMessage, recordActionMessageSent } from '../../services/messageDeduplication.js';
 
 // Helper to safely call callback with deduplication
 async function safeCallback(
@@ -20,6 +20,10 @@ async function safeCallback(
   
   try {
     await callback({ text });
+    // Record that action callback was used - this blocks LLM responses for a short period
+    if (roomId) {
+      recordActionMessageSent(roomId);
+    }
   } catch (error) {
     console.error('[Onboarding Action] Callback error:', error);
   }
