@@ -3,6 +3,23 @@ import { getOnboardingStep, updateOnboardingStep, getUserProfile } from './utils
 import { OnboardingStep, UserProfile } from './types.js';
 import { getMessages, parseLanguageCode, LanguageCode } from './translations.js';
 
+// Helper function to send Telegram messages directly
+async function sendTelegramMessage(runtime: IAgentRuntime, roomId: string | undefined, text: string): Promise<void> {
+  if (!roomId || !process.env.TELEGRAM_BOT_TOKEN) {
+    console.log('[Onboarding Action] Cannot send Telegram message - missing roomId or token');
+    return;
+  }
+  
+  try {
+    const Telegraf = (await import('telegraf')).Telegraf;
+    const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
+    await bot.telegram.sendMessage(roomId, text);
+    console.log('[Onboarding Action] Sent message directly via Telegram, roomId:', roomId);
+  } catch (error) {
+    console.error('[Onboarding Action] Error sending Telegram message:', error);
+  }
+}
+
 function generateSummaryText(profile: UserProfile): string {
   const lang = profile.language || 'en';
   const msgs = getMessages(lang);
