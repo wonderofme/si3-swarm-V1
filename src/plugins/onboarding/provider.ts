@@ -14,11 +14,13 @@ export const onboardingProvider: Provider = {
       const userLang: LanguageCode = profile.language || 'en';
       const msgs = getMessages(userLang);
     
-    // Check for restart commands
+    // Check for restart commands - handle BEFORE checking COMPLETED status
     if (messageText.includes('restart') || 
         messageText.includes('pretend this is my first') ||
         messageText.includes('start over') ||
-        messageText.includes('begin again')) {
+        messageText.includes('begin again') ||
+        messageText.includes('can we start') ||
+        messageText.includes('start the onboarding')) {
       return `[ONBOARDING INSTRUCTION: User requested restart. Use action CONTINUE_ONBOARDING with empty text \"\". Do NOT output any message text - the action callback sends the greeting.]`;
     }
     

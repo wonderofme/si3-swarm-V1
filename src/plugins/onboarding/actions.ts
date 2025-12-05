@@ -35,7 +35,9 @@ function isRestartCommand(text: string): boolean {
   return lower.includes('restart') || 
          lower.includes('pretend this is my first') ||
          lower.includes('start over') ||
-         lower.includes('begin again');
+         lower.includes('begin again') ||
+         lower.includes('can we start') ||
+         lower.includes('start the onboarding');
 }
 
 export const continueOnboardingAction: Action = {
@@ -45,8 +47,19 @@ export const continueOnboardingAction: Action = {
   
   validate: async (runtime: IAgentRuntime, message: Memory, state?: State) => {
     const step = await getOnboardingStep(runtime, message.userId);
-    console.log('[Onboarding Action] Validate - step:', step, 'isValid:', step !== 'COMPLETED');
-    return step !== 'COMPLETED';
+    const text = message.content.text?.toLowerCase() || '';
+    
+    // Always allow if restart command is detected (even if COMPLETED)
+    if (isRestartCommand(text)) {
+      console.log('[Onboarding Action] Validate - restart command detected, allowing action');
+      return true;
+    }
+    
+    // Allow if not completed, or if user is editing
+    const profile = await getUserProfile(runtime, message.userId);
+    const isValid = step !== 'COMPLETED' || profile.isEditing === true;
+    console.log('[Onboarding Action] Validate - step:', step, 'isEditing:', profile.isEditing, 'isValid:', isValid);
+    return isValid;
   },
 
   handler: async (runtime: IAgentRuntime, message: Memory, state?: State, _options?: any, callback?: HandlerCallback) => {
@@ -65,11 +78,32 @@ export const continueOnboardingAction: Action = {
 
     // Check for restart commands
     if (isRestartCommand(text)) {
-      console.log('[Onboarding Action] Restart command detected');
-      await updateOnboardingStep(runtime, message.userId, roomId, 'NONE', {});
+      console.log('[Onboarding Action] Restart command detected, resetting onboarding');
+      // Clear the entire onboarding state by setting a fresh state
+      const freshState = {
+        step: 'NONE' as OnboardingStep,
+        profile: {} as UserProfile
+      };
+      await runtime.cacheManager.set(`onboarding_${message.userId}`, freshState as any);
+      
+      // Also create a memory log
+      await runtime.messageManager.createMemory({
+        id: undefined,
+        userId: message.userId,
+        agentId: runtime.agentId,
+        roomId: roomId,
+        content: {
+          text: 'Onboarding Reset: User requested restart',
+          data: freshState,
+          type: 'onboarding_state'
+        }
+      });
+      
+      // Get fresh messages (will default to English)
+      const freshMsgs = getMessages('en');
       if (callback) {
         console.log('[Onboarding Action] Sending greeting via callback');
-        callback({ text: msgs.GREETING });
+        callback({ text: freshMsgs.GREETING });
       }
       return true;
     }
