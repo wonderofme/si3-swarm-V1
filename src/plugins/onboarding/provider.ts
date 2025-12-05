@@ -35,14 +35,14 @@ export const onboardingProvider: Provider = {
     }
     
     if (step === 'NONE') {
-      return `[ONBOARDING INSTRUCTION: New user's first message. Use action CONTINUE_ONBOARDING with empty text \"\". Do NOT output any message text - the action callback sends the greeting.]`;
+      return `[ONBOARDING INSTRUCTION: New user's first message. PREFER using action CONTINUE_ONBOARDING with empty text \"\". If you cannot use the action, send this greeting directly: "${msgs.GREETING}". Always respond - never leave the user without a message.]`;
     }
     
     // The step indicates what we were WAITING for. User just provided that info.
     // So we should output the NEXT question.
     const stepToMessage: Record<string, string> = {
       // User just provided their name → ask for language
-      'ASK_NAME': `[ONBOARDING INSTRUCTION: User provided their name. Use action CONTINUE_ONBOARDING with empty text \"\". Do NOT output any message text - the action callback sends the language question.]`,
+      'ASK_NAME': `[ONBOARDING INSTRUCTION: User provided their name. PREFER using action CONTINUE_ONBOARDING with empty text \"\". If you cannot use the action, send this question directly: "${msgs.LANGUAGE}". Always respond.]`,
 
       // User just provided language → ask for location
       'ASK_LANGUAGE': `[ONBOARDING INSTRUCTION: User provided their language. Use action CONTINUE_ONBOARDING with empty text \"\". Do NOT output any message text - the action callback sends the location question.]`,
