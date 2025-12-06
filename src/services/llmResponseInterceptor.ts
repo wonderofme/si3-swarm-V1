@@ -372,6 +372,7 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
       const lastAgentMessageTime = lastAgentMessageTimestamps.get(memory.roomId);
       if (lastAgentMessageTime && memory.content.text && memory.content.text.trim()) {
         const elapsed = Date.now() - lastAgentMessageTime;
+        console.log(`[LLM Response Interceptor] Checking rapid consecutive message - elapsed: ${elapsed}ms, window: ${AGENT_MESSAGE_BLOCK_WINDOW_MS}ms`);
         if (elapsed < AGENT_MESSAGE_BLOCK_WINDOW_MS) {
           console.log(`[LLM Response Interceptor] 🚫 BLOCKING agent message - another agent message was sent ${elapsed}ms ago (window: ${AGENT_MESSAGE_BLOCK_WINDOW_MS}ms), preventing duplicate`);
           console.log('[LLM Response Interceptor] Blocked message text:', messageText);
@@ -383,7 +384,11 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
               text: '' // Empty text prevents sending
             }
           });
+        } else {
+          console.log(`[LLM Response Interceptor] ✅ Allowing agent message - elapsed time (${elapsed}ms) is outside block window (${AGENT_MESSAGE_BLOCK_WINDOW_MS}ms)`);
         }
+      } else if (!lastAgentMessageTime) {
+        console.log(`[LLM Response Interceptor] No previous agent message timestamp found for roomId: ${memory.roomId}`);
       }
       
       // If we get here, the message is allowed - record the timestamp for future blocking
