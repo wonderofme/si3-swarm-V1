@@ -5,9 +5,11 @@ import { checkActionExecutedRecently } from '../../services/llmResponseIntercept
 
 export const onboardingProvider: Provider = {
   get: async (runtime: IAgentRuntime, message: Memory, state?: State): Promise<string | null> => {
+    console.log(`[Onboarding Provider] Provider called - userId: ${message.userId}, roomId: ${message.roomId}, text: ${message.content.text?.substring(0, 50) || '(empty)'}`);
     try {
       const userId = message.userId;
       const step = await getOnboardingStep(runtime, userId);
+      console.log(`[Onboarding Provider] Current step: ${step}`);
       const rawProfile = await getUserProfile(runtime, userId);
       // Ensure profile is always an object with safe defaults
       const profile = rawProfile || {};
