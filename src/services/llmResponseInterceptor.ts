@@ -29,6 +29,12 @@ function hasAction(response: any): boolean {
 // Store the last user message per room to check for restart commands
 const lastUserMessagePerRoom = new Map<string, Memory>();
 
+// Store pending restart commands with timestamps for timeout-based execution
+const pendingRestartCommands = new Map<string, { message: Memory; timestamp: number }>();
+
+// Timeout in milliseconds - if no response after this, force execute action
+const RESTART_TIMEOUT_MS = 3000; // 3 seconds
+
 /**
  * Patches the runtime to intercept LLM responses and force action execution
  * for restart commands if the LLM didn't use the action.
@@ -45,11 +51,65 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
     if (memory.userId !== runtime.agentId && memory.roomId) {
       console.log('[LLM Response Interceptor] Tracking user message:', memory.content.text?.substring(0, 50), 'roomId:', memory.roomId);
       lastUserMessagePerRoom.set(memory.roomId, memory);
+      
+      // If this is a restart command, set up a timeout to force execute if no response
+      const userText = memory.content.text || '';
+      if (isRestartCommand(userText)) {
+        console.log('[LLM Response Interceptor] Restart command detected, setting up timeout fallback');
+        pendingRestartCommands.set(memory.roomId, {
+          message: memory,
+          timestamp: Date.now()
+        });
+        
+        // Set timeout to force execute action if no response
+        setTimeout(async () => {
+          const pending = pendingRestartCommands.get(memory.roomId);
+          if (pending) {
+            console.log('[LLM Response Interceptor] Timeout reached, no response received, forcing action execution');
+            pendingRestartCommands.delete(memory.roomId);
+            
+            // Force execute the action
+            const callback = async (response: { text: string }): Promise<any[]> => {
+              const greetingMemory = await originalCreateMemory({
+                id: undefined,
+                userId: runtime.agentId,
+                agentId: runtime.agentId,
+                roomId: memory.roomId,
+                content: {
+                  text: response.text,
+                  source: 'telegram'
+                }
+              });
+              return Array.isArray(greetingMemory) ? greetingMemory : [greetingMemory];
+            };
+            
+            try {
+              await continueOnboardingAction.handler(
+                runtime,
+                memory,
+                undefined,
+                undefined,
+                callback
+              );
+              console.log('[LLM Response Interceptor] Timeout-based action execution completed');
+            } catch (error) {
+              console.error('[LLM Response Interceptor] Error in timeout-based action execution:', error);
+            }
+          }
+        }, RESTART_TIMEOUT_MS);
+      }
     }
     
     // For agent messages, check if this is after a restart command
     if (memory.userId === runtime.agentId && memory.roomId) {
       console.log('[LLM Response Interceptor] Agent message detected, roomId:', memory.roomId, 'text:', memory.content.text?.substring(0, 50));
+      
+      // Clear pending restart command since we got a response
+      if (pendingRestartCommands.has(memory.roomId)) {
+        console.log('[LLM Response Interceptor] Response received, clearing pending restart timeout');
+        pendingRestartCommands.delete(memory.roomId);
+      }
+      
       const lastUserMessage = lastUserMessagePerRoom.get(memory.roomId);
       
       if (lastUserMessage) {
