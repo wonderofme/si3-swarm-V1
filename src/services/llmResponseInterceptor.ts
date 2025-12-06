@@ -3,64 +3,40 @@ import { continueOnboardingAction } from '../plugins/onboarding/actions.js';
 import { getMessages } from '../plugins/onboarding/translations.js';
 
 /**
- * Gets the Telegram chat ID from the room ID by checking the user's message memory
- * When ElizaOS receives a Telegram message, the roomId in the memory might be the actual chat ID
- * or we need to find it from the original message
+ * Gets the Telegram chat ID from the room ID
+ * First checks the in-memory mapping, then tries database lookup
  */
 async function getTelegramChatIdFromUserMessage(runtime: IAgentRuntime, userMessage: Memory): Promise<string | null> {
   try {
+    // First, check if we have it in our in-memory mapping
+    if (roomIdToTelegramChatId.has(userMessage.roomId)) {
+      const chatId = roomIdToTelegramChatId.get(userMessage.roomId);
+      console.log('[LLM Response Interceptor] Found Telegram chat ID in cache:', chatId);
+      return chatId || null;
+    }
+    
     // The userMessage.roomId might already be the Telegram chat ID if it came from Telegram
     // But if it's a UUID, we need to find the actual chat ID
     
     // Check if roomId looks like a Telegram chat ID (numeric string, no hyphens)
     if (userMessage.roomId && !userMessage.roomId.includes('-') && /^\d+$/.test(userMessage.roomId)) {
+      // Store it for future use
+      roomIdToTelegramChatId.set(userMessage.roomId, userMessage.roomId);
       return userMessage.roomId;
     }
     
     // If it's a UUID, try to find the Telegram chat ID from the database
-    // Look for memories from this room that came from Telegram
+    // Look for the most recent user message from this room that has a numeric roomId
     const adapter = runtime.databaseAdapter as any;
     
     // Try camelCase first (roomId), fallback to snake_case (room_id)
-    // Cast UUID to text before using regex operator
-    let result;
-    try {
-      result = await adapter.query(
-        `SELECT "roomId" FROM memories 
-         WHERE "roomId"::text = $1 
-         AND "userId" != $2 
-         AND content->>'source' = 'telegram'
-         AND "roomId"::text !~ '-'
-         ORDER BY "createdAt" DESC 
-         LIMIT 1`,
-        [userMessage.roomId, runtime.agentId]
-      );
-    } catch (error: any) {
-      // Fallback to snake_case if camelCase doesn't work
-      if (error.message?.includes('roomId') || error.message?.includes('userId')) {
-        result = await adapter.query(
-          `SELECT room_id FROM memories 
-           WHERE room_id::text = $1 
-           AND user_id != $2 
-           AND content->>'source' = 'telegram'
-           AND room_id::text !~ '-'
-           ORDER BY created_at DESC 
-           LIMIT 1`,
-          [userMessage.roomId, runtime.agentId]
-        );
-      } else {
-        throw error;
-      }
-    }
+    // We're looking for a different roomId (numeric) that corresponds to this UUID room
+    // Actually, this is tricky - we need to find messages where the user sent from the same Telegram chat
+    // But the roomId in the database is the UUID. We need a different approach.
     
-    if (result.rows && result.rows.length > 0) {
-      // Try camelCase first, then snake_case
-      const foundRoomId = result.rows[0].roomId || result.rows[0].room_id;
-      // Check if it's numeric (Telegram chat ID)
-      if (foundRoomId && /^\d+$/.test(foundRoomId)) {
-        return foundRoomId;
-      }
-    }
+    // Instead, let's look for the user's most recent message and see if we can get the chat ID from there
+    // Actually, the best approach is to look for agent messages in this room that were sent to Telegram
+    // and see if we can find the chat ID from the message metadata or from the Telegram client
     
     return null;
   } catch (error) {
@@ -102,6 +78,10 @@ const pendingRestartCommands = new Map<string, { message: Memory; timestamp: num
 // Track messages created by timeout callback to prevent re-processing
 const timeoutCreatedMessages = new Set<string>();
 
+// Store mapping of roomId (UUID) to Telegram chat ID
+// When we receive a Telegram message, we store the chat ID from the message metadata
+const roomIdToTelegramChatId = new Map<string, string>();
+
 // Timeout in milliseconds - if no response after this, force execute action
 const RESTART_TIMEOUT_MS = 3000; // 3 seconds
 
@@ -121,6 +101,28 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
     if (memory.userId !== runtime.agentId && memory.roomId) {
       console.log('[LLM Response Interceptor] Tracking user message:', memory.content.text?.substring(0, 50), 'roomId:', memory.roomId);
       lastUserMessagePerRoom.set(memory.roomId, memory);
+      
+      // If this is a Telegram message, try to extract the Telegram chat ID
+      // The roomId might be the chat ID if it's numeric, or we might need to get it from metadata
+      if (memory.content.source === 'telegram') {
+        // Check if roomId is numeric (Telegram chat ID)
+        if (memory.roomId && /^\d+$/.test(memory.roomId)) {
+          // roomId is already the Telegram chat ID
+          roomIdToTelegramChatId.set(memory.roomId, memory.roomId);
+          console.log('[LLM Response Interceptor] Stored Telegram chat ID:', memory.roomId);
+        } else {
+          // roomId is a UUID, check if we can get chat ID from metadata or other sources
+          // For now, we'll try to find it from the message structure
+          // ElizaOS might store it in metadata or we might need to query it differently
+          const chatId = (memory.content.metadata as any)?.chatId || 
+                        (memory.content.metadata as any)?.telegramChatId ||
+                        (memory as any).chatId;
+          if (chatId) {
+            roomIdToTelegramChatId.set(memory.roomId, chatId);
+            console.log('[LLM Response Interceptor] Stored Telegram chat ID from metadata:', chatId);
+          }
+        }
+      }
       
       // If this is a restart command, set up a timeout to force execute if no response
       const userText = memory.content.text || '';
