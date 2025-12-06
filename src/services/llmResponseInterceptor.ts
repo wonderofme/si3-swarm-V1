@@ -101,6 +101,12 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
     // Log ALL memory creation to debug why agent messages aren't being created
     console.log('[LLM Response Interceptor] Memory created - userId:', memory.userId, 'agentId:', runtime.agentId, 'isAgent:', memory.userId === runtime.agentId, 'text:', memory.content.text?.substring(0, 50), 'roomId:', memory.roomId);
     
+    // Skip processing internal onboarding update messages - they shouldn't trigger LLM responses
+    if (memory.content.text?.startsWith('Onboarding Update:') || (memory.content.metadata as any)?.isInternalUpdate === true) {
+      console.log('[LLM Response Interceptor] Skipping internal onboarding update message');
+      return await originalCreateMemory(memory);
+    }
+    
     // Track user messages (not agent messages) per room
     if (memory.userId !== runtime.agentId && memory.roomId) {
       console.log('[LLM Response Interceptor] Tracking user message:', memory.content.text?.substring(0, 50), 'roomId:', memory.roomId);

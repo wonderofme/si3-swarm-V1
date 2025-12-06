@@ -49,15 +49,20 @@ export async function updateOnboardingStep(
   await runtime.cacheManager.set(`onboarding_${userId}`, newState as any);
   
   // Also save as a persistent memory log (so we have history)
+  // Mark as agent message to prevent it from triggering LLM responses
   await runtime.messageManager.createMemory({
     id: undefined, // auto-gen
-    userId,
+    userId: runtime.agentId, // Use agent ID so it's not treated as a user message
     agentId: runtime.agentId,
     roomId: roomId,
     content: {
       text: `Onboarding Update: ${step}`,
       data: newState,
-      type: ONBOARDING_MEMORY_TYPE
+      type: ONBOARDING_MEMORY_TYPE,
+      metadata: {
+        isInternalUpdate: true,
+        actualUserId: userId // Store actual user ID in metadata for reference
+      }
     }
   });
 }
