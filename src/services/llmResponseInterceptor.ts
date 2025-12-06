@@ -164,7 +164,11 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
     // Log ALL memory creation to debug why agent messages aren't being created
     const isAgent = memory.userId === runtime.agentId;
     const textPreview = memory.content.text?.substring(0, 50) || '(empty)';
+    const stackTrace = new Error().stack?.split('\n').slice(1, 4).join(' -> ') || 'no stack';
     console.log(`[LLM Response Interceptor] Memory created - userId: ${memory.userId}, agentId: ${runtime.agentId}, isAgent: ${isAgent}, text: ${textPreview}, roomId: ${memory.roomId}`);
+    if (isAgent) {
+      console.log(`[LLM Response Interceptor] 🔍 Agent message creation stack trace: ${stackTrace}`);
+    }
     
     // If this is an agent message, immediately check action execution status
     if (isAgent && memory.roomId) {
