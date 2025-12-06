@@ -262,7 +262,23 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
       // For all agent messages, try to send directly via Telegram API if we have the chat ID
       // This ensures messages are actually sent, not just stored in memory
       if (memory.content.text && memory.content.text.trim()) {
-        const telegramChatId = roomIdToTelegramChatId.get(memory.roomId);
+        // Try to get chat ID from our mapping first
+        let telegramChatId = roomIdToTelegramChatId.get(memory.roomId);
+        
+        // If not found, try to get it from the global map using the last user message
+        if (!telegramChatId) {
+          const lastUserMessage = lastUserMessagePerRoom.get(memory.roomId);
+          if (lastUserMessage && lastUserMessage.content.text && (global as any).__telegramChatIdMap) {
+            const chatIdFromMap = (global as any).__telegramChatIdMap.get(lastUserMessage.content.text);
+            if (chatIdFromMap) {
+              telegramChatId = String(chatIdFromMap);
+              // Store it for future use
+              roomIdToTelegramChatId.set(memory.roomId, telegramChatId);
+              console.log('[LLM Response Interceptor] Retrieved chat ID from global map for agent message:', telegramChatId);
+            }
+          }
+        }
+        
         if (telegramChatId && process.env.TELEGRAM_BOT_TOKEN) {
           try {
             console.log('[LLM Response Interceptor] Sending agent message directly via Telegram API to chat:', telegramChatId);
@@ -272,11 +288,16 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
             console.log('[LLM Response Interceptor] ✅ Successfully sent agent message via Telegram API');
           } catch (error: any) {
             console.error('[LLM Response Interceptor] ❌ Error sending agent message via Telegram API:', error.message);
+            console.error('[LLM Response Interceptor] Error details:', error);
             // Continue with normal memory creation as fallback
           }
         } else {
-          console.log('[LLM Response Interceptor] ⚠️ No Telegram chat ID found for roomId:', memory.roomId, 'or no bot token');
+          console.log('[LLM Response Interceptor] ⚠️ No Telegram chat ID found for roomId:', memory.roomId);
+          console.log('[LLM Response Interceptor] Available chat IDs in mapping:', Array.from(roomIdToTelegramChatId.keys()));
+          console.log('[LLM Response Interceptor] Has bot token:', !!process.env.TELEGRAM_BOT_TOKEN);
         }
+      } else {
+        console.log('[LLM Response Interceptor] Agent message has no text or empty text');
       }
       
       // Clear pending restart command since we got a response

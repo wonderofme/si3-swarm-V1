@@ -251,11 +251,34 @@ async function startAgents() {
                 (global as any).__telegramChatIdMap = (global as any).__telegramChatIdMap || new Map();
                 (global as any).__telegramChatIdMap.set(messageText, String(chatId));
                 console.log('[Telegram Chat ID Capture] Stored in map. Map size:', (global as any).__telegramChatIdMap.size);
+                
+                // Also store it with a longer timeout (60 seconds) to ensure it's available for responses
+                setTimeout(() => {
+                  (global as any).__telegramChatIdMap?.delete(messageText);
+                }, 60000);
               }
               
               return originalHandler(update);
             };
             console.log('[Telegram Chat ID Capture] Patched bot.handler to capture chat IDs');
+          }
+          
+          // Also try to patch bot.telegram.sendMessage to intercept all outgoing messages
+          if (bot && bot.telegram && bot.telegram.sendMessage) {
+            console.log('[Telegram Chat ID Capture] Found bot.telegram.sendMessage, patching to ensure messages are sent...');
+            const originalSendMessage = bot.telegram.sendMessage.bind(bot.telegram);
+            bot.telegram.sendMessage = async function(chatId: any, text: string, extra?: any) {
+              console.log('[Telegram Chat ID Capture] sendMessage called with chatId:', chatId, 'text:', text?.substring(0, 50));
+              try {
+                const result = await originalSendMessage(chatId, text, extra);
+                console.log('[Telegram Chat ID Capture] ✅ Message sent successfully via sendMessage');
+                return result;
+              } catch (error: any) {
+                console.error('[Telegram Chat ID Capture] ❌ Error in sendMessage:', error.message);
+                throw error;
+              }
+            };
+            console.log('[Telegram Chat ID Capture] Patched bot.telegram.sendMessage');
           }
           
           // Also try patching bot.on to catch all events
