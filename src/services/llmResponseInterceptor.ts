@@ -99,6 +99,12 @@ export function checkActionExecutedRecently(roomId: string | undefined): boolean
   return wasActionExecutedRecently(roomId);
 }
 
+// Export function to get last agent message timestamp (for use in sendMessage patch)
+export function getLastAgentMessageTime(roomId: string | undefined): number | undefined {
+  if (!roomId) return undefined;
+  return lastAgentMessageTimestamps.get(roomId);
+}
+
 // Track when action handlers execute to prevent duplicate LLM responses
 // Maps roomId to timestamp when action last executed
 const actionExecutionTimestamps = new Map<string, number>();

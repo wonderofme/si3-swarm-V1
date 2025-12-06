@@ -429,7 +429,7 @@ async function startAgents() {
               
               // CRITICAL: Check if this message should be blocked due to recent action execution
               // This catches messages that might bypass createMemory
-              const { getRoomIdForChatId, checkActionExecutedRecently } = await import('./services/llmResponseInterceptor.js');
+              const { getRoomIdForChatId, checkActionExecutedRecently, getLastAgentMessageTime } = await import('./services/llmResponseInterceptor.js');
               
               // Find roomId for this chatId
               const roomIdToCheck = getRoomIdForChatId(chatId);
@@ -440,6 +440,18 @@ async function startAgents() {
                   console.log('[Telegram Chat ID Capture] 🚫 BLOCKING sendMessage - action was executed recently, preventing duplicate');
                   // Return a fake result to prevent sending
                   return { message_id: 0, date: Date.now(), chat: { id: chatId } };
+                }
+                
+                // Also check if another agent message was sent very recently (rapid consecutive blocking)
+                const lastAgentMessageTime = getLastAgentMessageTime(roomIdToCheck);
+                if (lastAgentMessageTime) {
+                  const elapsed = Date.now() - lastAgentMessageTime;
+                  const AGENT_MESSAGE_BLOCK_WINDOW_MS = 2000; // 2 seconds
+                  if (elapsed < AGENT_MESSAGE_BLOCK_WINDOW_MS) {
+                    console.log(`[Telegram Chat ID Capture] 🚫 BLOCKING sendMessage - another agent message was sent ${elapsed}ms ago (window: ${AGENT_MESSAGE_BLOCK_WINDOW_MS}ms), preventing duplicate`);
+                    // Return a fake result to prevent sending
+                    return { message_id: 0, date: Date.now(), chat: { id: chatId } };
+                  }
                 }
               }
               
