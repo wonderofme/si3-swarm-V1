@@ -13,6 +13,14 @@ async function safeCallback(
 ): Promise<void> {
   if (!callback) return;
   
+  // Check if a message was recently sent to this room (within last 2 seconds)
+  // This prevents sending action callback messages when LLM already responded
+  const { isDuplicateMessage } = await import('../../services/messageDeduplication.js');
+  if (roomId && isDuplicateMessage(runtime, roomId, text)) {
+    console.log('[Onboarding Action] Skipping callback - message was recently sent (likely by LLM)');
+    return;
+  }
+  
   try {
     await callback({ text });
     // Don't record here - the interceptor handles recording when memory is created
