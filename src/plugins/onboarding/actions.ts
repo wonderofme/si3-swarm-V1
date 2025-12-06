@@ -363,7 +363,15 @@ export const continueOnboardingAction: Action = {
             await updateOnboardingStep(runtime, message.userId, roomId, editStep, { isEditing: true, editingField: editField });
             if (roomId) recordActionExecution(roomId);
             console.log(`[Onboarding Action] Updated state to ${editStep} for editing - AI will generate edit question`);
+          } else {
+            // No edit field matched, but action still executed - record it to prevent duplicate LLM response
+            if (roomId) recordActionExecution(roomId);
           }
+        } else {
+          // User input doesn't match confirm/edit, but action handler executed
+          // Record action execution to prevent duplicate LLM response from "No action found" follow-up
+          if (roomId) recordActionExecution(roomId);
+          console.log('[Onboarding Action] CONFIRMATION step - action executed but no state change, recording to prevent duplicate');
         }
         break;
     }
