@@ -542,7 +542,6 @@ async function startAgents() {
               
               return originalOn(event, ...wrappedHandlers);
             };
-            };
             console.log('[Telegram Chat ID Capture] Patched bot.on to capture chat IDs from all events');
           } else {
             console.log('[Telegram Chat ID Capture] Could not find bot.on method. bot:', bot);
