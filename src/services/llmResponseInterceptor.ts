@@ -138,7 +138,17 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
   // Patch messageManager.createMemory to track user messages and intercept restart commands
   runtime.messageManager.createMemory = async (memory: Memory) => {
     // Log ALL memory creation to debug why agent messages aren't being created
-    console.log('[LLM Response Interceptor] Memory created - userId:', memory.userId, 'agentId:', runtime.agentId, 'isAgent:', memory.userId === runtime.agentId, 'text:', memory.content.text?.substring(0, 50), 'roomId:', memory.roomId);
+    const isAgent = memory.userId === runtime.agentId;
+    const textPreview = memory.content.text?.substring(0, 50) || '(empty)';
+    console.log(`[LLM Response Interceptor] Memory created - userId: ${memory.userId}, agentId: ${runtime.agentId}, isAgent: ${isAgent}, text: ${textPreview}, roomId: ${memory.roomId}`);
+    
+    // If this is an agent message, immediately check action execution status
+    if (isAgent && memory.roomId) {
+      const hasTimestamp = actionExecutionTimestamps.has(memory.roomId);
+      const timestamp = actionExecutionTimestamps.get(memory.roomId);
+      const elapsed = timestamp ? Date.now() - timestamp : null;
+      console.log(`[LLM Response Interceptor] Agent message - hasTimestamp: ${hasTimestamp}, elapsed: ${elapsed}ms, will check blocking...`);
+    }
     
     // Skip processing internal onboarding update messages - they shouldn't trigger LLM responses
     if (memory.content.text?.startsWith('Onboarding Update:') || (memory.content.metadata as any)?.isInternalUpdate === true) {
