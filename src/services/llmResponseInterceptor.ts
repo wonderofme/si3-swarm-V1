@@ -100,6 +100,10 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
     // Track user messages (not agent messages) per room
     if (memory.userId !== runtime.agentId && memory.roomId) {
       console.log('[LLM Response Interceptor] Tracking user message:', memory.content.text?.substring(0, 50), 'roomId:', memory.roomId);
+      console.log('[LLM Response Interceptor] Memory object keys:', Object.keys(memory));
+      console.log('[LLM Response Interceptor] Memory content keys:', Object.keys(memory.content || {}));
+      console.log('[LLM Response Interceptor] Memory content metadata:', JSON.stringify(memory.content.metadata || {}));
+      console.log('[LLM Response Interceptor] Full memory (first 500 chars):', JSON.stringify(memory).substring(0, 500));
       lastUserMessagePerRoom.set(memory.roomId, memory);
       
       // If this is a Telegram message, try to extract the Telegram chat ID
