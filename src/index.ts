@@ -156,11 +156,38 @@ async function createRuntime(character: any) {
 }
 
 async function startAgents() {
-  const [kaiaRuntime, moondaoRuntime, si3Runtime] = await Promise.all([
-    createRuntime(kaiaCharacter),
-    createRuntime(moondaoCharacter),
-    createRuntime(si3Character)
-  ]);
+  // Wrap each createRuntime call individually to handle errors gracefully
+  let kaiaRuntime, moondaoRuntime, si3Runtime;
+  
+  try {
+    kaiaRuntime = await createRuntime(kaiaCharacter);
+  } catch (error: any) {
+    console.error('❌ Failed to create Kaia runtime:', error);
+    console.error('⚠️ Continuing without Kaia runtime');
+    kaiaRuntime = null;
+  }
+  
+  try {
+    moondaoRuntime = await createRuntime(moondaoCharacter);
+  } catch (error: any) {
+    console.error('❌ Failed to create MoonDAO runtime:', error);
+    console.error('⚠️ Continuing without MoonDAO runtime');
+    moondaoRuntime = null;
+  }
+  
+  try {
+    si3Runtime = await createRuntime(si3Character);
+  } catch (error: any) {
+    console.error('❌ Failed to create SI<3> runtime:', error);
+    console.error('⚠️ Continuing without SI<3> runtime');
+    si3Runtime = null;
+  }
+  
+  // Ensure at least Kaia runtime exists
+  if (!kaiaRuntime) {
+    console.error('❌ Kaia runtime is required but failed to initialize. Exiting.');
+    process.exit(1);
+  }
 
   // Cross-references (stubbed)
   (kaiaRuntime as any).subAgents = {
