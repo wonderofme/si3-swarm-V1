@@ -13,6 +13,12 @@ export const onboardingProvider: Provider = {
       const messageText = message.content.text?.toLowerCase() || '';
       const userLang: LanguageCode = profile.language || 'en';
       const msgs = getMessages(userLang);
+      
+      // Skip provider instructions if this is an internal "Onboarding Update" message
+      // These are created by the action handler and shouldn't trigger LLM responses
+      if (message.content.text?.startsWith('Onboarding Update:')) {
+        return null; // Don't provide instructions for internal state update messages
+      }
     
     if (step === 'COMPLETED') {
       const langNames: Record<LanguageCode, string> = {
@@ -26,24 +32,21 @@ export const onboardingProvider: Provider = {
     
     // Provide the exact message the AI should send at each onboarding step
     // The AI will generate this message naturally but should match the content and flow
+    // IMPORTANT: Only provide instructions if this is a user message, not if action just updated state
     const stepMessages: Record<string, string> = {
       'NONE': `[ONBOARDING STEP: NONE - New user starting onboarding. Send this EXACT message (you can make it natural but include all the key information):
 
 ${msgs.GREETING}
 
-After sending this message, the action handler will update the state to ASK_NAME.]`,
+After sending this message, the action handler will update the state to ASK_NAME. DO NOT send another message after the action updates state - wait for the user's next message.]`,
 
-      'ASK_NAME': `[ONBOARDING STEP: ASK_NAME - User just provided their name "${message.content.text}". The action handler will update the state. Now send this EXACT message (make it natural but include all key information):
+      'ASK_NAME': `[ONBOARDING STEP: ASK_NAME - User just provided their name "${message.content.text}". The action handler will update the state to ASK_LANGUAGE. 
 
-${msgs.LANGUAGE}
+IMPORTANT: The action handler has already updated the state. You should have already sent the language question in your previous response. DO NOT send another message now - wait for the user's response to the language question.]`,
 
-After sending this message, the action handler will update the state to ASK_LANGUAGE.]`,
+      'ASK_LANGUAGE': `[ONBOARDING STEP: ASK_LANGUAGE - User just provided their language preference "${message.content.text}". The action handler will update the state to ASK_LOCATION.
 
-      'ASK_LANGUAGE': `[ONBOARDING STEP: ASK_LANGUAGE - User just provided their language preference. The action handler will update the state. Now send this EXACT message (make it natural but include all key information):
-
-${msgs.LOCATION}
-
-After sending this message, the action handler will update the state to ASK_LOCATION.]`,
+IMPORTANT: The action handler has already updated the state. You should have already sent the location question in your previous response. DO NOT send another message now - wait for the user's response to the location question.]`,
 
       'ASK_LOCATION': `[ONBOARDING STEP: ASK_LOCATION - User just provided their location. The action handler will update the state. Now send this EXACT message (make it natural but include all key information):
 
