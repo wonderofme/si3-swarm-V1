@@ -1,6 +1,7 @@
 import { IAgentRuntime, Memory } from '@elizaos/core';
 import { continueOnboardingAction } from '../plugins/onboarding/actions.js';
 import { getMessages } from '../plugins/onboarding/translations.js';
+import { TelegramClientInterface } from '@elizaos/client-telegram';
 
 /**
  * Gets the Telegram chat ID from the room ID
@@ -100,11 +101,21 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
     // Track user messages (not agent messages) per room
     if (memory.userId !== runtime.agentId && memory.roomId) {
       console.log('[LLM Response Interceptor] Tracking user message:', memory.content.text?.substring(0, 50), 'roomId:', memory.roomId);
-      console.log('[LLM Response Interceptor] Memory object keys:', Object.keys(memory));
-      console.log('[LLM Response Interceptor] Memory content keys:', Object.keys(memory.content || {}));
-      console.log('[LLM Response Interceptor] Memory content metadata:', JSON.stringify(memory.content.metadata || {}));
-      console.log('[LLM Response Interceptor] Full memory (first 500 chars):', JSON.stringify(memory).substring(0, 500));
       lastUserMessagePerRoom.set(memory.roomId, memory);
+      
+      // Try to get Telegram chat ID from global map (set by Telegram client interceptor)
+      const messageText = memory.content.text || '';
+      if (messageText && (global as any).__telegramChatIdMap) {
+        const chatId = (global as any).__telegramChatIdMap.get(messageText);
+        if (chatId) {
+          roomIdToTelegramChatId.set(memory.roomId, String(chatId));
+          console.log('[LLM Response Interceptor] Captured Telegram chat ID from global map:', chatId);
+          // Clean up the map entry after a delay
+          setTimeout(() => {
+            (global as any).__telegramChatIdMap?.delete(messageText);
+          }, 5000);
+        }
+      }
       
       // If this is a Telegram message, try to extract the Telegram chat ID
       // The roomId might be the chat ID if it's numeric, or we might need to get it from metadata

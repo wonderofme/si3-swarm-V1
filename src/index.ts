@@ -221,7 +221,37 @@ async function startAgents() {
         const { setupTelegramMessageInterceptor } = await import('./services/telegramMessageInterceptor.js');
         await setupTelegramMessageInterceptor(kaiaRuntime);
         
-        await TelegramClientInterface.start(kaiaRuntime);
+        // Start Telegram client and try to capture chat IDs
+        const telegramClient = await TelegramClientInterface.start(kaiaRuntime);
+        
+        // Try to intercept Telegram client to capture chat IDs before they're converted to UUIDs
+        if (telegramClient && (telegramClient as any).bot) {
+          const bot = (telegramClient as any).bot;
+          const originalOn = bot.on?.bind(bot);
+          if (originalOn) {
+            // Patch the 'message' event handler to capture chat ID
+            bot.on = function(event: string, handler: any) {
+              if (event === 'message' || event === 'text') {
+                const wrappedHandler = (ctx: any) => {
+                  // Capture the chat ID from the Telegram context
+                  const chatId = ctx?.chat?.id || ctx?.message?.chat?.id;
+                  if (chatId && ctx?.message?.text) {
+                    // We'll store this when the memory is created
+                    // For now, just log it
+                    console.log('[Telegram Chat ID Capture] Captured chat ID:', chatId, 'for message:', ctx.message.text.substring(0, 50));
+                    // Store in a global map that we can access when memory is created
+                    (global as any).__telegramChatIdMap = (global as any).__telegramChatIdMap || new Map();
+                    (global as any).__telegramChatIdMap.set(ctx.message.text, chatId);
+                  }
+                  return handler(ctx);
+                };
+                return originalOn(event, wrappedHandler);
+              }
+              return originalOn(event, handler);
+            };
+            console.log('[Telegram Chat ID Capture] Patched Telegram client to capture chat IDs');
+          }
+        }
     } catch (error: any) {
         console.error('❌ Failed to start Telegram client:', error);
     }
