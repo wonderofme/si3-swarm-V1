@@ -221,16 +221,40 @@ async function startAgents() {
         const { setupTelegramMessageInterceptor } = await import('./services/telegramMessageInterceptor.js');
         await setupTelegramMessageInterceptor(kaiaRuntime);
         
-        // Start Telegram client and try to capture chat IDs
-        // Wrap in try-catch to prevent bot crash if Telegram is unavailable
-        let telegramClient;
-        try {
-          telegramClient = await TelegramClientInterface.start(kaiaRuntime);
-        } catch (error: any) {
-          console.error('❌ Failed to start Telegram client (non-fatal, continuing):', error.message);
-          console.error('⚠️ Bot will continue running but Telegram functionality will be unavailable');
-          // Don't throw - allow bot to continue without Telegram
-          telegramClient = null;
+        // Start Telegram client with retry logic
+        // Network timeouts are common in cloud deployments, so we retry with exponential backoff
+        let telegramClient = null;
+        const maxRetries = 5;
+        const initialDelay = 2000; // 2 seconds
+        
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+          try {
+            console.log(`[Telegram Client] Attempting to start Telegram client (attempt ${attempt}/${maxRetries})...`);
+            telegramClient = await TelegramClientInterface.start(kaiaRuntime);
+            console.log(`[Telegram Client] ✅ Successfully started Telegram client on attempt ${attempt}`);
+            break; // Success, exit retry loop
+          } catch (error: any) {
+            const isTimeout = error.code === 'ETIMEDOUT' || error.errno === 'ETIMEDOUT' || error.message?.includes('timeout');
+            const isLastAttempt = attempt === maxRetries;
+            
+            if (isLastAttempt) {
+              console.error(`[Telegram Client] ❌ Failed to start after ${maxRetries} attempts (non-fatal, continuing)`);
+              console.error(`[Telegram Client] Last error: ${error.message}`);
+              console.error(`[Telegram Client] Error type: ${error.type || 'unknown'}, code: ${error.code || 'unknown'}`);
+              console.error('⚠️ Bot will continue running but Telegram functionality will be unavailable');
+              console.error('💡 This is usually a network connectivity issue. The bot will retry when messages are received.');
+              telegramClient = null;
+            } else {
+              const delay = initialDelay * Math.pow(2, attempt - 1); // Exponential backoff: 2s, 4s, 8s, 16s, 32s
+              console.warn(`[Telegram Client] ⚠️ Attempt ${attempt} failed: ${error.message}`);
+              if (isTimeout) {
+                console.warn(`[Telegram Client] Network timeout detected. Retrying in ${delay}ms...`);
+              } else {
+                console.warn(`[Telegram Client] Connection error. Retrying in ${delay}ms...`);
+              }
+              await new Promise(resolve => setTimeout(resolve, delay));
+            }
+          }
         }
         
         // Try to intercept Telegram client to capture chat IDs before they're converted to UUIDs
