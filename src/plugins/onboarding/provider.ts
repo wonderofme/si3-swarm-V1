@@ -35,44 +35,44 @@ export const onboardingProvider: Provider = {
     }
     
     if (step === 'NONE') {
-      return `[ONBOARDING INSTRUCTION: New user's first message. PREFER using action CONTINUE_ONBOARDING with empty text \"\". If you cannot use the action, send this greeting directly: "${msgs.GREETING}". Always respond - never leave the user without a message.]`;
+      return `[ONBOARDING INSTRUCTION: New user's first message. Send this greeting: "${msgs.GREETING}"]`;
     }
     
     // The step indicates what we were WAITING for. User just provided that info.
     // So we should output the NEXT question.
     const stepToMessage: Record<string, string> = {
       // User just provided their name → ask for language
-      'ASK_NAME': `[ONBOARDING INSTRUCTION: User provided their name. PREFER using action CONTINUE_ONBOARDING with empty text \"\". If you cannot use the action, send this question directly: "${msgs.LANGUAGE}". Always respond.]`,
+      'ASK_NAME': `[ONBOARDING INSTRUCTION: User provided their name. Ask about language. Send this question: "${msgs.LANGUAGE}"]`,
 
       // User just provided language → ask for location
-      'ASK_LANGUAGE': `[ONBOARDING INSTRUCTION: User provided their language. PREFER using action CONTINUE_ONBOARDING with empty text \"\". If you cannot use the action, send this question directly: "${msgs.LOCATION}". Always respond - never leave the user without a message.]`,
+      'ASK_LANGUAGE': `[ONBOARDING INSTRUCTION: User provided their language. Ask about location. Send this question: "${msgs.LOCATION}"]`,
 
       // User just provided location → ask for roles
-      'ASK_LOCATION': `[ONBOARDING INSTRUCTION: User provided their location. PREFER using action CONTINUE_ONBOARDING with empty text \"\". If you cannot use the action, send this question directly: "${msgs.ROLES}". Always respond - never leave the user without a message.]`,
+      'ASK_LOCATION': `[ONBOARDING INSTRUCTION: User provided their location. Ask about roles. Send this question: "${msgs.ROLES}"]`,
 
       // User just provided roles → ask for interests
-      'ASK_ROLE': `[ONBOARDING INSTRUCTION: User provided their roles. PREFER using action CONTINUE_ONBOARDING with empty text \"\". If you cannot use the action, send this question directly: "${msgs.INTERESTS}". Always respond - never leave the user without a message.]`,
+      'ASK_ROLE': `[ONBOARDING INSTRUCTION: User provided their roles. Ask about interests. Send this question: "${msgs.INTERESTS}"]`,
 
       // User just provided interests → ask for connection goals
-      'ASK_INTERESTS': `[ONBOARDING INSTRUCTION: User provided their interests. PREFER using action CONTINUE_ONBOARDING with empty text \"\". If you cannot use the action, send this question directly: "${msgs.GOALS}". Always respond - never leave the user without a message.]`,
+      'ASK_INTERESTS': `[ONBOARDING INSTRUCTION: User provided their interests. Ask about connection goals. Send this question: "${msgs.GOALS}"]`,
 
       // User just provided connection goals → ask for events
-      'ASK_CONNECTION_GOALS': `[ONBOARDING INSTRUCTION: User provided their goals. You MUST respond. PREFER using action CONTINUE_ONBOARDING with empty text \"\". If the action is not available, you MUST send this question directly as your text response: "${msgs.EVENTS}". CRITICAL: Always respond - never leave the user without a message.]`,
+      'ASK_CONNECTION_GOALS': `[ONBOARDING INSTRUCTION: User provided their goals. Ask about events. Send this question: "${msgs.EVENTS}"]`,
 
       // User just provided events → ask for socials
-      'ASK_EVENTS': `[ONBOARDING INSTRUCTION: User provided events. You MUST respond. PREFER using action CONTINUE_ONBOARDING with empty text \"\". If the action is not available, you MUST send this question directly as your text response: "${msgs.SOCIALS}". CRITICAL: Always respond - never leave the user without a message.]`,
+      'ASK_EVENTS': `[ONBOARDING INSTRUCTION: User provided events. Ask about social links. Send this question: "${msgs.SOCIALS}"]`,
 
       // User just provided socials → ask for telegram
-      'ASK_SOCIALS': `[ONBOARDING INSTRUCTION: User provided socials. PREFER using action CONTINUE_ONBOARDING with empty text \"\". If you cannot use the action, send this question directly: "${msgs.TELEGRAM}". Always respond - never leave the user without a message.]`,
+      'ASK_SOCIALS': `[ONBOARDING INSTRUCTION: User provided socials. Ask about Telegram handle. Send this question: "${msgs.TELEGRAM}"]`,
 
       // User just provided telegram → ask for gender
-      'ASK_TELEGRAM_HANDLE': `[ONBOARDING INSTRUCTION: User provided Telegram handle. PREFER using action CONTINUE_ONBOARDING with empty text \"\". If you cannot use the action, send this question directly: "${msgs.GENDER}". Always respond - never leave the user without a message.]`,
+      'ASK_TELEGRAM_HANDLE': `[ONBOARDING INSTRUCTION: User provided Telegram handle. Ask about gender. Send this question: "${msgs.GENDER}"]`,
 
       // User just provided gender → ask for notifications
-      'ASK_GENDER': `[ONBOARDING INSTRUCTION: User provided gender. PREFER using action CONTINUE_ONBOARDING with empty text \"\". If you cannot use the action, send this question directly: "${msgs.NOTIFICATIONS}". Always respond - never leave the user without a message.]`,
+      'ASK_GENDER': `[ONBOARDING INSTRUCTION: User provided gender. Ask about notifications. Send this question: "${msgs.NOTIFICATIONS}"]`,
 
       // User just provided notifications → show summary
-      'ASK_NOTIFICATIONS': `[ONBOARDING INSTRUCTION: User provided notification preference. PREFER using action CONTINUE_ONBOARDING with empty text \"\". If you cannot use the action, send the summary directly. Always respond - never leave the user without a message.]`,
+      'ASK_NOTIFICATIONS': `[ONBOARDING INSTRUCTION: User provided notification preference. Show the summary of their profile.]`,
 
       // User confirmed or edited → show completion or re-ask
       'CONFIRMATION': messageText.includes('confirm') || messageText.includes('yes') || messageText.includes('check') 
