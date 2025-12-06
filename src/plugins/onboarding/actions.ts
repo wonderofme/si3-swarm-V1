@@ -56,7 +56,8 @@ function isRestartCommand(text: string): boolean {
          lower.includes('start over') ||
          lower.includes('begin again') ||
          lower.includes('can we start') ||
-         lower.includes('start the onboarding');
+         lower.includes('start the onboarding') ||
+         lower.includes('start onboarding all over');
 }
 
 export const continueOnboardingAction: Action = {
