@@ -121,19 +121,33 @@ async function createRuntime(character: any) {
     await runtime.initialize();
     console.log(`✅ ${character.name} runtime initialized successfully`);
   } catch (error: any) {
-    const isDatabaseError = error.code === 'ETIMEDOUT' || 
-                           error.message?.includes('Failed to connect to database') ||
-                           error.message?.includes('database') ||
-                           error.message?.includes('testConnection');
+    // Check for database connection errors - be very broad to catch all variations
+    const errorMessage = error.message || error.toString() || '';
+    const errorCode = error.code || '';
+    const errorStack = error.stack || '';
+    
+    const isDatabaseError = 
+      errorCode === 'ETIMEDOUT' ||
+      errorCode === 'ENETUNREACH' ||
+      errorMessage.toLowerCase().includes('failed to connect') ||
+      errorMessage.toLowerCase().includes('database') ||
+      errorMessage.toLowerCase().includes('testconnection') ||
+      errorMessage.toLowerCase().includes('connection') ||
+      errorStack.includes('PostgresDatabaseAdapter') ||
+      errorStack.includes('testConnection') ||
+      errorStack.includes('adapter-postgres');
     
     if (isDatabaseError) {
       console.error(`⚠️ ${character.name} runtime initialization failed due to database connection issue (non-fatal, continuing)`);
-      console.error(`Database error: ${error.message}`);
+      console.error(`Database error code: ${errorCode}`);
+      console.error(`Database error message: ${errorMessage}`);
       console.error('⚠️ Bot will continue running but database-dependent features may be unavailable');
       console.error('💡 The bot will still be able to respond to messages, but some features may not work until database is available');
+      // Don't throw - allow runtime to continue without database
     } else {
       // For non-database errors, re-throw to fail fast
       console.error(`❌ ${character.name} runtime initialization failed with non-database error:`, error);
+      console.error(`Error code: ${errorCode}, message: ${errorMessage}`);
       throw error;
     }
   }
