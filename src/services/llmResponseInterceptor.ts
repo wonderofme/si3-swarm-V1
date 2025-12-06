@@ -365,8 +365,31 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
             text: '' // Empty text prevents sending
           }
         });
-      } else {
-        console.log('[LLM Response Interceptor] ✅ Allowing agent message - no recent action execution or outside block window');
+      }
+      
+      // ADDITIONAL FIX: Block agent messages if another agent message was sent very recently
+      // This catches duplicates from "No action found" follow-up responses
+      const lastAgentMessageTime = lastAgentMessageTimestamps.get(memory.roomId);
+      if (lastAgentMessageTime && memory.content.text && memory.content.text.trim()) {
+        const elapsed = Date.now() - lastAgentMessageTime;
+        if (elapsed < AGENT_MESSAGE_BLOCK_WINDOW_MS) {
+          console.log(`[LLM Response Interceptor] 🚫 BLOCKING agent message - another agent message was sent ${elapsed}ms ago (window: ${AGENT_MESSAGE_BLOCK_WINDOW_MS}ms), preventing duplicate`);
+          console.log('[LLM Response Interceptor] Blocked message text:', messageText);
+          // Return empty memory to prevent sending
+          return await originalCreateMemory({
+            ...memory,
+            content: {
+              ...memory.content,
+              text: '' // Empty text prevents sending
+            }
+          });
+        }
+      }
+      
+      // If we get here, the message is allowed - record the timestamp for future blocking
+      if (memory.content.text && memory.content.text.trim()) {
+        lastAgentMessageTimestamps.set(memory.roomId, Date.now());
+        console.log('[LLM Response Interceptor] ✅ Allowing agent message - no recent action execution or agent message');
       }
       
       // For all agent messages, try to send directly via Telegram API if we have the chat ID
