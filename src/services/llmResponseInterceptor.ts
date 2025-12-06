@@ -112,14 +112,43 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
           console.log('[LLM Response Interceptor] Stored Telegram chat ID:', memory.roomId);
         } else {
           // roomId is a UUID, check if we can get chat ID from metadata or other sources
-          // For now, we'll try to find it from the message structure
-          // ElizaOS might store it in metadata or we might need to query it differently
+          // Try various places where the chat ID might be stored
           const chatId = (memory.content.metadata as any)?.chatId || 
                         (memory.content.metadata as any)?.telegramChatId ||
-                        (memory as any).chatId;
+                        (memory.content.metadata as any)?.chat_id ||
+                        (memory as any).chatId ||
+                        (memory as any).chat_id ||
+                        (memory as any).telegramChatId;
+          
           if (chatId) {
-            roomIdToTelegramChatId.set(memory.roomId, chatId);
+            roomIdToTelegramChatId.set(memory.roomId, String(chatId));
             console.log('[LLM Response Interceptor] Stored Telegram chat ID from metadata:', chatId);
+          } else {
+            // If we can't find it, try to query the database for the most recent message
+            // from this user that has a numeric roomId (which would be the Telegram chat ID)
+            try {
+              const adapter = runtime.databaseAdapter as any;
+              const result = await adapter.query(
+                `SELECT "roomId" FROM memories 
+                 WHERE "userId" = $1 
+                 AND content->>'source' = 'telegram'
+                 AND "roomId"::text ~ '^[0-9]+$'
+                 ORDER BY "createdAt" DESC 
+                 LIMIT 1`,
+                [memory.userId]
+              );
+              
+              if (result.rows && result.rows.length > 0) {
+                const foundChatId = result.rows[0].roomId;
+                if (foundChatId && /^\d+$/.test(foundChatId)) {
+                  roomIdToTelegramChatId.set(memory.roomId, foundChatId);
+                  console.log('[LLM Response Interceptor] Found and stored Telegram chat ID from database:', foundChatId);
+                }
+              }
+            } catch (error) {
+              // Silently fail - we'll try again later
+              console.log('[LLM Response Interceptor] Could not query database for chat ID:', (error as Error).message);
+            }
           }
         }
       }
