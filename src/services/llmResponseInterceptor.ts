@@ -259,6 +259,26 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
         return await originalCreateMemory(memory);
       }
       
+      // For all agent messages, try to send directly via Telegram API if we have the chat ID
+      // This ensures messages are actually sent, not just stored in memory
+      if (memory.content.text && memory.content.text.trim()) {
+        const telegramChatId = roomIdToTelegramChatId.get(memory.roomId);
+        if (telegramChatId && process.env.TELEGRAM_BOT_TOKEN) {
+          try {
+            console.log('[LLM Response Interceptor] Sending agent message directly via Telegram API to chat:', telegramChatId);
+            const Telegraf = (await import('telegraf')).Telegraf;
+            const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
+            await bot.telegram.sendMessage(telegramChatId, memory.content.text);
+            console.log('[LLM Response Interceptor] ✅ Successfully sent agent message via Telegram API');
+          } catch (error: any) {
+            console.error('[LLM Response Interceptor] ❌ Error sending agent message via Telegram API:', error.message);
+            // Continue with normal memory creation as fallback
+          }
+        } else {
+          console.log('[LLM Response Interceptor] ⚠️ No Telegram chat ID found for roomId:', memory.roomId, 'or no bot token');
+        }
+      }
+      
       // Clear pending restart command since we got a response
       if (pendingRestartCommands.has(memory.roomId)) {
         console.log('[LLM Response Interceptor] Response received, clearing pending restart timeout');
