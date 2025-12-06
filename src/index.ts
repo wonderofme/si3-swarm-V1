@@ -225,23 +225,39 @@ async function startAgents() {
         const telegramClient = await TelegramClientInterface.start(kaiaRuntime);
         
         // Try to intercept Telegram client to capture chat IDs before they're converted to UUIDs
-        if (telegramClient && (telegramClient as any).bot) {
-          const bot = (telegramClient as any).bot;
-          const originalOn = bot.on?.bind(bot);
-          if (originalOn) {
+        console.log('[Telegram Chat ID Capture] Telegram client type:', typeof telegramClient);
+        console.log('[Telegram Chat ID Capture] Telegram client keys:', telegramClient ? Object.keys(telegramClient) : 'null');
+        
+        if (telegramClient) {
+          const telegramClientAny = telegramClient as any;
+          console.log('[Telegram Chat ID Capture] Checking for bot property...');
+          
+          // Try different possible structures
+          const bot = telegramClientAny.bot || telegramClientAny.client || telegramClientAny;
+          console.log('[Telegram Chat ID Capture] Bot type:', typeof bot);
+          console.log('[Telegram Chat ID Capture] Bot keys:', bot ? Object.keys(bot) : 'null');
+          
+          if (bot && typeof bot.on === 'function') {
+            const originalOn = bot.on.bind(bot);
+            console.log('[Telegram Chat ID Capture] Found bot.on method, patching...');
+            
             // Patch the 'message' event handler to capture chat ID
             bot.on = function(event: string, handler: any) {
-              if (event === 'message' || event === 'text') {
+              console.log('[Telegram Chat ID Capture] Event registered:', event);
+              if (event === 'message' || event === 'text' || event === 'message:text') {
                 const wrappedHandler = (ctx: any) => {
                   // Capture the chat ID from the Telegram context
-                  const chatId = ctx?.chat?.id || ctx?.message?.chat?.id;
-                  if (chatId && ctx?.message?.text) {
-                    // We'll store this when the memory is created
-                    // For now, just log it
-                    console.log('[Telegram Chat ID Capture] Captured chat ID:', chatId, 'for message:', ctx.message.text.substring(0, 50));
+                  const chatId = ctx?.chat?.id || ctx?.message?.chat?.id || ctx?.update?.message?.chat?.id;
+                  const messageText = ctx?.message?.text || ctx?.update?.message?.text || '';
+                  
+                  if (chatId && messageText) {
+                    console.log('[Telegram Chat ID Capture] Captured chat ID:', chatId, 'for message:', messageText.substring(0, 50));
                     // Store in a global map that we can access when memory is created
                     (global as any).__telegramChatIdMap = (global as any).__telegramChatIdMap || new Map();
-                    (global as any).__telegramChatIdMap.set(ctx.message.text, chatId);
+                    (global as any).__telegramChatIdMap.set(messageText, String(chatId));
+                    console.log('[Telegram Chat ID Capture] Stored in map. Map size:', (global as any).__telegramChatIdMap.size);
+                  } else {
+                    console.log('[Telegram Chat ID Capture] Could not extract chat ID or message text. ctx keys:', Object.keys(ctx || {}));
                   }
                   return handler(ctx);
                 };
@@ -250,7 +266,11 @@ async function startAgents() {
               return originalOn(event, handler);
             };
             console.log('[Telegram Chat ID Capture] Patched Telegram client to capture chat IDs');
+          } else {
+            console.log('[Telegram Chat ID Capture] Could not find bot.on method. bot:', bot);
           }
+        } else {
+          console.log('[Telegram Chat ID Capture] Telegram client is null or undefined');
         }
     } catch (error: any) {
         console.error('❌ Failed to start Telegram client:', error);
