@@ -286,6 +286,21 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
             const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
             await bot.telegram.sendMessage(telegramChatId, memory.content.text);
             console.log('[LLM Response Interceptor] ✅ Successfully sent agent message via Telegram API');
+            
+            // After sending directly, create memory with empty text to prevent duplicate sending by ElizaOS client
+            // But keep the original text in metadata for logging/debugging
+            return await originalCreateMemory({
+              ...memory,
+              content: {
+                ...memory.content,
+                text: '', // Empty text prevents Telegram client from sending again
+                metadata: {
+                  ...(memory.content.metadata || {}),
+                  sentViaDirectAPI: true,
+                  originalText: memory.content.text
+                }
+              }
+            });
           } catch (error: any) {
             console.error('[LLM Response Interceptor] ❌ Error sending agent message via Telegram API:', error.message);
             console.error('[LLM Response Interceptor] Error details:', error);
@@ -306,6 +321,7 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
         pendingRestartCommands.delete(memory.roomId);
       }
       
+      // Continue with normal memory creation if we didn't already return
       const lastUserMessage = lastUserMessagePerRoom.get(memory.roomId);
       
       if (lastUserMessage) {
