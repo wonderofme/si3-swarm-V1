@@ -32,6 +32,9 @@ const lastUserMessagePerRoom = new Map<string, Memory>();
 // Store pending restart commands with timestamps for timeout-based execution
 const pendingRestartCommands = new Map<string, { message: Memory; timestamp: number }>();
 
+// Track messages created by timeout callback to prevent re-processing
+const timeoutCreatedMessages = new Set<string>();
+
 // Timeout in milliseconds - if no response after this, force execute action
 const RESTART_TIMEOUT_MS = 3000; // 3 seconds
 
@@ -68,23 +71,44 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
             console.log('[LLM Response Interceptor] Timeout reached, no response received, forcing action execution');
             pendingRestartCommands.delete(memory.roomId);
             
-            // Force execute the action - use the runtime's messageManager directly
-            // This ensures it goes through all the interceptors
+            // Force execute the action - send directly via Telegram API to ensure delivery
             const callback = async (response: { text: string }): Promise<any[]> => {
-              console.log('[LLM Response Interceptor] Callback called with text:', response.text.substring(0, 50));
-              // Use runtime.messageManager.createMemory directly (not originalCreateMemory)
-              // This ensures it goes through all interceptors including the message interceptor
-              const greetingMemory = await runtime.messageManager.createMemory({
+              console.log('[LLM Response Interceptor] Timeout callback called with text:', response.text.substring(0, 50));
+              
+              // Send directly via Telegram API first to ensure delivery
+              if (process.env.TELEGRAM_BOT_TOKEN && memory.roomId) {
+                try {
+                  const Telegraf = (await import('telegraf')).Telegraf;
+                  const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
+                  await bot.telegram.sendMessage(memory.roomId, response.text);
+                  console.log('[LLM Response Interceptor] Sent greeting message directly via Telegram API');
+                } catch (error) {
+                  console.error('[LLM Response Interceptor] Error sending Telegram message:', error);
+                }
+              }
+              
+              // Create memory with a marker to prevent re-processing
+              const memoryId = `${memory.roomId}_${Date.now()}`;
+              timeoutCreatedMessages.add(memoryId);
+              
+              // Use originalCreateMemory to bypass interceptors (we already sent via Telegram)
+              const greetingMemory = await originalCreateMemory({
                 id: undefined,
                 userId: runtime.agentId,
                 agentId: runtime.agentId,
                 roomId: memory.roomId,
                 content: {
                   text: response.text,
-                  source: 'telegram'
+                  source: 'telegram',
+                  // Add marker to prevent re-processing
+                  metadata: { timeoutCreated: true, memoryId }
                 }
               });
               console.log('[LLM Response Interceptor] Greeting memory created');
+              
+              // Clean up marker after a delay
+              setTimeout(() => timeoutCreatedMessages.delete(memoryId), 5000);
+              
               return Array.isArray(greetingMemory) ? greetingMemory : [greetingMemory];
             };
             
@@ -108,6 +132,13 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
     // For agent messages, check if this is after a restart command
     if (memory.userId === runtime.agentId && memory.roomId) {
       console.log('[LLM Response Interceptor] Agent message detected, roomId:', memory.roomId, 'text:', memory.content.text?.substring(0, 50));
+      
+      // Skip processing if this message was created by timeout callback
+      const isTimeoutCreated = (memory.content.metadata as any)?.timeoutCreated === true;
+      if (isTimeoutCreated) {
+        console.log('[LLM Response Interceptor] Skipping - message created by timeout callback');
+        return await originalCreateMemory(memory);
+      }
       
       // Clear pending restart command since we got a response
       if (pendingRestartCommands.has(memory.roomId)) {
@@ -133,9 +164,21 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
             console.log('[LLM Response Interceptor] Restart detected but LLM didn\'t use action, forcing action execution');
             console.log('[LLM Response Interceptor] LLM response was:', memory.content.text.substring(0, 100));
             
-            // Create callback that will send the greeting
+            // Create callback that will send the greeting directly via Telegram
             const callback = async (response: { text: string }): Promise<any[]> => {
-              // Create memory for the greeting message
+              // Send directly via Telegram API first
+              if (process.env.TELEGRAM_BOT_TOKEN && lastUserMessage.roomId) {
+                try {
+                  const Telegraf = (await import('telegraf')).Telegraf;
+                  const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
+                  await bot.telegram.sendMessage(lastUserMessage.roomId, response.text);
+                  console.log('[LLM Response Interceptor] Sent greeting via Telegram API');
+                } catch (error) {
+                  console.error('[LLM Response Interceptor] Error sending Telegram message:', error);
+                }
+              }
+              
+              // Create memory for the greeting message (bypass interceptors)
               const greetingMemory = await originalCreateMemory({
                 id: undefined,
                 userId: runtime.agentId,
@@ -143,7 +186,8 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
                 roomId: lastUserMessage.roomId,
                 content: {
                   text: response.text,
-                  source: 'telegram'
+                  source: 'telegram',
+                  metadata: { timeoutCreated: true }
                 }
               });
               return Array.isArray(greetingMemory) ? greetingMemory : [greetingMemory];
@@ -182,6 +226,18 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
               console.log('[LLM Response Interceptor] Restart detected but LLM response is empty, forcing action execution anyway');
               // Even if LLM response is empty, we should still execute the action
               const callback = async (response: { text: string }): Promise<any[]> => {
+                // Send directly via Telegram API
+                if (process.env.TELEGRAM_BOT_TOKEN && lastUserMessage.roomId) {
+                  try {
+                    const Telegraf = (await import('telegraf')).Telegraf;
+                    const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
+                    await bot.telegram.sendMessage(lastUserMessage.roomId, response.text);
+                    console.log('[LLM Response Interceptor] Sent greeting via Telegram API (empty LLM response)');
+                  } catch (error) {
+                    console.error('[LLM Response Interceptor] Error sending Telegram message:', error);
+                  }
+                }
+                
                 const greetingMemory = await originalCreateMemory({
                   id: undefined,
                   userId: runtime.agentId,
@@ -189,7 +245,8 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
                   roomId: lastUserMessage.roomId,
                   content: {
                     text: response.text,
-                    source: 'telegram'
+                    source: 'telegram',
+                    metadata: { timeoutCreated: true }
                   }
                 });
                 return Array.isArray(greetingMemory) ? greetingMemory : [greetingMemory];
