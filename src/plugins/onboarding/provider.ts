@@ -57,10 +57,10 @@ export const onboardingProvider: Provider = {
       'ASK_INTERESTS': `[ONBOARDING INSTRUCTION: User provided their interests. PREFER using action CONTINUE_ONBOARDING with empty text \"\". If you cannot use the action, send this question directly: "${msgs.GOALS}". Always respond - never leave the user without a message.]`,
 
       // User just provided connection goals → ask for events
-      'ASK_CONNECTION_GOALS': `[ONBOARDING INSTRUCTION: User provided their goals. PREFER using action CONTINUE_ONBOARDING with empty text \"\". If you cannot use the action, send this question directly: "${msgs.EVENTS}". Always respond - never leave the user without a message.]`,
+      'ASK_CONNECTION_GOALS': `[ONBOARDING INSTRUCTION: User provided their goals. You MUST respond. PREFER using action CONTINUE_ONBOARDING with empty text \"\". If the action is not available, you MUST send this question directly as your text response: "${msgs.EVENTS}". CRITICAL: Always respond - never leave the user without a message.]`,
 
       // User just provided events → ask for socials
-      'ASK_EVENTS': `[ONBOARDING INSTRUCTION: User provided events. PREFER using action CONTINUE_ONBOARDING with empty text \"\". If you cannot use the action, send this question directly: "${msgs.SOCIALS}". Always respond - never leave the user without a message.]`,
+      'ASK_EVENTS': `[ONBOARDING INSTRUCTION: User provided events. You MUST respond. PREFER using action CONTINUE_ONBOARDING with empty text \"\". If the action is not available, you MUST send this question directly as your text response: "${msgs.SOCIALS}". CRITICAL: Always respond - never leave the user without a message.]`,
 
       // User just provided socials → ask for telegram
       'ASK_SOCIALS': `[ONBOARDING INSTRUCTION: User provided socials. PREFER using action CONTINUE_ONBOARDING with empty text \"\". If you cannot use the action, send this question directly: "${msgs.TELEGRAM}". Always respond - never leave the user without a message.]`,
