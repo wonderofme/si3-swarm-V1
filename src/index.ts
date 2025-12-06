@@ -506,7 +506,68 @@ async function startAgents() {
   startFollowUpScheduler(kaiaRuntime);
 }
 
+// Add global error handlers to catch unhandled promise rejections
+process.on('unhandledRejection', (reason: any, promise: Promise<any>) => {
+  const errorMessage = reason?.message || reason?.toString() || 'Unknown error';
+  const errorCode = reason?.code || '';
+  
+  // Check if it's a database connection error
+  const isDatabaseError = 
+    errorCode === 'ETIMEDOUT' ||
+    errorCode === 'ENETUNREACH' ||
+    errorMessage.toLowerCase().includes('failed to connect') ||
+    errorMessage.toLowerCase().includes('database') ||
+    errorMessage.toLowerCase().includes('testconnection');
+  
+  if (isDatabaseError) {
+    console.error('⚠️ Unhandled database error (non-fatal):', errorMessage);
+    console.error('⚠️ Bot will continue running but database features may be unavailable');
+    // Don't exit - allow bot to continue
+  } else {
+    console.error('❌ Unhandled promise rejection:', reason);
+    console.error('⚠️ This may cause the bot to be unstable');
+    // Don't exit immediately - let the bot try to recover
+  }
+});
+
+process.on('uncaughtException', (error: Error) => {
+  const errorMessage = error.message || error.toString();
+  const errorCode = (error as any)?.code || '';
+  
+  // Check if it's a database connection error
+  const isDatabaseError = 
+    errorCode === 'ETIMEDOUT' ||
+    errorCode === 'ENETUNREACH' ||
+    errorMessage.toLowerCase().includes('failed to connect') ||
+    errorMessage.toLowerCase().includes('database') ||
+    errorMessage.toLowerCase().includes('testconnection');
+  
+  if (isDatabaseError) {
+    console.error('⚠️ Uncaught database exception (non-fatal):', errorMessage);
+    console.error('⚠️ Bot will continue running but database features may be unavailable');
+    // Don't exit - allow bot to continue
+  } else {
+    console.error('❌ Uncaught exception:', error);
+    console.error('⚠️ This may cause the bot to be unstable');
+    // For non-database errors, we might want to exit, but let's be conservative
+    // and only exit if it's a critical error
+    if (!errorMessage.toLowerCase().includes('database')) {
+      console.error('❌ Critical error detected, exiting');
+      process.exit(1);
+    }
+  }
+});
+
 startAgents().catch((err) => {
   console.error('Failed to start agents', err);
-  process.exit(1);
+  // Check if it's a database error - if so, don't exit
+  const errorMessage = err?.message || err?.toString() || '';
+  const isDatabaseError = errorMessage.toLowerCase().includes('database') || 
+                         errorMessage.toLowerCase().includes('failed to connect');
+  
+  if (!isDatabaseError) {
+    process.exit(1);
+  } else {
+    console.error('⚠️ Database error during startup, but continuing...');
+  }
 });
