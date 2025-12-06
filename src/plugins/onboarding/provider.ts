@@ -24,24 +24,115 @@ export const onboardingProvider: Provider = {
       return `[ONBOARDING STATUS: COMPLETED. User ${profile.name || 'User'} has finished onboarding. Their preferred language is ${langNames[userLang]}. Respond naturally and helpfully in ${langNames[userLang]}.]`;
     }
     
-    // Provide context about onboarding step, but let the AI respond naturally
-    const stepContext: Record<string, string> = {
-      'NONE': `[ONBOARDING: New user starting onboarding. Welcome them and begin the onboarding process.]`,
-      'ASK_NAME': `[ONBOARDING: User provided their name. Continue with the next onboarding question.]`,
-      'ASK_LANGUAGE': `[ONBOARDING: User provided their language preference. Continue with the next onboarding question.]`,
-      'ASK_LOCATION': `[ONBOARDING: User provided their location. Continue with the next onboarding question.]`,
-      'ASK_ROLE': `[ONBOARDING: User provided their roles. Continue with the next onboarding question.]`,
-      'ASK_INTERESTS': `[ONBOARDING: User provided their interests. Continue with the next onboarding question.]`,
-      'ASK_CONNECTION_GOALS': `[ONBOARDING: User provided their connection goals. Continue with the next onboarding question.]`,
-      'ASK_EVENTS': `[ONBOARDING: User provided their events preference. Continue with the next onboarding question.]`,
-      'ASK_SOCIALS': `[ONBOARDING: User provided their social links. Continue with the next onboarding question.]`,
-      'ASK_TELEGRAM_HANDLE': `[ONBOARDING: User provided their Telegram handle. Continue with the next onboarding question.]`,
-      'ASK_GENDER': `[ONBOARDING: User provided their gender. Continue with the next onboarding question.]`,
-      'ASK_NOTIFICATIONS': `[ONBOARDING: User provided their notification preference. Show them their profile summary.]`,
-      'CONFIRMATION': `[ONBOARDING: User is confirming or editing their profile. Help them complete the process.]`
+    // Provide the exact message the AI should send at each onboarding step
+    // The AI will generate this message naturally but should match the content and flow
+    const stepMessages: Record<string, string> = {
+      'NONE': `[ONBOARDING STEP: NONE - New user starting onboarding. Send this EXACT message (you can make it natural but include all the key information):
+
+${msgs.GREETING}
+
+After sending this message, the action handler will update the state to ASK_NAME.]`,
+
+      'ASK_NAME': `[ONBOARDING STEP: ASK_NAME - User just provided their name "${message.content.text}". The action handler will update the state. Now send this EXACT message (make it natural but include all key information):
+
+${msgs.LANGUAGE}
+
+After sending this message, the action handler will update the state to ASK_LANGUAGE.]`,
+
+      'ASK_LANGUAGE': `[ONBOARDING STEP: ASK_LANGUAGE - User just provided their language preference. The action handler will update the state. Now send this EXACT message (make it natural but include all key information):
+
+${msgs.LOCATION}
+
+After sending this message, the action handler will update the state to ASK_LOCATION.]`,
+
+      'ASK_LOCATION': `[ONBOARDING STEP: ASK_LOCATION - User just provided their location. The action handler will update the state. Now send this EXACT message (make it natural but include all key information):
+
+${msgs.ROLES}
+
+After sending this message, the action handler will update the state to ASK_ROLE.]`,
+
+      'ASK_ROLE': `[ONBOARDING STEP: ASK_ROLE - User just provided their roles. The action handler will update the state. Now send this EXACT message (make it natural but include all key information):
+
+${msgs.INTERESTS}
+
+After sending this message, the action handler will update the state to ASK_INTERESTS.]`,
+
+      'ASK_INTERESTS': `[ONBOARDING STEP: ASK_INTERESTS - User just provided their interests. The action handler will update the state. Now send this EXACT message (make it natural but include all key information):
+
+${msgs.GOALS}
+
+After sending this message, the action handler will update the state to ASK_CONNECTION_GOALS.]`,
+
+      'ASK_CONNECTION_GOALS': `[ONBOARDING STEP: ASK_CONNECTION_GOALS - User just provided their connection goals. The action handler will update the state. Now send this EXACT message (make it natural but include all key information):
+
+${msgs.EVENTS}
+
+After sending this message, the action handler will update the state to ASK_EVENTS.]`,
+
+      'ASK_EVENTS': `[ONBOARDING STEP: ASK_EVENTS - User just provided their events preference. The action handler will update the state. Now send this EXACT message (make it natural but include all key information):
+
+${msgs.SOCIALS}
+
+After sending this message, the action handler will update the state to ASK_SOCIALS.]`,
+
+      'ASK_SOCIALS': `[ONBOARDING STEP: ASK_SOCIALS - User just provided their social links. The action handler will update the state. Now send this EXACT message (make it natural but include all key information):
+
+${msgs.TELEGRAM}
+
+After sending this message, the action handler will update the state to ASK_TELEGRAM_HANDLE.]`,
+
+      'ASK_TELEGRAM_HANDLE': `[ONBOARDING STEP: ASK_TELEGRAM_HANDLE - User just provided their Telegram handle. The action handler will update the state. Now send this EXACT message (make it natural but include all key information):
+
+${msgs.GENDER}
+
+After sending this message, the action handler will update the state to ASK_GENDER.]`,
+
+      'ASK_GENDER': `[ONBOARDING STEP: ASK_GENDER - User just provided their gender. The action handler will update the state. Now send this EXACT message (make it natural but include all key information):
+
+${msgs.NOTIFICATIONS}
+
+After sending this message, the action handler will update the state to ASK_NOTIFICATIONS.]`,
+
+      'ASK_NOTIFICATIONS': `[ONBOARDING STEP: ASK_NOTIFICATIONS - User just provided their notification preference. The action handler will update the state. Now send this EXACT message (make it natural but include all key information):
+
+${msgs.SUMMARY_TITLE}
+
+${msgs.SUMMARY_NAME} ${profile.name || msgs.SUMMARY_NOT_PROVIDED}
+${msgs.SUMMARY_LOCATION} ${profile.location || msgs.SUMMARY_NOT_PROVIDED}
+${msgs.SUMMARY_ROLES} ${profile.roles?.join(', ') || msgs.SUMMARY_NOT_PROVIDED}
+${msgs.SUMMARY_INTERESTS} ${profile.interests?.join(', ') || msgs.SUMMARY_NOT_PROVIDED}
+${msgs.SUMMARY_GOALS} ${profile.connectionGoals?.join(', ') || msgs.SUMMARY_NOT_PROVIDED}
+${msgs.SUMMARY_EVENTS} ${profile.events?.join(', ') || msgs.SUMMARY_NOT_PROVIDED}
+${msgs.SUMMARY_SOCIALS} ${profile.socials?.join(', ') || msgs.SUMMARY_NOT_PROVIDED}
+${msgs.SUMMARY_TELEGRAM} ${profile.telegramHandle ? '@' + profile.telegramHandle : msgs.SUMMARY_NOT_PROVIDED}
+${msgs.SUMMARY_GENDER} ${profile.gender || msgs.SUMMARY_NOT_PROVIDED}
+${msgs.SUMMARY_NOTIFICATIONS} ${profile.notifications || msgs.SUMMARY_NOT_PROVIDED}
+
+${msgs.EDIT_NAME}
+${msgs.EDIT_LOCATION}
+${msgs.EDIT_ROLES}
+${msgs.EDIT_INTERESTS}
+${msgs.EDIT_GOALS}
+${msgs.EDIT_EVENTS}
+${msgs.EDIT_SOCIALS}
+${msgs.EDIT_TELEGRAM}
+${msgs.EDIT_GENDER}
+${msgs.EDIT_NOTIFICATIONS}
+
+${msgs.CONFIRM}
+
+After sending this message, the action handler will update the state to CONFIRMATION.]`,
+
+      'CONFIRMATION': messageText.includes('confirm') || messageText.includes('yes') || messageText.includes('check')
+        ? `[ONBOARDING STEP: CONFIRMATION - User confirmed their profile. Send this EXACT message (make it natural):
+
+${msgs.COMPLETION}
+
+After sending this message, the action handler will mark onboarding as COMPLETED.]`
+        : `[ONBOARDING STEP: CONFIRMATION - User wants to edit their profile. The action handler will handle the edit and update the state accordingly.]`
     };
     
-    return stepContext[step] || `[ONBOARDING: Current step is ${step}. Guide the user through onboarding naturally.]`;
+    return stepMessages[step] || `[ONBOARDING: Current step is ${step}. Guide the user through onboarding naturally.]`;
     } catch (error) {
       console.error('[Onboarding Provider] Error:', error);
       return null;

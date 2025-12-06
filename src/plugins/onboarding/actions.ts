@@ -5,6 +5,7 @@ import { getMessages, parseLanguageCode, LanguageCode } from './translations.js'
 import { recordMessageSent } from '../../services/messageDeduplication.js';
 
 // Helper to safely call callback - deduplication is handled at memory creation level
+// NOTE: We're now using AI-generated messages, so callbacks are only used for restart commands
 async function safeCallback(
   callback: HandlerCallback | undefined,
   runtime: IAgentRuntime,
@@ -125,24 +126,20 @@ export const continueOnboardingAction: Action = {
 
     // START -> ASK_NAME
     if (currentStep === 'NONE') {
-      console.log('[Onboarding Action] Step is NONE, sending greeting');
+      console.log('[Onboarding Action] Step is NONE, updating to ASK_NAME');
       // Check if name already exists, skip to language if it does
       if (profile.name) {
         if (profile.language) {
           // Both name and language exist, skip to location
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_LOCATION');
-          await safeCallback(callback, runtime, roomId, msgs.LOCATION);
         } else {
           // Name exists but language doesn't, ask for language
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_LANGUAGE');
-          await safeCallback(callback, runtime, roomId, msgs.LANGUAGE);
         }
       } else {
         // No name, start with greeting
         await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_NAME');
-        console.log('[Onboarding Action] Calling callback with greeting');
-        console.log('[Onboarding Action] Greeting text:', msgs.GREETING.substring(0, 50) + '...');
-        await safeCallback(callback, runtime, roomId, msgs.GREETING);
+        console.log('[Onboarding Action] Updated state to ASK_NAME - AI will generate greeting message');
       }
       return true;
     }
@@ -153,23 +150,18 @@ export const continueOnboardingAction: Action = {
         console.log('[Onboarding Action] Processing ASK_NAME, user said:', text);
         if (isEditing) {
           await updateOnboardingStep(runtime, message.userId, roomId, 'CONFIRMATION', { name: text, isEditing: false, editingField: undefined });
-          const updatedProfile1 = await getUserProfile(runtime, message.userId);
-          await safeCallback(callback, runtime, roomId, generateSummaryText(updatedProfile1));
         } else {
           // Check if name already exists (shouldn't happen, but handle gracefully)
           if (profile.name && !text) {
             // Name already exists, skip to language
             if (profile.language) {
               await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_LOCATION');
-              await safeCallback(callback, runtime, roomId, msgs.LOCATION);
             } else {
               await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_LANGUAGE');
-              await safeCallback(callback, runtime, roomId, msgs.LANGUAGE);
             }
           } else {
             await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_LANGUAGE', { name: text });
-            console.log('[Onboarding Action] Calling callback with LANGUAGE message');
-            await safeCallback(callback, runtime, roomId, msgs.LANGUAGE);
+            console.log('[Onboarding Action] Updated state to ASK_LANGUAGE - AI will generate language question');
           }
         }
         break;
@@ -179,34 +171,28 @@ export const continueOnboardingAction: Action = {
         // Check if language already exists
         if (profile.language && !text) {
           // Language already exists, skip to location
-          const existingLangMsgs = getMessages(profile.language);
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_LOCATION');
-          await safeCallback(callback, runtime, roomId, existingLangMsgs.LOCATION);
           break;
         }
         const langCode = parseLanguageCode(text);
         if (!langCode) {
-          // Invalid language selection, ask again
-          await safeCallback(callback, runtime, roomId, msgs.LANGUAGE);
+          // Invalid language selection - stay on ASK_LANGUAGE, AI will ask again
+          console.log('[Onboarding Action] Invalid language selection, staying on ASK_LANGUAGE');
           break;
         }
         // Update language and move to location step
         await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_LOCATION', { language: langCode });
-        // Get messages in the selected language
-        const selectedLangMsgs = getMessages(langCode);
-        await safeCallback(callback, runtime, roomId, selectedLangMsgs.LOCATION);
+        console.log('[Onboarding Action] Updated state to ASK_LOCATION - AI will generate location question');
         break;
 
       case 'ASK_LOCATION':
         if (isEditing) {
           await updateOnboardingStep(runtime, message.userId, roomId, 'CONFIRMATION', { location: text, isEditing: false, editingField: undefined });
-          const updatedProfile2 = await getUserProfile(runtime, message.userId);
-          await safeCallback(callback, runtime, roomId, generateSummaryText(updatedProfile2));
         } else {
           // Handle "next" to skip optional question
           const locationValue = text.toLowerCase().trim() === 'next' ? undefined : text;
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_ROLE', { location: locationValue });
-          await safeCallback(callback, runtime, roomId, msgs.ROLES);
+          console.log('[Onboarding Action] Updated state to ASK_ROLE - AI will generate roles question');
         }
         break;
 
@@ -225,11 +211,9 @@ export const continueOnboardingAction: Action = {
         
         if (isEditing) {
           await updateOnboardingStep(runtime, message.userId, roomId, 'CONFIRMATION', { roles, isEditing: false, editingField: undefined });
-          const updatedProfile3 = await getUserProfile(runtime, message.userId);
-          await safeCallback(callback, runtime, roomId, generateSummaryText(updatedProfile3));
         } else {
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_INTERESTS', { roles }); 
-          await safeCallback(callback, runtime, roomId, msgs.INTERESTS);
+          console.log('[Onboarding Action] Updated state to ASK_INTERESTS - AI will generate interests question');
         }
         break;
 
@@ -247,11 +231,9 @@ export const continueOnboardingAction: Action = {
         
         if (isEditing) {
           await updateOnboardingStep(runtime, message.userId, roomId, 'CONFIRMATION', { interests, isEditing: false, editingField: undefined });
-          const updatedProfile4 = await getUserProfile(runtime, message.userId);
-          await safeCallback(callback, runtime, roomId, generateSummaryText(updatedProfile4));
         } else {
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_CONNECTION_GOALS', { interests });
-          await safeCallback(callback, runtime, roomId, msgs.GOALS);
+          console.log('[Onboarding Action] Updated state to ASK_CONNECTION_GOALS - AI will generate goals question');
         }
         break;
 
@@ -269,37 +251,31 @@ export const continueOnboardingAction: Action = {
         
         if (isEditing) {
           await updateOnboardingStep(runtime, message.userId, roomId, 'CONFIRMATION', { connectionGoals, isEditing: false, editingField: undefined });
-          const updatedProfile5 = await getUserProfile(runtime, message.userId);
-          await safeCallback(callback, runtime, roomId, generateSummaryText(updatedProfile5));
         } else {
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_EVENTS', { connectionGoals });
-          await safeCallback(callback, runtime, roomId, msgs.EVENTS);
+          console.log('[Onboarding Action] Updated state to ASK_EVENTS - AI will generate events question');
         }
         break;
 
       case 'ASK_EVENTS':
         if (isEditing) {
           await updateOnboardingStep(runtime, message.userId, roomId, 'CONFIRMATION', { events: [text], isEditing: false, editingField: undefined });
-          const updatedProfile6 = await getUserProfile(runtime, message.userId);
-          await safeCallback(callback, runtime, roomId, generateSummaryText(updatedProfile6));
         } else {
           // Handle "next" to skip optional question
           const eventsValue = text.toLowerCase().trim() === 'next' ? [] : [text];
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_SOCIALS', { events: eventsValue });
-          await safeCallback(callback, runtime, roomId, msgs.SOCIALS);
+          console.log('[Onboarding Action] Updated state to ASK_SOCIALS - AI will generate socials question');
         }
         break;
 
       case 'ASK_SOCIALS':
         if (isEditing) {
           await updateOnboardingStep(runtime, message.userId, roomId, 'CONFIRMATION', { socials: [text], isEditing: false, editingField: undefined });
-          const updatedProfile7 = await getUserProfile(runtime, message.userId);
-          await safeCallback(callback, runtime, roomId, generateSummaryText(updatedProfile7));
         } else {
           // Handle "next" to skip optional question
           const socialsValue = text.toLowerCase().trim() === 'next' ? [] : [text];
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_TELEGRAM_HANDLE', { socials: socialsValue });
-          await safeCallback(callback, runtime, roomId, msgs.TELEGRAM);
+          console.log('[Onboarding Action] Updated state to ASK_TELEGRAM_HANDLE - AI will generate Telegram question');
         }
         break;
 
@@ -310,59 +286,51 @@ export const continueOnboardingAction: Action = {
         
         if (isEditing) {
           await updateOnboardingStep(runtime, message.userId, roomId, 'CONFIRMATION', { telegramHandle: handleToSave, isEditing: false, editingField: undefined });
-          const updatedProfile8 = await getUserProfile(runtime, message.userId);
-          await safeCallback(callback, runtime, roomId, generateSummaryText(updatedProfile8));
         } else {
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_GENDER', { telegramHandle: handleToSave });
-          await safeCallback(callback, runtime, roomId, msgs.GENDER);
+          console.log('[Onboarding Action] Updated state to ASK_GENDER - AI will generate gender question');
         }
         break;
 
       case 'ASK_GENDER':
         if (isEditing) {
           await updateOnboardingStep(runtime, message.userId, roomId, 'CONFIRMATION', { gender: text, isEditing: false, editingField: undefined });
-          const updatedProfile9 = await getUserProfile(runtime, message.userId);
-          await safeCallback(callback, runtime, roomId, generateSummaryText(updatedProfile9));
         } else {
           // Handle "next" to skip optional question
           const genderValue = text.toLowerCase().trim() === 'next' ? undefined : text;
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_NOTIFICATIONS', { gender: genderValue });
-          await safeCallback(callback, runtime, roomId, msgs.NOTIFICATIONS);
+          console.log('[Onboarding Action] Updated state to ASK_NOTIFICATIONS - AI will generate notifications question');
         }
         break;
 
       case 'ASK_NOTIFICATIONS':
         await updateOnboardingStep(runtime, message.userId, roomId, 'CONFIRMATION', { notifications: text, isEditing: false, editingField: undefined });
-        const finalProfile = await getUserProfile(runtime, message.userId);
-        await safeCallback(callback, runtime, roomId, generateSummaryText(finalProfile));
+        console.log('[Onboarding Action] Updated state to CONFIRMATION - AI will generate summary');
         break;
 
       case 'CONFIRMATION':
         if (text.toLowerCase().includes('confirm') || text.toLowerCase().includes('yes') || text.toLowerCase().includes('check')) {
           await updateOnboardingStep(runtime, message.userId, roomId, 'COMPLETED', { isConfirmed: true, isEditing: false, editingField: undefined });
-          await safeCallback(callback, runtime, roomId, msgs.COMPLETION);
+          console.log('[Onboarding Action] Updated state to COMPLETED - AI will generate completion message');
         } else if (text.toLowerCase().includes('edit')) {
           const lowerText = text.toLowerCase();
           let editStep: OnboardingStep | null = null;
           let editField: string | undefined = undefined;
-          let editMessage: string = '';
           
-          if (lowerText.includes('name')) { editStep = 'ASK_NAME'; editField = 'name'; editMessage = msgs.GREETING.split('\n').pop() || "What's your preferred name?"; }
-          else if (lowerText.includes('location')) { editStep = 'ASK_LOCATION'; editField = 'location'; editMessage = msgs.LOCATION; }
-          else if (lowerText.includes('professional') || lowerText.includes('role')) { editStep = 'ASK_ROLE'; editField = 'roles'; editMessage = msgs.ROLES; }
-          else if (lowerText.includes('learning') || lowerText.includes('interest')) { editStep = 'ASK_INTERESTS'; editField = 'interests'; editMessage = msgs.INTERESTS; }
-          else if (lowerText.includes('connection') || lowerText.includes('goal')) { editStep = 'ASK_CONNECTION_GOALS'; editField = 'connectionGoals'; editMessage = msgs.GOALS; }
-          else if (lowerText.includes('conference') || lowerText.includes('event')) { editStep = 'ASK_EVENTS'; editField = 'events'; editMessage = msgs.EVENTS; }
-          else if (lowerText.includes('personal') || lowerText.includes('link') || lowerText.includes('social')) { editStep = 'ASK_SOCIALS'; editField = 'socials'; editMessage = msgs.SOCIALS; }
-          else if (lowerText.includes('telegram')) { editStep = 'ASK_TELEGRAM_HANDLE'; editField = 'telegramHandle'; editMessage = msgs.TELEGRAM; }
-          else if (lowerText.includes('gender')) { editStep = 'ASK_GENDER'; editField = 'gender'; editMessage = msgs.GENDER; }
-          else if (lowerText.includes('notification') || lowerText.includes('collab')) { editStep = 'ASK_NOTIFICATIONS'; editField = 'notifications'; editMessage = msgs.NOTIFICATIONS; }
+          if (lowerText.includes('name')) { editStep = 'ASK_NAME'; editField = 'name'; }
+          else if (lowerText.includes('location')) { editStep = 'ASK_LOCATION'; editField = 'location'; }
+          else if (lowerText.includes('professional') || lowerText.includes('role')) { editStep = 'ASK_ROLE'; editField = 'roles'; }
+          else if (lowerText.includes('learning') || lowerText.includes('interest')) { editStep = 'ASK_INTERESTS'; editField = 'interests'; }
+          else if (lowerText.includes('connection') || lowerText.includes('goal')) { editStep = 'ASK_CONNECTION_GOALS'; editField = 'connectionGoals'; }
+          else if (lowerText.includes('conference') || lowerText.includes('event')) { editStep = 'ASK_EVENTS'; editField = 'events'; }
+          else if (lowerText.includes('personal') || lowerText.includes('link') || lowerText.includes('social')) { editStep = 'ASK_SOCIALS'; editField = 'socials'; }
+          else if (lowerText.includes('telegram')) { editStep = 'ASK_TELEGRAM_HANDLE'; editField = 'telegramHandle'; }
+          else if (lowerText.includes('gender')) { editStep = 'ASK_GENDER'; editField = 'gender'; }
+          else if (lowerText.includes('notification') || lowerText.includes('collab')) { editStep = 'ASK_NOTIFICATIONS'; editField = 'notifications'; }
           
           if (editStep) {
             await updateOnboardingStep(runtime, message.userId, roomId, editStep, { isEditing: true, editingField: editField });
-            await safeCallback(callback, runtime, roomId, editMessage);
-          } else {
-            await safeCallback(callback, runtime, roomId, msgs.SUMMARY_TITLE); // Fallback message
+            console.log(`[Onboarding Action] Updated state to ${editStep} for editing - AI will generate edit question`);
           }
         }
         break;
