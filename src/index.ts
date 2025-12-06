@@ -222,7 +222,16 @@ async function startAgents() {
         await setupTelegramMessageInterceptor(kaiaRuntime);
         
         // Start Telegram client and try to capture chat IDs
-        const telegramClient = await TelegramClientInterface.start(kaiaRuntime);
+        // Wrap in try-catch to prevent bot crash if Telegram is unavailable
+        let telegramClient;
+        try {
+          telegramClient = await TelegramClientInterface.start(kaiaRuntime);
+        } catch (error: any) {
+          console.error('❌ Failed to start Telegram client (non-fatal, continuing):', error.message);
+          console.error('⚠️ Bot will continue running but Telegram functionality will be unavailable');
+          // Don't throw - allow bot to continue without Telegram
+          telegramClient = null;
+        }
         
         // Try to intercept Telegram client to capture chat IDs before they're converted to UUIDs
         console.log('[Telegram Chat ID Capture] Telegram client type:', typeof telegramClient);
