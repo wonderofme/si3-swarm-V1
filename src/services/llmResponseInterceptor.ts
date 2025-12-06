@@ -98,6 +98,9 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
   
   // Patch messageManager.createMemory to track user messages and intercept restart commands
   runtime.messageManager.createMemory = async (memory: Memory) => {
+    // Log ALL memory creation to debug why agent messages aren't being created
+    console.log('[LLM Response Interceptor] Memory created - userId:', memory.userId, 'agentId:', runtime.agentId, 'isAgent:', memory.userId === runtime.agentId, 'text:', memory.content.text?.substring(0, 50), 'roomId:', memory.roomId);
+    
     // Track user messages (not agent messages) per room
     if (memory.userId !== runtime.agentId && memory.roomId) {
       console.log('[LLM Response Interceptor] Tracking user message:', memory.content.text?.substring(0, 50), 'roomId:', memory.roomId);
@@ -203,6 +206,11 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
                   const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
                   await bot.telegram.sendMessage(telegramChatId, response.text);
                   console.log('[LLM Response Interceptor] Sent greeting message directly via Telegram API to chat:', telegramChatId);
+            
+            // Record in deduplication system immediately to prevent duplicates
+            const { recordMessageSent } = await import('./messageDeduplication.js');
+            recordMessageSent(memory.roomId, response.text);
+            console.log('[LLM Response Interceptor] Recorded timeout callback message in deduplication system');
                 } catch (error: any) {
                   console.error('[LLM Response Interceptor] Error sending via Telegram API:', error.message);
                   // Fall through to memory creation
@@ -286,6 +294,11 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
             const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
             await bot.telegram.sendMessage(telegramChatId, memory.content.text);
             console.log('[LLM Response Interceptor] ✅ Successfully sent agent message via Telegram API');
+            
+            // Record in deduplication system immediately to prevent duplicates
+            const { recordMessageSent } = await import('./messageDeduplication.js');
+            recordMessageSent(memory.roomId, memory.content.text);
+            console.log('[LLM Response Interceptor] Recorded message in deduplication system');
             
             // After sending directly, create memory with empty text to prevent duplicate sending by ElizaOS client
             // But keep the original text in metadata for logging/debugging
