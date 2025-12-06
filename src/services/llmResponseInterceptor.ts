@@ -103,8 +103,16 @@ export function checkActionExecutedRecently(roomId: string | undefined): boolean
 // Maps roomId to timestamp when action last executed
 const actionExecutionTimestamps = new Map<string, number>();
 
+// Track when agent messages are sent to prevent rapid consecutive messages
+// Maps roomId to timestamp when agent message was last sent
+const lastAgentMessageTimestamps = new Map<string, number>();
+
 // Time window in milliseconds - block agent messages if action executed within this window
 const ACTION_EXECUTION_BLOCK_WINDOW_MS = 3000; // 3 seconds
+
+// Time window in milliseconds - block agent messages if another agent message was sent recently
+// This catches duplicates from "No action found" follow-up responses
+const AGENT_MESSAGE_BLOCK_WINDOW_MS = 2000; // 2 seconds
 
 /**
  * Records that an action handler has executed for a given room
