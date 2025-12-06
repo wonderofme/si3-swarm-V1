@@ -116,7 +116,28 @@ async function createRuntime(character: any) {
     plugins
   });
 
-  await runtime.initialize();
+  // Initialize runtime with error handling - make database connection failures non-fatal
+  try {
+    await runtime.initialize();
+    console.log(`✅ ${character.name} runtime initialized successfully`);
+  } catch (error: any) {
+    const isDatabaseError = error.code === 'ETIMEDOUT' || 
+                           error.message?.includes('Failed to connect to database') ||
+                           error.message?.includes('database') ||
+                           error.message?.includes('testConnection');
+    
+    if (isDatabaseError) {
+      console.error(`⚠️ ${character.name} runtime initialization failed due to database connection issue (non-fatal, continuing)`);
+      console.error(`Database error: ${error.message}`);
+      console.error('⚠️ Bot will continue running but database-dependent features may be unavailable');
+      console.error('💡 The bot will still be able to respond to messages, but some features may not work until database is available');
+    } else {
+      // For non-database errors, re-throw to fail fast
+      console.error(`❌ ${character.name} runtime initialization failed with non-database error:`, error);
+      throw error;
+    }
+  }
+  
   return runtime;
 }
 
