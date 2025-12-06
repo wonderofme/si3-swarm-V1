@@ -35,44 +35,44 @@ export const onboardingProvider: Provider = {
     }
     
     if (step === 'NONE') {
-      return `[ONBOARDING INSTRUCTION: New user's first message. Send this greeting: "${msgs.GREETING}"]`;
+      return `[ONBOARDING INSTRUCTION: New user's first message. You MUST use action CONTINUE_ONBOARDING with empty text "". The action will send the greeting. Do NOT generate any text response - only use the action.]`;
     }
     
     // The step indicates what we were WAITING for. User just provided that info.
     // So we should output the NEXT question.
     const stepToMessage: Record<string, string> = {
       // User just provided their name → ask for language
-      'ASK_NAME': `[ONBOARDING INSTRUCTION: User provided their name. Ask about language. Send this question: "${msgs.LANGUAGE}"]`,
+      'ASK_NAME': `[ONBOARDING INSTRUCTION: User provided their name. You MUST use action CONTINUE_ONBOARDING with empty text "". The action will send the language question. Do NOT generate any text response - only use the action.]`,
 
       // User just provided language → ask for location
-      'ASK_LANGUAGE': `[ONBOARDING INSTRUCTION: User provided their language. Ask about location. Send this question: "${msgs.LOCATION}"]`,
+      'ASK_LANGUAGE': `[ONBOARDING INSTRUCTION: User provided their language. You MUST use action CONTINUE_ONBOARDING with empty text "". The action will send the location question. Do NOT generate any text response - only use the action.]`,
 
       // User just provided location → ask for roles
-      'ASK_LOCATION': `[ONBOARDING INSTRUCTION: User provided their location. Ask about roles. Send this question: "${msgs.ROLES}"]`,
+      'ASK_LOCATION': `[ONBOARDING INSTRUCTION: User provided their location. You MUST use action CONTINUE_ONBOARDING with empty text "". The action will send the roles question. Do NOT generate any text response - only use the action.]`,
 
       // User just provided roles → ask for interests
-      'ASK_ROLE': `[ONBOARDING INSTRUCTION: User provided their roles. Ask about interests. Send this question: "${msgs.INTERESTS}"]`,
+      'ASK_ROLE': `[ONBOARDING INSTRUCTION: User provided their roles. You MUST use action CONTINUE_ONBOARDING with empty text "". The action will send the interests question. Do NOT generate any text response - only use the action.]`,
 
       // User just provided interests → ask for connection goals
-      'ASK_INTERESTS': `[ONBOARDING INSTRUCTION: User provided their interests. Ask about connection goals. Send this question: "${msgs.GOALS}"]`,
+      'ASK_INTERESTS': `[ONBOARDING INSTRUCTION: User provided their interests. You MUST use action CONTINUE_ONBOARDING with empty text "". The action will send the goals question. Do NOT generate any text response - only use the action.]`,
 
       // User just provided connection goals → ask for events
-      'ASK_CONNECTION_GOALS': `[ONBOARDING INSTRUCTION: User provided their goals. Ask about events. Send this question: "${msgs.EVENTS}"]`,
+      'ASK_CONNECTION_GOALS': `[ONBOARDING INSTRUCTION: User provided their goals. You MUST use action CONTINUE_ONBOARDING with empty text "". The action will send the events question. Do NOT generate any text response - only use the action.]`,
 
       // User just provided events → ask for socials
-      'ASK_EVENTS': `[ONBOARDING INSTRUCTION: User provided events. Ask about social links. Send this question: "${msgs.SOCIALS}"]`,
+      'ASK_EVENTS': `[ONBOARDING INSTRUCTION: User provided events. You MUST use action CONTINUE_ONBOARDING with empty text "". The action will send the social links question. Do NOT generate any text response - only use the action.]`,
 
       // User just provided socials → ask for telegram
-      'ASK_SOCIALS': `[ONBOARDING INSTRUCTION: User provided socials. Ask about Telegram handle. Send this question: "${msgs.TELEGRAM}"]`,
+      'ASK_SOCIALS': `[ONBOARDING INSTRUCTION: User provided socials. You MUST use action CONTINUE_ONBOARDING with empty text "". The action will send the Telegram handle question. Do NOT generate any text response - only use the action.]`,
 
       // User just provided telegram → ask for gender
-      'ASK_TELEGRAM_HANDLE': `[ONBOARDING INSTRUCTION: User provided Telegram handle. Ask about gender. Send this question: "${msgs.GENDER}"]`,
+      'ASK_TELEGRAM_HANDLE': `[ONBOARDING INSTRUCTION: User provided Telegram handle. You MUST use action CONTINUE_ONBOARDING with empty text "". The action will send the gender question. Do NOT generate any text response - only use the action.]`,
 
       // User just provided gender → ask for notifications
-      'ASK_GENDER': `[ONBOARDING INSTRUCTION: User provided gender. Ask about notifications. Send this question: "${msgs.NOTIFICATIONS}"]`,
+      'ASK_GENDER': `[ONBOARDING INSTRUCTION: User provided gender. You MUST use action CONTINUE_ONBOARDING with empty text "". The action will send the notifications question. Do NOT generate any text response - only use the action.]`,
 
       // User just provided notifications → show summary
-      'ASK_NOTIFICATIONS': `[ONBOARDING INSTRUCTION: User provided notification preference. Show the summary of their profile.]`,
+      'ASK_NOTIFICATIONS': `[ONBOARDING INSTRUCTION: User provided notification preference. You MUST use action CONTINUE_ONBOARDING with empty text "". The action will send the summary. Do NOT generate any text response - only use the action.]`,
 
       // User confirmed or edited → show completion or re-ask
       'CONFIRMATION': messageText.includes('confirm') || messageText.includes('yes') || messageText.includes('check') 
