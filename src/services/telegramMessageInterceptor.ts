@@ -6,6 +6,7 @@ import { isDuplicateMessage, recordMessageSent } from './messageDeduplication.js
  * and apply deduplication. This catches both action callback messages and LLM-generated messages.
  */
 export async function setupTelegramMessageInterceptor(runtime: IAgentRuntime) {
+  // Get the current createMemory (which may already be patched by LLM interceptor)
   const originalCreateMemory = runtime.messageManager.createMemory.bind(runtime.messageManager);
   
   runtime.messageManager.createMemory = async (memory: Memory) => {

@@ -212,7 +212,12 @@ async function startAgents() {
         const { setupTelegramRestartHandler } = await import('./services/telegramRestartHandler.js');
         await setupTelegramRestartHandler(kaiaRuntime);
         
-        // Setup message interceptor for deduplication
+        // Setup LLM response interceptor to force action execution for restart commands
+        // This must be BEFORE the message interceptor so patches chain correctly
+        const { setupLLMResponseInterceptor } = await import('./services/llmResponseInterceptor.js');
+        await setupLLMResponseInterceptor(kaiaRuntime);
+        
+        // Setup message interceptor for deduplication (this will wrap the LLM interceptor)
         const { setupTelegramMessageInterceptor } = await import('./services/telegramMessageInterceptor.js');
         await setupTelegramMessageInterceptor(kaiaRuntime);
         
