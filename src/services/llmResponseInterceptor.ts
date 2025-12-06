@@ -2,6 +2,50 @@ import { IAgentRuntime, Memory } from '@elizaos/core';
 import { continueOnboardingAction } from '../plugins/onboarding/actions.js';
 import { getMessages } from '../plugins/onboarding/translations.js';
 
+/**
+ * Gets the Telegram chat ID from the room ID by checking the user's message memory
+ * When ElizaOS receives a Telegram message, the roomId in the memory might be the actual chat ID
+ * or we need to find it from the original message
+ */
+async function getTelegramChatIdFromUserMessage(runtime: IAgentRuntime, userMessage: Memory): Promise<string | null> {
+  try {
+    // The userMessage.roomId might already be the Telegram chat ID if it came from Telegram
+    // But if it's a UUID, we need to find the actual chat ID
+    
+    // Check if roomId looks like a Telegram chat ID (numeric string, no hyphens)
+    if (userMessage.roomId && !userMessage.roomId.includes('-') && /^\d+$/.test(userMessage.roomId)) {
+      return userMessage.roomId;
+    }
+    
+    // If it's a UUID, try to find the Telegram chat ID from the database
+    // Look for memories from this room that came from Telegram
+    const adapter = runtime.databaseAdapter as any;
+    const result = await adapter.query(
+      `SELECT room_id FROM memories 
+       WHERE room_id = $1 
+       AND user_id != $2 
+       AND content->>'source' = 'telegram'
+       AND room_id !~ '-'
+       ORDER BY created_at DESC 
+       LIMIT 1`,
+      [userMessage.roomId, runtime.agentId]
+    );
+    
+    if (result.rows && result.rows.length > 0) {
+      const foundRoomId = result.rows[0].room_id;
+      // Check if it's numeric (Telegram chat ID)
+      if (foundRoomId && /^\d+$/.test(foundRoomId)) {
+        return foundRoomId;
+      }
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('[LLM Response Interceptor] Error getting Telegram chat ID:', error);
+    return null;
+  }
+}
+
 function isRestartCommand(text: string): boolean {
   if (!text) return false;
   const lower = text.toLowerCase().trim();
@@ -71,12 +115,30 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
             console.log('[LLM Response Interceptor] Timeout reached, no response received, forcing action execution');
             pendingRestartCommands.delete(memory.roomId);
             
-            // Force execute the action - create memory normally so Telegram client sends it
+            // Force execute the action - try to send via Telegram API if we can get the chat ID
             const callback = async (response: { text: string }): Promise<any[]> => {
               console.log('[LLM Response Interceptor] Timeout callback called with text:', response.text.substring(0, 50));
               
-              // Create memory normally - this will go through all interceptors
-              // The Telegram client will automatically send it when it sees the memory
+              // Try to get the actual Telegram chat ID from the user's message
+              const telegramChatId = await getTelegramChatIdFromUserMessage(runtime, memory);
+              
+              // If we have a Telegram chat ID, try sending directly
+              if (telegramChatId && process.env.TELEGRAM_BOT_TOKEN) {
+                try {
+                  const Telegraf = (await import('telegraf')).Telegraf;
+                  const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
+                  await bot.telegram.sendMessage(telegramChatId, response.text);
+                  console.log('[LLM Response Interceptor] Sent greeting message directly via Telegram API to chat:', telegramChatId);
+                } catch (error: any) {
+                  console.error('[LLM Response Interceptor] Error sending via Telegram API:', error.message);
+                  // Fall through to memory creation
+                }
+              } else {
+                console.log('[LLM Response Interceptor] Could not get Telegram chat ID, will rely on memory creation');
+              }
+              
+              // Also create memory normally - this will go through all interceptors
+              // The Telegram client might send it, or we already sent it above
               // Mark it to prevent re-processing by our interceptor
               const greetingMemory = await runtime.messageManager.createMemory({
                 id: undefined,
@@ -90,7 +152,7 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
                   metadata: { timeoutCreated: true }
                 }
               });
-              console.log('[LLM Response Interceptor] Greeting memory created, Telegram client will send it');
+              console.log('[LLM Response Interceptor] Greeting memory created');
               
               return Array.isArray(greetingMemory) ? greetingMemory : [greetingMemory];
             };
