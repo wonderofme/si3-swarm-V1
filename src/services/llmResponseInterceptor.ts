@@ -126,8 +126,13 @@ const AGENT_MESSAGE_BLOCK_WINDOW_MS = 2000; // 2 seconds
  */
 export function recordActionExecution(roomId: string): void {
   if (roomId) {
-    actionExecutionTimestamps.set(roomId, Date.now());
-    console.log('[LLM Response Interceptor] Recorded action execution for roomId:', roomId);
+    const timestamp = Date.now();
+    actionExecutionTimestamps.set(roomId, timestamp);
+    console.log('[LLM Response Interceptor] ✅ Recorded action execution for roomId:', roomId, 'timestamp:', timestamp);
+    console.log('[LLM Response Interceptor] Map size after recording:', actionExecutionTimestamps.size);
+    console.log('[LLM Response Interceptor] All roomIds in map:', Array.from(actionExecutionTimestamps.keys()));
+  } else {
+    console.log('[LLM Response Interceptor] ⚠️ WARNING: recordActionExecution called with empty roomId!');
   }
 }
 
@@ -370,6 +375,9 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
       // CRITICAL FIX: Block agent messages if an action was executed recently
       // This prevents ElizaOS from generating a duplicate response after action execution
       // Even if the provider wasn't called (which seems to be the case for follow-up responses)
+      console.log('[LLM Response Interceptor] 🔍 Checking action execution status before blocking check...');
+      console.log('[LLM Response Interceptor] Current map size:', actionExecutionTimestamps.size);
+      console.log('[LLM Response Interceptor] All roomIds in map:', Array.from(actionExecutionTimestamps.keys()));
       const actionWasRecent = wasActionExecutedRecently(memory.roomId);
       if (actionWasRecent) {
         console.log('[LLM Response Interceptor] 🚫 BLOCKING agent message - action was executed recently, preventing duplicate response');
@@ -382,6 +390,8 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
             text: '' // Empty text prevents sending
           }
         });
+      } else {
+        console.log('[LLM Response Interceptor] ✅ Action was NOT recent, allowing agent message');
       }
       
       // ADDITIONAL FIX: Block agent messages if another agent message was sent very recently
