@@ -23,9 +23,17 @@ export const onboardingProvider: Provider = {
       
       // CRITICAL FIX: If an action was just executed, return null to prevent LLM from generating a response
       // This prevents duplicate messages after action execution
-      if (message.roomId && checkActionExecutedRecently(message.roomId)) {
-        console.log('[Onboarding Provider] Action was executed recently, returning null to prevent duplicate LLM response');
-        return null; // No instructions = no LLM response
+      if (message.roomId) {
+        const actionWasRecent = checkActionExecutedRecently(message.roomId);
+        console.log(`[Onboarding Provider] Checking action execution - roomId: ${message.roomId}, actionWasRecent: ${actionWasRecent}`);
+        if (actionWasRecent) {
+          console.log('[Onboarding Provider] ✅ Action was executed recently, returning null to prevent duplicate LLM response');
+          return null; // No instructions = no LLM response
+        } else {
+          console.log('[Onboarding Provider] ✅ No recent action execution, providing normal instructions');
+        }
+      } else {
+        console.log('[Onboarding Provider] ⚠️ No roomId in message, cannot check action execution');
       }
     
     if (step === 'COMPLETED') {
