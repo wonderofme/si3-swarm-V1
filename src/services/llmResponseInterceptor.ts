@@ -68,9 +68,13 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
             console.log('[LLM Response Interceptor] Timeout reached, no response received, forcing action execution');
             pendingRestartCommands.delete(memory.roomId);
             
-            // Force execute the action
+            // Force execute the action - use the runtime's messageManager directly
+            // This ensures it goes through all the interceptors
             const callback = async (response: { text: string }): Promise<any[]> => {
-              const greetingMemory = await originalCreateMemory({
+              console.log('[LLM Response Interceptor] Callback called with text:', response.text.substring(0, 50));
+              // Use runtime.messageManager.createMemory directly (not originalCreateMemory)
+              // This ensures it goes through all interceptors including the message interceptor
+              const greetingMemory = await runtime.messageManager.createMemory({
                 id: undefined,
                 userId: runtime.agentId,
                 agentId: runtime.agentId,
@@ -80,6 +84,7 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
                   source: 'telegram'
                 }
               });
+              console.log('[LLM Response Interceptor] Greeting memory created');
               return Array.isArray(greetingMemory) ? greetingMemory : [greetingMemory];
             };
             
