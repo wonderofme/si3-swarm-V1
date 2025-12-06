@@ -109,11 +109,16 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
         const chatId = (global as any).__telegramChatIdMap.get(messageText);
         if (chatId) {
           roomIdToTelegramChatId.set(memory.roomId, String(chatId));
-          console.log('[LLM Response Interceptor] Captured Telegram chat ID from global map:', chatId);
-          // Clean up the map entry after a delay
+          console.log('[LLM Response Interceptor] Captured Telegram chat ID from global map:', chatId, 'for roomId:', memory.roomId);
+          // Store it with a longer timeout since we'll need it for sending messages
+          // Clean up the map entry after a longer delay (30 seconds) to allow time for response
           setTimeout(() => {
             (global as any).__telegramChatIdMap?.delete(messageText);
-          }, 5000);
+          }, 30000);
+        } else {
+          console.log('[LLM Response Interceptor] Chat ID not found in global map for message:', messageText.substring(0, 50));
+          console.log('[LLM Response Interceptor] Global map size:', (global as any).__telegramChatIdMap?.size || 0);
+          console.log('[LLM Response Interceptor] Global map keys:', Array.from((global as any).__telegramChatIdMap?.keys() || []));
         }
       }
       
