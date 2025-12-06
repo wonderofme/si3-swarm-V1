@@ -366,6 +366,8 @@ async function startAgents() {
           console.log('[Telegram Chat ID Capture] Bot keys:', bot ? Object.keys(bot) : 'null');
           
           // Try intercepting the handler property instead
+          // NOTE: bot.handler might not be the main entry point - Telegraf uses bot.on() for events
+          // But we'll patch it anyway to see if it gets called
           if (bot && bot.handler) {
             console.log('[Telegram Chat ID Capture] Found bot.handler, attempting to patch...');
             const originalHandler = bot.handler.bind(bot);
@@ -512,37 +514,24 @@ async function startAgents() {
             console.log('[Telegram Chat ID Capture] Patched bot.telegram.sendMessage');
           }
           
-          // Also try patching bot.on to catch all events
+          // Also try patching bot.on to catch all events - but be less intrusive
+          // Just log when events are registered, don't wrap handlers (that might break things)
           if (bot && typeof bot.on === 'function') {
-            console.log('[Telegram Chat ID Capture] Patching bot.on to log ALL events...');
+            console.log('[Telegram Chat ID Capture] Patching bot.on to log event registration...');
             const originalOn = bot.on.bind(bot);
             bot.on = function(event: string, ...handlers: any[]) {
-              console.log(`[Telegram Chat ID Capture] bot.on called with event: ${event}, handlers: ${handlers.length}`);
+              console.log(`[Telegram Chat ID Capture] 📋 Event registered: ${event}, handlers: ${handlers.length}`);
               
-              // Wrap handlers to log when they're called
-              const wrappedHandlers = handlers.map(handler => {
-                if (typeof handler === 'function') {
-                  return async (...args: any[]) => {
-                    console.log(`[Telegram Chat ID Capture] 📨 Event handler called for event: ${event}`);
-                    console.log(`[Telegram Chat ID Capture] Handler args:`, args.length, 'arguments');
-                    if (args[0] && args[0].message) {
-                      const msg = args[0].message;
-                      console.log(`[Telegram Chat ID Capture] Message from chat: ${msg.chat?.id}, text: ${msg.text?.substring(0, 50) || '(no text)'}`);
-                    }
-                    try {
-                      return await handler(...args);
-                    } catch (error: any) {
-                      console.error(`[Telegram Chat ID Capture] Error in event handler for ${event}:`, error);
-                      throw error;
-                    }
-                  };
-                }
-                return handler;
-              });
+              // For message events, also try to capture chat ID from the handler when it's called
+              // But don't wrap the handler - just register it normally and let Telegraf handle it
+              if (event === 'message' || event === 'text') {
+                console.log(`[Telegram Chat ID Capture] Message event registered - handlers will be called by Telegraf`);
+              }
               
-              return originalOn(event, ...wrappedHandlers);
+              // Call original to register handlers normally - don't wrap them
+              return originalOn(event, ...handlers);
             };
-            console.log('[Telegram Chat ID Capture] Patched bot.on to capture chat IDs from all events');
+            console.log('[Telegram Chat ID Capture] Patched bot.on to log event registration');
           } else {
             console.log('[Telegram Chat ID Capture] Could not find bot.on method. bot:', bot);
           }
