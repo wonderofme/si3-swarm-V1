@@ -3,6 +3,7 @@ import { getOnboardingStep, updateOnboardingStep, getUserProfile } from './utils
 import { OnboardingStep, UserProfile } from './types.js';
 import { getMessages, parseLanguageCode, LanguageCode } from './translations.js';
 import { recordMessageSent } from '../../services/messageDeduplication.js';
+import { recordActionExecution } from '../../services/llmResponseInterceptor.js';
 
 // Helper to safely call callback - deduplication is handled at memory creation level
 // NOTE: We're now using AI-generated messages, so callbacks are only used for restart commands
@@ -334,6 +335,14 @@ export const continueOnboardingAction: Action = {
           }
         }
         break;
+    }
+
+    // Record that action handler executed to prevent duplicate LLM responses
+    // This is critical: ElizaOS generates a follow-up response after action execution,
+    // but we've already sent the message via AI, so we need to block the duplicate
+    if (roomId) {
+      recordActionExecution(roomId);
+      console.log('[Onboarding Action] Recorded action execution to prevent duplicate LLM response');
     }
 
     return true;

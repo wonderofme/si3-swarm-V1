@@ -83,6 +83,40 @@ const timeoutCreatedMessages = new Set<string>();
 // When we receive a Telegram message, we store the chat ID from the message metadata
 const roomIdToTelegramChatId = new Map<string, string>();
 
+// Track when action handlers execute to prevent duplicate LLM responses
+// Maps roomId to timestamp when action last executed
+const actionExecutionTimestamps = new Map<string, number>();
+
+// Time window in milliseconds - block agent messages if action executed within this window
+const ACTION_EXECUTION_BLOCK_WINDOW_MS = 3000; // 3 seconds
+
+/**
+ * Records that an action handler has executed for a given room
+ * This is used to prevent duplicate LLM responses after action execution
+ */
+export function recordActionExecution(roomId: string): void {
+  if (roomId) {
+    actionExecutionTimestamps.set(roomId, Date.now());
+    console.log('[LLM Response Interceptor] Recorded action execution for roomId:', roomId);
+  }
+}
+
+/**
+ * Checks if an action was recently executed for a given room
+ * Returns true if action executed within the block window
+ */
+function wasActionExecutedRecently(roomId: string): boolean {
+  if (!roomId) return false;
+  const timestamp = actionExecutionTimestamps.get(roomId);
+  if (!timestamp) return false;
+  const elapsed = Date.now() - timestamp;
+  const wasRecent = elapsed < ACTION_EXECUTION_BLOCK_WINDOW_MS;
+  if (wasRecent) {
+    console.log(`[LLM Response Interceptor] Action was executed recently (${elapsed}ms ago) for roomId: ${roomId}`);
+  }
+  return wasRecent;
+}
+
 // Timeout in milliseconds - if no response after this, force execute action
 const RESTART_TIMEOUT_MS = 3000; // 3 seconds
 
@@ -253,6 +287,8 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
                 undefined,
                 callback
               );
+              // Record action execution to prevent duplicate responses
+              recordActionExecution(memory.roomId);
               console.log('[LLM Response Interceptor] Timeout-based action execution completed');
             } catch (error) {
               console.error('[LLM Response Interceptor] Error in timeout-based action execution:', error);
@@ -271,6 +307,20 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
       if (isTimeoutCreated) {
         console.log('[LLM Response Interceptor] Skipping - message created by timeout callback');
         return await originalCreateMemory(memory);
+      }
+      
+      // CRITICAL FIX: Block agent messages if an action was executed recently
+      // This prevents ElizaOS from generating a duplicate response after action execution
+      if (wasActionExecutedRecently(memory.roomId)) {
+        console.log('[LLM Response Interceptor] Blocking agent message - action was executed recently, preventing duplicate response');
+        // Return empty memory to prevent sending
+        return await originalCreateMemory({
+          ...memory,
+          content: {
+            ...memory.content,
+            text: '' // Empty text prevents sending
+          }
+        });
       }
       
       // For all agent messages, try to send directly via Telegram API if we have the chat ID
@@ -386,6 +436,8 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
                 undefined,
                 callback
               );
+              // Record action execution to prevent duplicate responses
+              recordActionExecution(memory.roomId);
               console.log('[LLM Response Interceptor] Forced action execution completed');
               
               // Clear the tracked message
@@ -434,6 +486,8 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
                   undefined,
                   callback
                 );
+                // Record action execution to prevent duplicate responses
+                recordActionExecution(memory.roomId);
                 console.log('[LLM Response Interceptor] Forced action execution completed (empty LLM response)');
                 lastUserMessagePerRoom.delete(memory.roomId);
                 return await originalCreateMemory(memory); // Return the empty memory as-is
