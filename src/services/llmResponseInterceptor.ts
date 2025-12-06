@@ -43,20 +43,26 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
   runtime.messageManager.createMemory = async (memory: Memory) => {
     // Track user messages (not agent messages) per room
     if (memory.userId !== runtime.agentId && memory.roomId) {
+      console.log('[LLM Response Interceptor] Tracking user message:', memory.content.text?.substring(0, 50), 'roomId:', memory.roomId);
       lastUserMessagePerRoom.set(memory.roomId, memory);
     }
     
     // For agent messages, check if this is after a restart command
     if (memory.userId === runtime.agentId && memory.roomId) {
+      console.log('[LLM Response Interceptor] Agent message detected, roomId:', memory.roomId, 'text:', memory.content.text?.substring(0, 50));
       const lastUserMessage = lastUserMessagePerRoom.get(memory.roomId);
       
       if (lastUserMessage) {
         const userText = lastUserMessage.content.text || '';
+        console.log('[LLM Response Interceptor] Last user message text:', userText.substring(0, 50));
         
         if (isRestartCommand(userText)) {
+          console.log('[LLM Response Interceptor] Restart command detected in user message');
           // Check if this memory has an action or if we need to force it
           const hasActionInMemory = memory.content.action || 
                                     (memory.content.text && memory.content.text.includes('CONTINUE_ONBOARDING'));
+          
+          console.log('[LLM Response Interceptor] Has action in memory:', hasActionInMemory, 'Memory text:', memory.content.text?.substring(0, 50));
           
           if (!hasActionInMemory && memory.content.text && memory.content.text.trim()) {
             console.log('[LLM Response Interceptor] Restart detected but LLM didn\'t use action, forcing action execution');
@@ -107,10 +113,45 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
           } else {
             if (hasActionInMemory) {
               console.log('[LLM Response Interceptor] Restart detected and action found in response, allowing normal flow');
+            } else if (!memory.content.text || !memory.content.text.trim()) {
+              console.log('[LLM Response Interceptor] Restart detected but LLM response is empty, forcing action execution anyway');
+              // Even if LLM response is empty, we should still execute the action
+              const callback = async (response: { text: string }): Promise<any[]> => {
+                const greetingMemory = await originalCreateMemory({
+                  id: undefined,
+                  userId: runtime.agentId,
+                  agentId: runtime.agentId,
+                  roomId: lastUserMessage.roomId,
+                  content: {
+                    text: response.text,
+                    source: 'telegram'
+                  }
+                });
+                return Array.isArray(greetingMemory) ? greetingMemory : [greetingMemory];
+              };
+              
+              try {
+                await continueOnboardingAction.handler(
+                  runtime,
+                  lastUserMessage,
+                  undefined,
+                  undefined,
+                  callback
+                );
+                console.log('[LLM Response Interceptor] Forced action execution completed (empty LLM response)');
+                lastUserMessagePerRoom.delete(memory.roomId);
+                return await originalCreateMemory(memory); // Return the empty memory as-is
+              } catch (error) {
+                console.error('[LLM Response Interceptor] Error forcing action (empty response):', error);
+              }
             }
             lastUserMessagePerRoom.delete(memory.roomId); // Clear tracked message
           }
+        } else {
+          console.log('[LLM Response Interceptor] No restart command in user message');
         }
+      } else {
+        console.log('[LLM Response Interceptor] No last user message found for roomId:', memory.roomId);
       }
     }
     
