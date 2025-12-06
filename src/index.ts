@@ -294,6 +294,23 @@ async function startAgents() {
             console.log(`[Telegram Client] Attempting to start Telegram client (attempt ${attempt}/${maxRetries})...`);
             telegramClient = await TelegramClientInterface.start(kaiaRuntime);
             console.log(`[Telegram Client] ✅ Successfully started Telegram client on attempt ${attempt}`);
+            
+            // Verify bot is ready and listening
+            if (telegramClient && (telegramClient as any).bot) {
+              const bot = (telegramClient as any).bot;
+              console.log('[Telegram Client] Bot info:', bot.botInfo);
+              console.log('[Telegram Client] Bot username:', bot.botInfo?.username);
+              console.log('[Telegram Client] Bot is ready to receive messages');
+              
+              // Test if we can get bot info
+              try {
+                const me = await bot.telegram.getMe();
+                console.log('[Telegram Client] ✅ Bot is connected and verified:', me.username);
+              } catch (error: any) {
+                console.error('[Telegram Client] ⚠️ Could not verify bot connection:', error.message);
+              }
+            }
+            
             break; // Success, exit retry loop
           } catch (error: any) {
             // Handle FetchError and other error types
@@ -353,12 +370,24 @@ async function startAgents() {
             console.log('[Telegram Chat ID Capture] Found bot.handler, attempting to patch...');
             const originalHandler = bot.handler.bind(bot);
             bot.handler = function(update: any) {
+              // Log ALL updates to see what's coming in
+              console.log('[Telegram Chat ID Capture] 📥 Handler called with update type:', update?.update_id ? 'update_id: ' + update.update_id : 'no update_id');
+              console.log('[Telegram Chat ID Capture] Update keys:', Object.keys(update || {}));
+              
               // Try to extract chat ID from update
-              const chatId = update?.message?.chat?.id || update?.callback_query?.message?.chat?.id;
-              const messageText = update?.message?.text || '';
+              const chatId = update?.message?.chat?.id || 
+                            update?.callback_query?.message?.chat?.id ||
+                            update?.edited_message?.chat?.id ||
+                            update?.channel_post?.chat?.id;
+              const messageText = update?.message?.text || 
+                                 update?.edited_message?.text || 
+                                 update?.callback_query?.data ||
+                                 '';
+              
+              console.log('[Telegram Chat ID Capture] Extracted chatId:', chatId, 'messageText:', messageText?.substring(0, 50) || '(empty)');
               
               if (chatId && messageText) {
-                console.log('[Telegram Chat ID Capture] Captured chat ID from handler:', chatId, 'for message:', messageText.substring(0, 50));
+                console.log('[Telegram Chat ID Capture] ✅ Captured chat ID from handler:', chatId, 'for message:', messageText.substring(0, 50));
                 (global as any).__telegramChatIdMap = (global as any).__telegramChatIdMap || new Map();
                 (global as any).__telegramChatIdMap.set(messageText, String(chatId));
                 console.log('[Telegram Chat ID Capture] Stored in map. Map size:', (global as any).__telegramChatIdMap.size);
@@ -367,13 +396,21 @@ async function startAgents() {
                 setTimeout(() => {
                   (global as any).__telegramChatIdMap?.delete(messageText);
                 }, 60000);
+              } else if (chatId) {
+                console.log('[Telegram Chat ID Capture] ⚠️ Chat ID found but no message text. ChatId:', chatId);
+              } else {
+                console.log('[Telegram Chat ID Capture] ⚠️ No chat ID found in update');
               }
               
               // Wrap in try-catch to handle database errors gracefully
               try {
-                return originalHandler(update);
+                console.log('[Telegram Chat ID Capture] Calling original handler...');
+                const result = originalHandler(update);
+                console.log('[Telegram Chat ID Capture] Original handler returned');
+                return result;
               } catch (error: any) {
-                console.error('[Telegram Chat ID Capture] Error in message handler:', error);
+                console.error('[Telegram Chat ID Capture] ❌ Error in message handler:', error);
+                console.error('[Telegram Chat ID Capture] Error stack:', error.stack);
                 // If it's a database error and we have a chat ID, send a fallback response
                 if (chatId && (error.code === 'ETIMEDOUT' || error.message?.includes('timeout') || error.message?.includes('database'))) {
                   console.log('[Telegram Chat ID Capture] Database error detected, sending fallback response to chat:', chatId);
@@ -477,36 +514,34 @@ async function startAgents() {
           
           // Also try patching bot.on to catch all events
           if (bot && typeof bot.on === 'function') {
+            console.log('[Telegram Chat ID Capture] Patching bot.on to log ALL events...');
             const originalOn = bot.on.bind(bot);
-            console.log('[Telegram Chat ID Capture] Found bot.on method, patching to log ALL events...');
-            
-            // Patch to log ALL events and intercept message-related ones
-            bot.on = function(event: string, handler: any) {
-              console.log('[Telegram Chat ID Capture] Event registered:', event);
+            bot.on = function(event: string, ...handlers: any[]) {
+              console.log(`[Telegram Chat ID Capture] bot.on called with event: ${event}, handlers: ${handlers.length}`);
               
-              // Wrap ALL handlers to capture chat ID
-              const wrappedHandler = (ctx: any) => {
-                // Try multiple paths to get chat ID
-                const chatId = ctx?.chat?.id || 
-                              ctx?.message?.chat?.id || 
-                              ctx?.update?.message?.chat?.id ||
-                              ctx?.callback_query?.message?.chat?.id;
-                const messageText = ctx?.message?.text || 
-                                   ctx?.update?.message?.text || 
-                                   ctx?.callback_query?.message?.text || '';
-                
-                if (chatId && messageText) {
-                  console.log('[Telegram Chat ID Capture] Captured chat ID from event:', event, 'chat ID:', chatId, 'message:', messageText.substring(0, 50));
-                  (global as any).__telegramChatIdMap = (global as any).__telegramChatIdMap || new Map();
-                  (global as any).__telegramChatIdMap.set(messageText, String(chatId));
-                } else if (chatId) {
-                  console.log('[Telegram Chat ID Capture] Found chat ID:', chatId, 'but no message text for event:', event);
+              // Wrap handlers to log when they're called
+              const wrappedHandlers = handlers.map(handler => {
+                if (typeof handler === 'function') {
+                  return async (...args: any[]) => {
+                    console.log(`[Telegram Chat ID Capture] 📨 Event handler called for event: ${event}`);
+                    console.log(`[Telegram Chat ID Capture] Handler args:`, args.length, 'arguments');
+                    if (args[0] && args[0].message) {
+                      const msg = args[0].message;
+                      console.log(`[Telegram Chat ID Capture] Message from chat: ${msg.chat?.id}, text: ${msg.text?.substring(0, 50) || '(no text)'}`);
+                    }
+                    try {
+                      return await handler(...args);
+                    } catch (error: any) {
+                      console.error(`[Telegram Chat ID Capture] Error in event handler for ${event}:`, error);
+                      throw error;
+                    }
+                  };
                 }
-                
-                return handler(ctx);
-              };
+                return handler;
+              });
               
-              return originalOn(event, wrappedHandler);
+              return originalOn(event, ...wrappedHandlers);
+            };
             };
             console.log('[Telegram Chat ID Capture] Patched bot.on to capture chat IDs from all events');
           } else {
