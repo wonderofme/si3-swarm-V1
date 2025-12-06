@@ -45,34 +45,34 @@ export const onboardingProvider: Provider = {
       'ASK_NAME': `[ONBOARDING INSTRUCTION: User provided their name. PREFER using action CONTINUE_ONBOARDING with empty text \"\". If you cannot use the action, send this question directly: "${msgs.LANGUAGE}". Always respond.]`,
 
       // User just provided language → ask for location
-      'ASK_LANGUAGE': `[ONBOARDING INSTRUCTION: User provided their language. Use action CONTINUE_ONBOARDING with empty text \"\". Do NOT output any message text - the action callback sends the location question.]`,
+      'ASK_LANGUAGE': `[ONBOARDING INSTRUCTION: User provided their language. PREFER using action CONTINUE_ONBOARDING with empty text \"\". If you cannot use the action, send this question directly: "${msgs.LOCATION}". Always respond - never leave the user without a message.]`,
 
       // User just provided location → ask for roles
-      'ASK_LOCATION': `[ONBOARDING INSTRUCTION: User provided their location. Use action CONTINUE_ONBOARDING with empty text \"\". Do NOT output any message text - the action callback sends the roles question.]`,
+      'ASK_LOCATION': `[ONBOARDING INSTRUCTION: User provided their location. PREFER using action CONTINUE_ONBOARDING with empty text \"\". If you cannot use the action, send this question directly: "${msgs.ROLES}". Always respond - never leave the user without a message.]`,
 
       // User just provided roles → ask for interests
-      'ASK_ROLE': `[ONBOARDING INSTRUCTION: User provided their roles. Use action CONTINUE_ONBOARDING with empty text \"\". Do NOT output any message text - the action callback sends the interests question.]`,
+      'ASK_ROLE': `[ONBOARDING INSTRUCTION: User provided their roles. PREFER using action CONTINUE_ONBOARDING with empty text \"\". If you cannot use the action, send this question directly: "${msgs.INTERESTS}". Always respond - never leave the user without a message.]`,
 
       // User just provided interests → ask for connection goals
-      'ASK_INTERESTS': `[ONBOARDING INSTRUCTION: User provided their interests. Use action CONTINUE_ONBOARDING with empty text \"\". Do NOT output any message text - the action callback sends the goals question.]`,
+      'ASK_INTERESTS': `[ONBOARDING INSTRUCTION: User provided their interests. PREFER using action CONTINUE_ONBOARDING with empty text \"\". If you cannot use the action, send this question directly: "${msgs.GOALS}". Always respond - never leave the user without a message.]`,
 
       // User just provided connection goals → ask for events
-      'ASK_CONNECTION_GOALS': `[ONBOARDING INSTRUCTION: User provided their goals. Use action CONTINUE_ONBOARDING with empty text \"\". Do NOT output any message text - the action callback sends the events question.]`,
+      'ASK_CONNECTION_GOALS': `[ONBOARDING INSTRUCTION: User provided their goals. PREFER using action CONTINUE_ONBOARDING with empty text \"\". If you cannot use the action, send this question directly: "${msgs.EVENTS}". Always respond - never leave the user without a message.]`,
 
       // User just provided events → ask for socials
-      'ASK_EVENTS': `[ONBOARDING INSTRUCTION: User provided events. Use action CONTINUE_ONBOARDING with empty text \"\". Do NOT output any message text - the action callback sends the socials question.]`,
+      'ASK_EVENTS': `[ONBOARDING INSTRUCTION: User provided events. PREFER using action CONTINUE_ONBOARDING with empty text \"\". If you cannot use the action, send this question directly: "${msgs.SOCIALS}". Always respond - never leave the user without a message.]`,
 
       // User just provided socials → ask for telegram
-      'ASK_SOCIALS': `[ONBOARDING INSTRUCTION: User provided socials. Use action CONTINUE_ONBOARDING with empty text \"\". Do NOT output any message text - the action callback sends the telegram question.]`,
+      'ASK_SOCIALS': `[ONBOARDING INSTRUCTION: User provided socials. PREFER using action CONTINUE_ONBOARDING with empty text \"\". If you cannot use the action, send this question directly: "${msgs.TELEGRAM}". Always respond - never leave the user without a message.]`,
 
       // User just provided telegram → ask for gender
-      'ASK_TELEGRAM_HANDLE': `[ONBOARDING INSTRUCTION: User provided Telegram handle. Use action CONTINUE_ONBOARDING with empty text \"\". Do NOT output any message text - the action callback sends the gender question.]`,
+      'ASK_TELEGRAM_HANDLE': `[ONBOARDING INSTRUCTION: User provided Telegram handle. PREFER using action CONTINUE_ONBOARDING with empty text \"\". If you cannot use the action, send this question directly: "${msgs.GENDER}". Always respond - never leave the user without a message.]`,
 
       // User just provided gender → ask for notifications
-      'ASK_GENDER': `[ONBOARDING INSTRUCTION: User provided gender. Use action CONTINUE_ONBOARDING with empty text \"\". Do NOT output any message text - the action callback sends the notifications question.]`,
+      'ASK_GENDER': `[ONBOARDING INSTRUCTION: User provided gender. PREFER using action CONTINUE_ONBOARDING with empty text \"\". If you cannot use the action, send this question directly: "${msgs.NOTIFICATIONS}". Always respond - never leave the user without a message.]`,
 
       // User just provided notifications → show summary
-      'ASK_NOTIFICATIONS': `[ONBOARDING INSTRUCTION: User provided notification preference. Use action CONTINUE_ONBOARDING with empty text \"\". Do NOT output any message text - the action callback sends the summary.]`,
+      'ASK_NOTIFICATIONS': `[ONBOARDING INSTRUCTION: User provided notification preference. PREFER using action CONTINUE_ONBOARDING with empty text \"\". If you cannot use the action, send the summary directly. Always respond - never leave the user without a message.]`,
 
       // User confirmed or edited → show completion or re-ask
       'CONFIRMATION': messageText.includes('confirm') || messageText.includes('yes') || messageText.includes('check') 
