@@ -307,9 +307,54 @@ async function startAgents() {
                 }, 60000);
               }
               
-              return originalHandler(update);
+              // Wrap in try-catch to handle database errors gracefully
+              try {
+                return originalHandler(update);
+              } catch (error: any) {
+                console.error('[Telegram Chat ID Capture] Error in message handler:', error);
+                // If it's a database error and we have a chat ID, send a fallback response
+                if (chatId && (error.code === 'ETIMEDOUT' || error.message?.includes('timeout') || error.message?.includes('database'))) {
+                  console.log('[Telegram Chat ID Capture] Database error detected, sending fallback response to chat:', chatId);
+                  bot.telegram.sendMessage(chatId, "I'm experiencing some technical difficulties right now. Please try again in a moment! 🔧").catch((err: any) => {
+                    console.error('[Telegram Chat ID Capture] Failed to send fallback response:', err);
+                  });
+                }
+                throw error; // Re-throw to let ElizaOS handle it
+              }
             };
             console.log('[Telegram Chat ID Capture] Patched bot.handler to capture chat IDs');
+          }
+          
+          // Also patch handleError to catch database errors and send fallback responses
+          if (bot && bot.handleError) {
+            console.log('[Telegram Chat ID Capture] Found bot.handleError, patching to send fallback responses on database errors...');
+            const originalHandleError = bot.handleError.bind(bot);
+            bot.handleError = async function(error: any, ctx: any) {
+              console.error('[Telegram Chat ID Capture] Error in bot.handleError:', error);
+              
+              // Check if it's a database timeout error
+              const isDatabaseError = error.code === 'ETIMEDOUT' || 
+                                     error.message?.includes('timeout') || 
+                                     error.message?.includes('database') ||
+                                     error.message?.includes('getAccountById') ||
+                                     error.message?.includes('getRoom') ||
+                                     error.message?.includes('Circuit breaker');
+              
+              if (isDatabaseError && ctx && ctx.chat) {
+                const chatId = ctx.chat.id;
+                console.log('[Telegram Chat ID Capture] Database error detected in handleError, sending fallback response to chat:', chatId);
+                try {
+                  await bot.telegram.sendMessage(chatId, "I'm experiencing some technical difficulties with the database. Please try again in a moment! 🔧");
+                  console.log('[Telegram Chat ID Capture] ✅ Sent fallback response');
+                } catch (sendError: any) {
+                  console.error('[Telegram Chat ID Capture] Failed to send fallback response:', sendError);
+                }
+              }
+              
+              // Call original error handler
+              return originalHandleError(error, ctx);
+            };
+            console.log('[Telegram Chat ID Capture] Patched bot.handleError');
           }
           
           // Also try to patch bot.telegram.sendMessage to intercept all outgoing messages
