@@ -14,6 +14,8 @@ export async function setupTelegramMessageInterceptor(runtime: IAgentRuntime) {
       const text = memory.content.text;
       const roomId = memory.roomId;
       
+      console.log('[Message Interceptor] Checking message:', text.substring(0, 50), 'roomId:', roomId);
+      
       // Check for duplicates BEFORE creating memory
       if (isDuplicateMessage(runtime, roomId, text)) {
         console.log('[Message Interceptor] Blocking duplicate message:', text.substring(0, 50));
@@ -27,10 +29,14 @@ export async function setupTelegramMessageInterceptor(runtime: IAgentRuntime) {
         });
       }
       
+      console.log('[Message Interceptor] Allowing message, creating memory:', text.substring(0, 50));
+      
       // Not a duplicate - create memory normally
       // We'll record it AFTER the memory is created (in a then() callback)
       // This ensures we only record messages that are actually created
       const createdMemory = await originalCreateMemory(memory);
+      
+      console.log('[Message Interceptor] Memory created, recording:', text.substring(0, 50));
       
       // Record AFTER memory is created (but message might not be sent yet by Telegram)
       // This is the best we can do without hooking into Telegram client
@@ -40,6 +46,9 @@ export async function setupTelegramMessageInterceptor(runtime: IAgentRuntime) {
     }
     
     // Normal memory creation (not an agent message or no text)
+    if (memory.userId === runtime.agentId) {
+      console.log('[Message Interceptor] Agent message but no text or empty text');
+    }
     return await originalCreateMemory(memory);
   };
   

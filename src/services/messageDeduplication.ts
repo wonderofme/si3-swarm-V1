@@ -84,9 +84,16 @@ export function isDuplicateMessage(
   
   // First check: Block ANY message if a message was sent recently (prevents LLM from sending duplicate after action callback)
   const lastMessageTime = lastMessagePerRoom.get(roomId);
-  if (lastMessageTime && (now - lastMessageTime) < BLOCK_WINDOW_MS) {
-    console.log('[Message Dedup] Blocking message - too soon after previous message:', text.substring(0, 50));
-    return true; // Block this message
+  if (lastMessageTime) {
+    const timeSinceLastMessage = now - lastMessageTime;
+    if (timeSinceLastMessage < BLOCK_WINDOW_MS) {
+      console.log('[Message Dedup] Blocking message - too soon after previous message:', text.substring(0, 50), `(${timeSinceLastMessage}ms ago, window: ${BLOCK_WINDOW_MS}ms)`);
+      return true; // Block this message
+    } else {
+      console.log('[Message Dedup] Message OK - enough time passed:', text.substring(0, 50), `(${timeSinceLastMessage}ms ago, window: ${BLOCK_WINDOW_MS}ms)`);
+    }
+  } else {
+    console.log('[Message Dedup] No previous message for room, allowing:', text.substring(0, 50));
   }
   
   // Second check: Exact duplicate detection
