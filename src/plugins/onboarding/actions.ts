@@ -118,6 +118,9 @@ export const continueOnboardingAction: Action = {
       };
       await runtime.cacheManager.set(`onboarding_${message.userId}`, freshState as any);
       
+      // Record action execution immediately after state change
+      if (roomId) recordActionExecution(roomId);
+      
       // Get fresh messages (will default to English)
       const freshMsgs = getMessages('en');
       console.log('[Onboarding Action] Sending greeting via callback');
@@ -133,13 +136,16 @@ export const continueOnboardingAction: Action = {
         if (profile.language) {
           // Both name and language exist, skip to location
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_LOCATION');
+          if (roomId) recordActionExecution(roomId);
         } else {
           // Name exists but language doesn't, ask for language
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_LANGUAGE');
+          if (roomId) recordActionExecution(roomId);
         }
       } else {
         // No name, start with greeting
         await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_NAME');
+        if (roomId) recordActionExecution(roomId);
         console.log('[Onboarding Action] Updated state to ASK_NAME - AI will generate greeting message');
       }
       return true;
@@ -151,17 +157,21 @@ export const continueOnboardingAction: Action = {
         console.log('[Onboarding Action] Processing ASK_NAME, user said:', text);
         if (isEditing) {
           await updateOnboardingStep(runtime, message.userId, roomId, 'CONFIRMATION', { name: text, isEditing: false, editingField: undefined });
+          if (roomId) recordActionExecution(roomId);
         } else {
           // Check if name already exists (shouldn't happen, but handle gracefully)
           if (profile.name && !text) {
             // Name already exists, skip to language
             if (profile.language) {
               await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_LOCATION');
+              if (roomId) recordActionExecution(roomId);
             } else {
               await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_LANGUAGE');
+              if (roomId) recordActionExecution(roomId);
             }
           } else {
             await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_LANGUAGE', { name: text });
+            if (roomId) recordActionExecution(roomId);
             console.log('[Onboarding Action] Updated state to ASK_LANGUAGE - AI will generate language question');
           }
         }
@@ -173,6 +183,7 @@ export const continueOnboardingAction: Action = {
         if (profile.language && !text) {
           // Language already exists, skip to location
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_LOCATION');
+          if (roomId) recordActionExecution(roomId);
           break;
         }
         const langCode = parseLanguageCode(text);
@@ -183,16 +194,19 @@ export const continueOnboardingAction: Action = {
         }
         // Update language and move to location step
         await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_LOCATION', { language: langCode });
+        if (roomId) recordActionExecution(roomId);
         console.log('[Onboarding Action] Updated state to ASK_LOCATION - AI will generate location question');
         break;
 
       case 'ASK_LOCATION':
         if (isEditing) {
           await updateOnboardingStep(runtime, message.userId, roomId, 'CONFIRMATION', { location: text, isEditing: false, editingField: undefined });
+          if (roomId) recordActionExecution(roomId);
         } else {
           // Handle "next" to skip optional question
           const locationValue = text.toLowerCase().trim() === 'next' ? undefined : text;
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_ROLE', { location: locationValue });
+          if (roomId) recordActionExecution(roomId);
           console.log('[Onboarding Action] Updated state to ASK_ROLE - AI will generate roles question');
         }
         break;
@@ -212,8 +226,10 @@ export const continueOnboardingAction: Action = {
         
         if (isEditing) {
           await updateOnboardingStep(runtime, message.userId, roomId, 'CONFIRMATION', { roles, isEditing: false, editingField: undefined });
+          if (roomId) recordActionExecution(roomId);
         } else {
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_INTERESTS', { roles }); 
+          if (roomId) recordActionExecution(roomId);
           console.log('[Onboarding Action] Updated state to ASK_INTERESTS - AI will generate interests question');
         }
         break;
@@ -232,8 +248,10 @@ export const continueOnboardingAction: Action = {
         
         if (isEditing) {
           await updateOnboardingStep(runtime, message.userId, roomId, 'CONFIRMATION', { interests, isEditing: false, editingField: undefined });
+          if (roomId) recordActionExecution(roomId);
         } else {
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_CONNECTION_GOALS', { interests });
+          if (roomId) recordActionExecution(roomId);
           console.log('[Onboarding Action] Updated state to ASK_CONNECTION_GOALS - AI will generate goals question');
         }
         break;
@@ -252,8 +270,10 @@ export const continueOnboardingAction: Action = {
         
         if (isEditing) {
           await updateOnboardingStep(runtime, message.userId, roomId, 'CONFIRMATION', { connectionGoals, isEditing: false, editingField: undefined });
+          if (roomId) recordActionExecution(roomId);
         } else {
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_EVENTS', { connectionGoals });
+          if (roomId) recordActionExecution(roomId);
           console.log('[Onboarding Action] Updated state to ASK_EVENTS - AI will generate events question');
         }
         break;
@@ -261,10 +281,12 @@ export const continueOnboardingAction: Action = {
       case 'ASK_EVENTS':
         if (isEditing) {
           await updateOnboardingStep(runtime, message.userId, roomId, 'CONFIRMATION', { events: [text], isEditing: false, editingField: undefined });
+          if (roomId) recordActionExecution(roomId);
         } else {
           // Handle "next" to skip optional question
           const eventsValue = text.toLowerCase().trim() === 'next' ? [] : [text];
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_SOCIALS', { events: eventsValue });
+          if (roomId) recordActionExecution(roomId);
           console.log('[Onboarding Action] Updated state to ASK_SOCIALS - AI will generate socials question');
         }
         break;
@@ -272,10 +294,12 @@ export const continueOnboardingAction: Action = {
       case 'ASK_SOCIALS':
         if (isEditing) {
           await updateOnboardingStep(runtime, message.userId, roomId, 'CONFIRMATION', { socials: [text], isEditing: false, editingField: undefined });
+          if (roomId) recordActionExecution(roomId);
         } else {
           // Handle "next" to skip optional question
           const socialsValue = text.toLowerCase().trim() === 'next' ? [] : [text];
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_TELEGRAM_HANDLE', { socials: socialsValue });
+          if (roomId) recordActionExecution(roomId);
           console.log('[Onboarding Action] Updated state to ASK_TELEGRAM_HANDLE - AI will generate Telegram question');
         }
         break;
@@ -287,8 +311,10 @@ export const continueOnboardingAction: Action = {
         
         if (isEditing) {
           await updateOnboardingStep(runtime, message.userId, roomId, 'CONFIRMATION', { telegramHandle: handleToSave, isEditing: false, editingField: undefined });
+          if (roomId) recordActionExecution(roomId);
         } else {
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_GENDER', { telegramHandle: handleToSave });
+          if (roomId) recordActionExecution(roomId);
           console.log('[Onboarding Action] Updated state to ASK_GENDER - AI will generate gender question');
         }
         break;
@@ -296,22 +322,26 @@ export const continueOnboardingAction: Action = {
       case 'ASK_GENDER':
         if (isEditing) {
           await updateOnboardingStep(runtime, message.userId, roomId, 'CONFIRMATION', { gender: text, isEditing: false, editingField: undefined });
+          if (roomId) recordActionExecution(roomId);
         } else {
           // Handle "next" to skip optional question
           const genderValue = text.toLowerCase().trim() === 'next' ? undefined : text;
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_NOTIFICATIONS', { gender: genderValue });
+          if (roomId) recordActionExecution(roomId);
           console.log('[Onboarding Action] Updated state to ASK_NOTIFICATIONS - AI will generate notifications question');
         }
         break;
 
       case 'ASK_NOTIFICATIONS':
         await updateOnboardingStep(runtime, message.userId, roomId, 'CONFIRMATION', { notifications: text, isEditing: false, editingField: undefined });
+        if (roomId) recordActionExecution(roomId);
         console.log('[Onboarding Action] Updated state to CONFIRMATION - AI will generate summary');
         break;
 
       case 'CONFIRMATION':
         if (text.toLowerCase().includes('confirm') || text.toLowerCase().includes('yes') || text.toLowerCase().includes('check')) {
           await updateOnboardingStep(runtime, message.userId, roomId, 'COMPLETED', { isConfirmed: true, isEditing: false, editingField: undefined });
+          if (roomId) recordActionExecution(roomId);
           console.log('[Onboarding Action] Updated state to COMPLETED - AI will generate completion message');
         } else if (text.toLowerCase().includes('edit')) {
           const lowerText = text.toLowerCase();
@@ -331,20 +361,16 @@ export const continueOnboardingAction: Action = {
           
           if (editStep) {
             await updateOnboardingStep(runtime, message.userId, roomId, editStep, { isEditing: true, editingField: editField });
+            if (roomId) recordActionExecution(roomId);
             console.log(`[Onboarding Action] Updated state to ${editStep} for editing - AI will generate edit question`);
           }
         }
         break;
     }
 
-    // Record that action handler executed to prevent duplicate LLM responses
-    // This is critical: ElizaOS generates a follow-up response after action execution,
-    // but we've already sent the message via AI, so we need to block the duplicate
-    if (roomId) {
-      recordActionExecution(roomId);
-      console.log('[Onboarding Action] Recorded action execution to prevent duplicate LLM response');
-    }
-
+    // Note: Action execution is now recorded immediately after each updateOnboardingStep call
+    // This ensures it's recorded as soon as state changes, before ElizaOS can generate follow-up response
+    
     return true;
   },
   examples: []

@@ -106,14 +106,19 @@ export function recordActionExecution(roomId: string): void {
  * Returns true if action executed within the block window
  */
 function wasActionExecutedRecently(roomId: string): boolean {
-  if (!roomId) return false;
+  if (!roomId) {
+    console.log('[LLM Response Interceptor] wasActionExecutedRecently: No roomId provided');
+    return false;
+  }
   const timestamp = actionExecutionTimestamps.get(roomId);
-  if (!timestamp) return false;
+  if (!timestamp) {
+    console.log(`[LLM Response Interceptor] wasActionExecutedRecently: No timestamp found for roomId: ${roomId}`);
+    console.log(`[LLM Response Interceptor] Available roomIds in map:`, Array.from(actionExecutionTimestamps.keys()));
+    return false;
+  }
   const elapsed = Date.now() - timestamp;
   const wasRecent = elapsed < ACTION_EXECUTION_BLOCK_WINDOW_MS;
-  if (wasRecent) {
-    console.log(`[LLM Response Interceptor] Action was executed recently (${elapsed}ms ago) for roomId: ${roomId}`);
-  }
+  console.log(`[LLM Response Interceptor] wasActionExecutedRecently: roomId=${roomId}, elapsed=${elapsed}ms, window=${ACTION_EXECUTION_BLOCK_WINDOW_MS}ms, wasRecent=${wasRecent}`);
   return wasRecent;
 }
 
