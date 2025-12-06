@@ -306,6 +306,7 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
     // For agent messages, check if this is after a restart command
     if (memory.userId === runtime.agentId && memory.roomId) {
       console.log('[LLM Response Interceptor] Agent message detected, roomId:', memory.roomId, 'text:', memory.content.text?.substring(0, 50));
+      console.log('[LLM Response Interceptor] Checking if action was executed recently for this agent message...');
       
       // Skip processing if this message was created by timeout callback
       const isTimeoutCreated = (memory.content.metadata as any)?.timeoutCreated === true;
@@ -316,8 +317,9 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
       
       // CRITICAL FIX: Block agent messages if an action was executed recently
       // This prevents ElizaOS from generating a duplicate response after action execution
-      if (wasActionExecutedRecently(memory.roomId)) {
-        console.log('[LLM Response Interceptor] Blocking agent message - action was executed recently, preventing duplicate response');
+      const actionWasRecent = wasActionExecutedRecently(memory.roomId);
+      if (actionWasRecent) {
+        console.log('[LLM Response Interceptor] ✅ BLOCKING agent message - action was executed recently, preventing duplicate response');
         // Return empty memory to prevent sending
         return await originalCreateMemory({
           ...memory,
@@ -326,6 +328,8 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
             text: '' // Empty text prevents sending
           }
         });
+      } else {
+        console.log('[LLM Response Interceptor] ✅ Allowing agent message - no recent action execution or outside block window');
       }
       
       // For all agent messages, try to send directly via Telegram API if we have the chat ID
