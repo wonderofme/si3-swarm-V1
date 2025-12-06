@@ -264,11 +264,29 @@ async function startAgents() {
           }
           
           // Also try to patch bot.telegram.sendMessage to intercept all outgoing messages
+          // This is critical: we need to block duplicate messages that might bypass createMemory
           if (bot && bot.telegram && bot.telegram.sendMessage) {
-            console.log('[Telegram Chat ID Capture] Found bot.telegram.sendMessage, patching to ensure messages are sent...');
+            console.log('[Telegram Chat ID Capture] Found bot.telegram.sendMessage, patching to block duplicates after action execution...');
             const originalSendMessage = bot.telegram.sendMessage.bind(bot.telegram);
             bot.telegram.sendMessage = async function(chatId: any, text: string, extra?: any) {
               console.log('[Telegram Chat ID Capture] sendMessage called with chatId:', chatId, 'text:', text?.substring(0, 50));
+              
+              // CRITICAL: Check if this message should be blocked due to recent action execution
+              // This catches messages that might bypass createMemory
+              const { getRoomIdForChatId, checkActionExecutedRecently } = await import('./services/llmResponseInterceptor.js');
+              
+              // Find roomId for this chatId
+              const roomIdToCheck = getRoomIdForChatId(chatId);
+              
+              if (roomIdToCheck && text && text.trim()) {
+                // Check if action was executed recently
+                if (checkActionExecutedRecently(roomIdToCheck)) {
+                  console.log('[Telegram Chat ID Capture] 🚫 BLOCKING sendMessage - action was executed recently, preventing duplicate');
+                  // Return a fake result to prevent sending
+                  return { message_id: 0, date: Date.now(), chat: { id: chatId } };
+                }
+              }
+              
               try {
                 const result = await originalSendMessage(chatId, text, extra);
                 console.log('[Telegram Chat ID Capture] ✅ Message sent successfully via sendMessage');

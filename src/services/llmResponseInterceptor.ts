@@ -83,6 +83,22 @@ const timeoutCreatedMessages = new Set<string>();
 // When we receive a Telegram message, we store the chat ID from the message metadata
 const roomIdToTelegramChatId = new Map<string, string>();
 
+// Export roomIdToTelegramChatId map so it can be accessed from other modules
+export function getRoomIdForChatId(chatId: string | number): string | undefined {
+  for (const [roomId, mappedChatId] of roomIdToTelegramChatId.entries()) {
+    if (String(mappedChatId) === String(chatId)) {
+      return roomId;
+    }
+  }
+  return undefined;
+}
+
+// Export function to check if action was executed recently (for use in sendMessage patch)
+export function checkActionExecutedRecently(roomId: string | undefined): boolean {
+  if (!roomId) return false;
+  return wasActionExecutedRecently(roomId);
+}
+
 // Track when action handlers execute to prevent duplicate LLM responses
 // Maps roomId to timestamp when action last executed
 const actionExecutionTimestamps = new Map<string, number>();
