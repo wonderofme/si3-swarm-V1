@@ -20,19 +20,41 @@ async function getTelegramChatIdFromUserMessage(runtime: IAgentRuntime, userMess
     // If it's a UUID, try to find the Telegram chat ID from the database
     // Look for memories from this room that came from Telegram
     const adapter = runtime.databaseAdapter as any;
-    const result = await adapter.query(
-      `SELECT room_id FROM memories 
-       WHERE room_id = $1 
-       AND user_id != $2 
-       AND content->>'source' = 'telegram'
-       AND room_id !~ '-'
-       ORDER BY created_at DESC 
-       LIMIT 1`,
-      [userMessage.roomId, runtime.agentId]
-    );
+    
+    // Try camelCase first (roomId), fallback to snake_case (room_id)
+    let result;
+    try {
+      result = await adapter.query(
+        `SELECT "roomId" FROM memories 
+         WHERE "roomId" = $1 
+         AND "userId" != $2 
+         AND content->>'source' = 'telegram'
+         AND "roomId" !~ '-'
+         ORDER BY "createdAt" DESC 
+         LIMIT 1`,
+        [userMessage.roomId, runtime.agentId]
+      );
+    } catch (error: any) {
+      // Fallback to snake_case if camelCase doesn't work
+      if (error.message?.includes('roomId') || error.message?.includes('userId')) {
+        result = await adapter.query(
+          `SELECT room_id FROM memories 
+           WHERE room_id = $1 
+           AND user_id != $2 
+           AND content->>'source' = 'telegram'
+           AND room_id !~ '-'
+           ORDER BY created_at DESC 
+           LIMIT 1`,
+          [userMessage.roomId, runtime.agentId]
+        );
+      } else {
+        throw error;
+      }
+    }
     
     if (result.rows && result.rows.length > 0) {
-      const foundRoomId = result.rows[0].room_id;
+      // Try camelCase first, then snake_case
+      const foundRoomId = result.rows[0].roomId || result.rows[0].room_id;
       // Check if it's numeric (Telegram chat ID)
       if (foundRoomId && /^\d+$/.test(foundRoomId)) {
         return foundRoomId;
