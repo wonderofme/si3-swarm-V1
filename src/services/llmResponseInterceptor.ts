@@ -22,14 +22,15 @@ async function getTelegramChatIdFromUserMessage(runtime: IAgentRuntime, userMess
     const adapter = runtime.databaseAdapter as any;
     
     // Try camelCase first (roomId), fallback to snake_case (room_id)
+    // Cast UUID to text before using regex operator
     let result;
     try {
       result = await adapter.query(
         `SELECT "roomId" FROM memories 
-         WHERE "roomId" = $1 
+         WHERE "roomId"::text = $1 
          AND "userId" != $2 
          AND content->>'source' = 'telegram'
-         AND "roomId" !~ '-'
+         AND "roomId"::text !~ '-'
          ORDER BY "createdAt" DESC 
          LIMIT 1`,
         [userMessage.roomId, runtime.agentId]
@@ -39,10 +40,10 @@ async function getTelegramChatIdFromUserMessage(runtime: IAgentRuntime, userMess
       if (error.message?.includes('roomId') || error.message?.includes('userId')) {
         result = await adapter.query(
           `SELECT room_id FROM memories 
-           WHERE room_id = $1 
+           WHERE room_id::text = $1 
            AND user_id != $2 
            AND content->>'source' = 'telegram'
-           AND room_id !~ '-'
+           AND room_id::text !~ '-'
            ORDER BY created_at DESC 
            LIMIT 1`,
           [userMessage.roomId, runtime.agentId]
