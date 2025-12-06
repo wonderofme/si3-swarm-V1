@@ -234,19 +234,35 @@ async function startAgents() {
             console.log(`[Telegram Client] ✅ Successfully started Telegram client on attempt ${attempt}`);
             break; // Success, exit retry loop
           } catch (error: any) {
-            const isTimeout = error.code === 'ETIMEDOUT' || error.errno === 'ETIMEDOUT' || error.message?.includes('timeout');
+            // Handle FetchError and other error types
+            const errorMessage = error.message || error.toString() || 'Unknown error';
+            const errorCode = error.code || error.errno || 'unknown';
+            const errorType = error.type || error.constructor?.name || 'unknown';
+            
+            // Check for timeout errors (ETIMEDOUT, FetchError with timeout, etc.)
+            const isTimeout = 
+              errorCode === 'ETIMEDOUT' || 
+              errorCode === 'ETIMEDOUT' ||
+              errorMessage.toLowerCase().includes('timeout') ||
+              errorMessage.toLowerCase().includes('timed out') ||
+              (errorType === 'system' && errorCode === 'ETIMEDOUT');
+            
             const isLastAttempt = attempt === maxRetries;
             
             if (isLastAttempt) {
               console.error(`[Telegram Client] ❌ Failed to start after ${maxRetries} attempts (non-fatal, continuing)`);
-              console.error(`[Telegram Client] Last error: ${error.message}`);
-              console.error(`[Telegram Client] Error type: ${error.type || 'unknown'}, code: ${error.code || 'unknown'}`);
+              console.error(`[Telegram Client] Last error: ${errorMessage}`);
+              console.error(`[Telegram Client] Error type: ${errorType}, code: ${errorCode}`);
+              if (error.stack) {
+                console.error(`[Telegram Client] Error stack: ${error.stack.substring(0, 500)}`);
+              }
               console.error('⚠️ Bot will continue running but Telegram functionality will be unavailable');
               console.error('💡 This is usually a network connectivity issue. The bot will retry when messages are received.');
               telegramClient = null;
             } else {
               const delay = initialDelay * Math.pow(2, attempt - 1); // Exponential backoff: 2s, 4s, 8s, 16s, 32s
-              console.warn(`[Telegram Client] ⚠️ Attempt ${attempt} failed: ${error.message}`);
+              console.warn(`[Telegram Client] ⚠️ Attempt ${attempt} failed: ${errorMessage}`);
+              console.warn(`[Telegram Client] Error type: ${errorType}, code: ${errorCode}`);
               if (isTimeout) {
                 console.warn(`[Telegram Client] Network timeout detected. Retrying in ${delay}ms...`);
               } else {
