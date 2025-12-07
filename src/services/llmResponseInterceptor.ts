@@ -176,9 +176,11 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
   // The research identifies that the second message comes from the evaluate step
   // which uses a small model that hallucinates conversational responses
   // By patching the completion/generation method, we can block these at the source
-  if (runtime.completion && typeof runtime.completion.generateText === 'function') {
-    const originalGenerateText = runtime.completion.generateText.bind(runtime.completion);
-    runtime.completion.generateText = async function(...args: any[]) {
+  // Note: runtime.completion may not exist on IAgentRuntime type, so we use type assertion
+  const runtimeAny = runtime as any;
+  if (runtimeAny.completion && typeof runtimeAny.completion.generateText === 'function') {
+    const originalGenerateText = runtimeAny.completion.generateText.bind(runtimeAny.completion);
+    runtimeAny.completion.generateText = async function(...args: any[]) {
       // Extract roomId from the arguments if possible
       // The generateText method typically receives (prompt, options) or similar
       // We need to check if an action was recently executed for this generation

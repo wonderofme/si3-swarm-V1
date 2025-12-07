@@ -386,25 +386,27 @@ export const continueOnboardingAction: Action = {
     // The evaluate step receives stale state because the action's output isn't in recentMemories
     // By manually updating state.recentMemories, we prevent the "Amnesia Bug" where the
     // evaluate step thinks the user's request is still unanswered
-    if (state && state.recentMemories) {
+    if (state && state.recentMemories && Array.isArray(state.recentMemories)) {
       // Get the last agent message from recent memories to understand what was just sent
       // If the AI already generated a response, we need to ensure it's in the state
-      const lastAgentMemory = state.recentMemories
+      const recentMemories = state.recentMemories as Memory[];
+      const lastAgentMemory = recentMemories
         .slice()
         .reverse()
-        .find(m => m.userId === runtime.agentId);
+        .find((m: Memory) => m.userId === runtime.agentId);
       
       // If there's a recent agent message, ensure it's at the end of recentMemories
       // This prevents the evaluate step from seeing stale state
       if (lastAgentMemory) {
         // Remove any duplicates
-        state.recentMemories = state.recentMemories.filter(m => 
+        const filtered = recentMemories.filter((m: Memory) => 
           !(m.userId === runtime.agentId && 
             m.content.text === lastAgentMemory.content.text &&
             m.createdAt === lastAgentMemory.createdAt)
         );
         // Add it back at the end
-        state.recentMemories.push(lastAgentMemory);
+        filtered.push(lastAgentMemory);
+        state.recentMemories = filtered;
         console.log('[Onboarding Action] ✅ Manually synchronized state.recentMemories to prevent evaluate step amnesia');
       }
     }
