@@ -428,15 +428,17 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
         console.log('[LLM Response Interceptor] ✅ Action was NOT recent, allowing agent message');
       }
       
-      // ADDITIONAL FIX: Block agent messages if another agent message was sent very recently
+      // CRITICAL FIX: Block agent messages if another agent message was sent very recently
       // This catches duplicates from "No action found" follow-up responses
+      // The "No action found" warning triggers a second LLM generation (small model) that creates duplicates
       const lastAgentMessageTime = lastAgentMessageTimestamps.get(memory.roomId);
       if (lastAgentMessageTime && memory.content.text && memory.content.text.trim()) {
         const elapsed = Date.now() - lastAgentMessageTime;
-        console.log(`[LLM Response Interceptor] Checking rapid consecutive message - elapsed: ${elapsed}ms, window: ${AGENT_MESSAGE_BLOCK_WINDOW_MS}ms`);
+        console.log(`[LLM Response Interceptor] 🔍 Checking rapid consecutive message - elapsed: ${elapsed}ms, window: ${AGENT_MESSAGE_BLOCK_WINDOW_MS}ms`);
         if (elapsed < AGENT_MESSAGE_BLOCK_WINDOW_MS) {
           console.log(`[LLM Response Interceptor] 🚫 BLOCKING agent message - another agent message was sent ${elapsed}ms ago (window: ${AGENT_MESSAGE_BLOCK_WINDOW_MS}ms), preventing duplicate`);
-          console.log('[LLM Response Interceptor] Blocked message text:', messageText);
+          console.log(`[LLM Response Interceptor] Blocked message text: ${messageText}`);
+          console.log(`[LLM Response Interceptor] This is likely the "No action found" follow-up response - blocking to prevent duplicate`);
           // Return empty memory to prevent sending
           return await originalCreateMemory({
             ...memory,
@@ -449,7 +451,7 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
           console.log(`[LLM Response Interceptor] ✅ Allowing agent message - elapsed time (${elapsed}ms) is outside block window (${AGENT_MESSAGE_BLOCK_WINDOW_MS}ms)`);
         }
       } else if (!lastAgentMessageTime) {
-        console.log(`[LLM Response Interceptor] No previous agent message timestamp found for roomId: ${memory.roomId}`);
+        console.log(`[LLM Response Interceptor] ⚠️ No previous agent message timestamp found for roomId: ${memory.roomId}`);
       }
       
       // If we get here, the message is allowed - record the timestamp IMMEDIATELY for future blocking
