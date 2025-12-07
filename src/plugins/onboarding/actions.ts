@@ -116,7 +116,7 @@ export const continueOnboardingAction: Action = {
       console.log('[Onboarding Action] Restart command detected, resetting onboarding');
       // Clear the entire onboarding state by setting a fresh state
       const freshState = {
-        step: 'NONE' as OnboardingStep,
+        step: 'ASK_NAME' as OnboardingStep, // Set to ASK_NAME so we can send the greeting
         profile: {} as UserProfile
       };
       await runtime.cacheManager.set(`onboarding_${message.userId}`, freshState as any);
@@ -140,16 +140,22 @@ export const continueOnboardingAction: Action = {
           // Both name and language exist, skip to location
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_LOCATION');
           if (roomId) recordActionExecution(roomId);
+          // Send the location question via callback
+          await safeCallback(callback, runtime, roomId, msgs.LOCATION);
         } else {
           // Name exists but language doesn't, ask for language
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_LANGUAGE');
           if (roomId) recordActionExecution(roomId);
+          // Send the language question via callback
+          await safeCallback(callback, runtime, roomId, msgs.LANGUAGE);
         }
       } else {
         // No name, start with greeting
         await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_NAME');
         if (roomId) recordActionExecution(roomId);
-        console.log('[Onboarding Action] Updated state to ASK_NAME - AI will generate greeting message');
+        // Send the greeting via callback (it already asks for name)
+        console.log('[Onboarding Action] Sending greeting via callback');
+        await safeCallback(callback, runtime, roomId, msgs.GREETING);
       }
       return true;
     }
@@ -175,7 +181,9 @@ export const continueOnboardingAction: Action = {
           } else {
             await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_LANGUAGE', { name: text });
             if (roomId) recordActionExecution(roomId);
-            console.log('[Onboarding Action] Updated state to ASK_LANGUAGE - AI will generate language question');
+            // Send the language question via callback
+            console.log('[Onboarding Action] Sending language question via callback');
+            await safeCallback(callback, runtime, roomId, msgs.LANGUAGE);
           }
         }
         break;
@@ -198,7 +206,9 @@ export const continueOnboardingAction: Action = {
         // Update language and move to location step
         await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_LOCATION', { language: langCode });
         if (roomId) recordActionExecution(roomId);
-        console.log('[Onboarding Action] Updated state to ASK_LOCATION - AI will generate location question');
+        // Send the location question via callback
+        console.log('[Onboarding Action] Sending location question via callback');
+        await safeCallback(callback, runtime, roomId, msgs.LOCATION);
         break;
 
       case 'ASK_LOCATION':
@@ -210,7 +220,9 @@ export const continueOnboardingAction: Action = {
           const locationValue = text.toLowerCase().trim() === 'next' ? undefined : text;
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_ROLE', { location: locationValue });
           if (roomId) recordActionExecution(roomId);
-          console.log('[Onboarding Action] Updated state to ASK_ROLE - AI will generate roles question');
+          // Send the roles question via callback
+          console.log('[Onboarding Action] Sending roles question via callback');
+          await safeCallback(callback, runtime, roomId, msgs.ROLES);
         }
         break;
 
@@ -233,7 +245,9 @@ export const continueOnboardingAction: Action = {
         } else {
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_INTERESTS', { roles }); 
           if (roomId) recordActionExecution(roomId);
-          console.log('[Onboarding Action] Updated state to ASK_INTERESTS - AI will generate interests question');
+          // Send the interests question via callback
+          console.log('[Onboarding Action] Sending interests question via callback');
+          await safeCallback(callback, runtime, roomId, msgs.INTERESTS);
         }
         break;
 
@@ -255,7 +269,9 @@ export const continueOnboardingAction: Action = {
         } else {
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_CONNECTION_GOALS', { interests });
           if (roomId) recordActionExecution(roomId);
-          console.log('[Onboarding Action] Updated state to ASK_CONNECTION_GOALS - AI will generate goals question');
+          // Send the goals question via callback
+          console.log('[Onboarding Action] Sending goals question via callback');
+          await safeCallback(callback, runtime, roomId, msgs.GOALS);
         }
         break;
 
@@ -277,7 +293,9 @@ export const continueOnboardingAction: Action = {
         } else {
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_EVENTS', { connectionGoals });
           if (roomId) recordActionExecution(roomId);
-          console.log('[Onboarding Action] Updated state to ASK_EVENTS - AI will generate events question');
+          // Send the events question via callback
+          console.log('[Onboarding Action] Sending events question via callback');
+          await safeCallback(callback, runtime, roomId, msgs.EVENTS);
         }
         break;
 
@@ -290,7 +308,9 @@ export const continueOnboardingAction: Action = {
           const eventsValue = text.toLowerCase().trim() === 'next' ? [] : [text];
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_SOCIALS', { events: eventsValue });
           if (roomId) recordActionExecution(roomId);
-          console.log('[Onboarding Action] Updated state to ASK_SOCIALS - AI will generate socials question');
+          // Send the socials question via callback
+          console.log('[Onboarding Action] Sending socials question via callback');
+          await safeCallback(callback, runtime, roomId, msgs.SOCIALS);
         }
         break;
 
@@ -303,7 +323,9 @@ export const continueOnboardingAction: Action = {
           const socialsValue = text.toLowerCase().trim() === 'next' ? [] : [text];
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_TELEGRAM_HANDLE', { socials: socialsValue });
           if (roomId) recordActionExecution(roomId);
-          console.log('[Onboarding Action] Updated state to ASK_TELEGRAM_HANDLE - AI will generate Telegram question');
+          // Send the Telegram question via callback
+          console.log('[Onboarding Action] Sending Telegram question via callback');
+          await safeCallback(callback, runtime, roomId, msgs.TELEGRAM);
         }
         break;
 
@@ -318,7 +340,9 @@ export const continueOnboardingAction: Action = {
         } else {
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_GENDER', { telegramHandle: handleToSave });
           if (roomId) recordActionExecution(roomId);
-          console.log('[Onboarding Action] Updated state to ASK_GENDER - AI will generate gender question');
+          // Send the gender question via callback
+          console.log('[Onboarding Action] Sending gender question via callback');
+          await safeCallback(callback, runtime, roomId, msgs.GENDER);
         }
         break;
 
@@ -331,7 +355,9 @@ export const continueOnboardingAction: Action = {
           const genderValue = text.toLowerCase().trim() === 'next' ? undefined : text;
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_NOTIFICATIONS', { gender: genderValue });
           if (roomId) recordActionExecution(roomId);
-          console.log('[Onboarding Action] Updated state to ASK_NOTIFICATIONS - AI will generate notifications question');
+          // Send the notifications question via callback
+          console.log('[Onboarding Action] Sending notifications question via callback');
+          await safeCallback(callback, runtime, roomId, msgs.NOTIFICATIONS);
         }
         break;
 
