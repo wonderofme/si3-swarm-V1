@@ -18,8 +18,10 @@ export async function setupTelegramMessageInterceptor(runtime: IAgentRuntime) {
       console.log('[Message Interceptor] Checking message:', text.substring(0, 50), 'roomId:', roomId);
       
       // Check for duplicates BEFORE creating memory
+      // Now only checks exact duplicates (same text), no timing checks
+      // This allows action handler callbacks to go through immediately after state updates
       if (isDuplicateMessage(runtime, roomId, text)) {
-        console.log('[Message Interceptor] Blocking duplicate message:', text.substring(0, 50));
+        console.log('[Message Interceptor] Blocking duplicate message (exact duplicate detected):', text.substring(0, 50));
         // Create memory with empty text so Telegram client doesn't send it
         return await originalCreateMemory({
           ...memory,
