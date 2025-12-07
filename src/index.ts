@@ -463,14 +463,23 @@ async function startAgents() {
           // So we need to patch at the Telegraf class level, not just the instance level
           
           // Patch the Telegraf class itself to intercept ALL sendMessage calls
+          // This MUST happen BEFORE any Telegraf instances are created
           try {
+            console.log('[Telegram Chat ID Capture] Attempting to patch Telegraf class prototype...');
             const TelegrafModule = await import('telegraf');
             const TelegrafClass = TelegrafModule.Telegraf || TelegrafModule.default;
+            console.log('[Telegram Chat ID Capture] TelegrafClass found:', !!TelegrafClass);
+            console.log('[Telegram Chat ID Capture] TelegrafClass.prototype:', !!TelegrafClass?.prototype);
+            console.log('[Telegram Chat ID Capture] TelegrafClass.prototype.telegram:', !!TelegrafClass?.prototype?.telegram);
+            
             if (TelegrafClass && TelegrafClass.prototype && TelegrafClass.prototype.telegram) {
               const originalTelegramSendMessage = TelegrafClass.prototype.telegram.sendMessage;
               const sendMessageAny = originalTelegramSendMessage as any;
+              console.log('[Telegram Chat ID Capture] Original sendMessage exists:', !!originalTelegramSendMessage);
+              console.log('[Telegram Chat ID Capture] Already patched?', !!sendMessageAny.__patched);
+              
               if (originalTelegramSendMessage && !sendMessageAny.__patched) {
-                console.log('[Telegram Chat ID Capture] Patching Telegraf class prototype to intercept ALL sendMessage calls...');
+                console.log('[Telegram Chat ID Capture] ✅ Patching Telegraf class prototype to intercept ALL sendMessage calls...');
                 (TelegrafClass.prototype.telegram as any).sendMessage = async function(chatId: any, text: string, extra?: any): Promise<any> {
                   const sendTime = Date.now();
                   console.log(`[Telegram Chat ID Capture] ========== sendMessage INTERCEPTED (CLASS LEVEL) ==========`);
