@@ -463,16 +463,103 @@ async function startAgents() {
           // So we need to patch at the Telegraf class level, not just the instance level
           
           // Patch the Telegraf class itself to intercept ALL sendMessage calls
-          // This MUST happen BEFORE any Telegraf instances are created
+          // In Telegraf, `telegram` is created on the instance, not the prototype
+          // We need to patch the constructor or use a Proxy to intercept instance creation
           try {
-            console.log('[Telegram Chat ID Capture] Attempting to patch Telegraf class prototype...');
+            console.log('[Telegram Chat ID Capture] Attempting to patch Telegraf class...');
             const TelegrafModule = await import('telegraf');
             const TelegrafClass = TelegrafModule.Telegraf || TelegrafModule.default;
             console.log('[Telegram Chat ID Capture] TelegrafClass found:', !!TelegrafClass);
             console.log('[Telegram Chat ID Capture] TelegrafClass.prototype:', !!TelegrafClass?.prototype);
-            console.log('[Telegram Chat ID Capture] TelegrafClass.prototype.telegram:', !!TelegrafClass?.prototype?.telegram);
             
-            if (TelegrafClass && TelegrafClass.prototype && TelegrafClass.prototype.telegram) {
+            // Store original constructor
+            const OriginalTelegraf = TelegrafClass;
+            const TelegrafAny = TelegrafClass as any;
+            
+            // Patch the constructor to intercept instance creation
+            if (OriginalTelegraf && !TelegrafAny.__patched) {
+              console.log('[Telegram Chat ID Capture] ✅ Patching Telegraf constructor to intercept ALL instances...');
+              
+              // Wrap the constructor
+              const PatchedTelegraf = function(this: any, ...args: any[]) {
+                const instance = new (OriginalTelegraf as any)(...args);
+                
+                // Patch telegram.sendMessage on this instance
+                if (instance.telegram && instance.telegram.sendMessage) {
+                  const originalSendMessage = instance.telegram.sendMessage.bind(instance.telegram);
+                  const sendMessageAny = originalSendMessage as any;
+                  
+                  if (!sendMessageAny.__patched) {
+                    instance.telegram.sendMessage = async function(chatId: any, text: string, extra?: any): Promise<any> {
+                      const sendTime = Date.now();
+                      console.log(`[Telegram Chat ID Capture] ========== sendMessage INTERCEPTED (INSTANCE CREATION) ==========`);
+                      console.log(`[Telegram Chat ID Capture] Timestamp: ${sendTime}`);
+                      console.log(`[Telegram Chat ID Capture] 📤 sendMessage called - chatId: ${chatId}, text: ${text?.substring(0, 100) || '(empty)'}`);
+                      
+                      // CRITICAL: Check if this message should be blocked due to recent action execution
+                      const { getRoomIdForChatId, checkActionExecutedRecently, getLastAgentMessageTime } = await import('./services/llmResponseInterceptor.js');
+                      
+                      // Find roomId for this chatId
+                      const roomIdToCheck = getRoomIdForChatId(String(chatId));
+                      
+                      if (roomIdToCheck && text && text.trim()) {
+                        // CRITICAL: Check for EXACT duplicate content first
+                        const { isDuplicateMessage } = await import('./services/messageDeduplication.js');
+                        if (isDuplicateMessage(null as any, roomIdToCheck, text)) {
+                          console.log('[Telegram Chat ID Capture] 🚫 BLOCKING sendMessage (INSTANCE CREATION) - EXACT DUPLICATE CONTENT detected');
+                          console.log(`[Telegram Chat ID Capture] Blocked duplicate text: ${text.substring(0, 100)}`);
+                          return { message_id: 0, date: Date.now(), chat: { id: chatId } };
+                        }
+                        
+                        // Check if action was executed recently
+                        if (checkActionExecutedRecently(roomIdToCheck)) {
+                          console.log('[Telegram Chat ID Capture] 🚫 BLOCKING sendMessage (INSTANCE CREATION) - action was executed recently, preventing duplicate');
+                          console.log(`[Telegram Chat ID Capture] Blocked text: ${text.substring(0, 100)}`);
+                          return { message_id: 0, date: Date.now(), chat: { id: chatId } };
+                        }
+                        
+                        // Check for rapid consecutive messages
+                        const lastAgentMessageTime = getLastAgentMessageTime(roomIdToCheck);
+                        if (lastAgentMessageTime) {
+                          const elapsed = Date.now() - lastAgentMessageTime;
+                          const AGENT_MESSAGE_BLOCK_WINDOW_MS = 10000;
+                          if (elapsed < AGENT_MESSAGE_BLOCK_WINDOW_MS) {
+                            console.log(`[Telegram Chat ID Capture] 🚫 BLOCKING sendMessage (INSTANCE CREATION) - another agent message was sent ${elapsed}ms ago, preventing duplicate`);
+                            console.log(`[Telegram Chat ID Capture] Blocked text: ${text.substring(0, 100)}`);
+                            return { message_id: 0, date: Date.now(), chat: { id: chatId } };
+                          }
+                        }
+                        
+                        // Record this message as sent
+                        const { recordMessageSent } = await import('./services/messageDeduplication.js');
+                        recordMessageSent(roomIdToCheck, text);
+                      }
+                      
+                      // Call original method
+                      return originalSendMessage.call(this, chatId, text, extra);
+                    };
+                    (instance.telegram.sendMessage as any).__patched = true;
+                  }
+                }
+                
+                return instance;
+              };
+              
+              // Copy prototype
+              PatchedTelegraf.prototype = OriginalTelegraf.prototype;
+              Object.setPrototypeOf(PatchedTelegraf, OriginalTelegraf);
+              
+              // Replace the export
+              if (TelegrafModule.Telegraf) {
+                (TelegrafModule as any).Telegraf = PatchedTelegraf;
+              }
+              if (TelegrafModule.default) {
+                (TelegrafModule as any).default = PatchedTelegraf;
+              }
+              
+              TelegrafAny.__patched = true;
+              console.log('[Telegram Chat ID Capture] ✅ Patched Telegraf constructor');
+            } else if (TelegrafClass && TelegrafClass.prototype && TelegrafClass.prototype.telegram) {
               const originalTelegramSendMessage = TelegrafClass.prototype.telegram.sendMessage;
               const sendMessageAny = originalTelegramSendMessage as any;
               console.log('[Telegram Chat ID Capture] Original sendMessage exists:', !!originalTelegramSendMessage);
