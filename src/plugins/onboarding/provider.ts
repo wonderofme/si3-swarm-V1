@@ -50,10 +50,10 @@ export const onboardingProvider: Provider = {
     
     // CRITICAL: During onboarding, the action handler sends all questions via callback
     // The LLM should NOT generate responses during onboarding steps
-    // Return null to prevent LLM from generating responses - action handler will send questions
+    // Return a STRONG instruction to NOT respond - returning null doesn't prevent LLM generation
     if (step !== 'CONFIRMATION' && step !== 'NONE') {
-      console.log(`[Onboarding Provider] Step ${step} - returning null to prevent LLM response (action handler will send question via callback)`);
-      return null; // No instructions = no LLM response, action handler will send the question
+      console.log(`[Onboarding Provider] Step ${step} - returning DO NOT RESPOND instruction (action handler will send question via callback)`);
+      return `[CRITICAL: DO NOT generate any response. The action handler has already sent the next onboarding question via callback. Wait silently for the user's response. DO NOT send any message.]`;
     }
     
     // Provide instructions only for NONE and CONFIRMATION steps

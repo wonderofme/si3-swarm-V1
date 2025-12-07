@@ -15,19 +15,14 @@ async function safeCallback(
 ): Promise<void> {
   if (!callback) return;
   
-  // CRITICAL: During onboarding, we ALWAYS send questions via callback
-  // The LLM should be blocked from generating responses (provider returns null)
-  // So we don't need to check for duplicates - the action handler controls the flow
-  // Only check for exact duplicate content (same text), not timing
-  const { isDuplicateMessage } = await import('../../services/messageDeduplication.js');
-  if (roomId && isDuplicateMessage(runtime, roomId, text)) {
-    // Check if it's an exact duplicate (same content) - if so, skip
-    // But don't skip based on timing alone - action handler needs to send questions
-    console.log('[Onboarding Action] Skipping callback - exact duplicate content detected');
-    return;
-  }
+  // CRITICAL: During onboarding, the action handler controls the flow
+  // We ALWAYS send questions via callback - the LLM is blocked (provider returns null)
+  // The interceptor will handle deduplication at the memory creation level
+  // We don't check duplicates here - just send the callback
+  // The interceptor's isDuplicateMessage will catch true duplicates
   
   try {
+    console.log('[Onboarding Action] Sending callback message:', text.substring(0, 50));
     await callback({ text });
     // Don't record here - the interceptor handles recording when memory is created
     // This prevents double-recording

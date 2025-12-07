@@ -94,17 +94,19 @@ export function isDuplicateMessage(
     return true; // Duplicate detected
   }
   
-  // Second check: Block ANY message if a message was sent recently (prevents LLM from sending duplicate after action callback)
-  // BUT: This should only block LLM messages, not action handler callbacks
-  // Action handler callbacks are checked separately in safeCallback
+  // Second check: Block ANY message if a message was sent very recently (within 500ms)
+  // This prevents rapid-fire duplicates from the same source
+  // But we use a shorter window (500ms) to allow action handler callbacks to go through
+  // Action handler callbacks are sent immediately after state updates, so they need to be allowed
   const lastMessageTime = lastMessagePerRoom.get(roomId);
   if (lastMessageTime) {
     const timeSinceLastMessage = now - lastMessageTime;
-    if (timeSinceLastMessage < BLOCK_WINDOW_MS) {
-      console.log('[Message Dedup] Blocking message - too soon after previous message:', text.substring(0, 50), `(${timeSinceLastMessage}ms ago, window: ${BLOCK_WINDOW_MS}ms)`);
+    // Reduced window to 500ms - only block truly rapid duplicates
+    if (timeSinceLastMessage < 500) {
+      console.log('[Message Dedup] Blocking message - too soon after previous message:', text.substring(0, 50), `(${timeSinceLastMessage}ms ago, window: 500ms)`);
       return true; // Block this message
     } else {
-      console.log('[Message Dedup] Message OK - enough time passed:', text.substring(0, 50), `(${timeSinceLastMessage}ms ago, window: ${BLOCK_WINDOW_MS}ms)`);
+      console.log('[Message Dedup] Message OK - enough time passed:', text.substring(0, 50), `(${timeSinceLastMessage}ms ago, window: 500ms)`);
     }
   } else {
     console.log('[Message Dedup] No previous message for room, allowing:', text.substring(0, 50));
