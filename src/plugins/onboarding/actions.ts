@@ -15,11 +15,15 @@ async function safeCallback(
 ): Promise<void> {
   if (!callback) return;
   
-  // Check if a message was recently sent to this room (within last 2 seconds)
-  // This prevents sending action callback messages when LLM already responded
+  // CRITICAL: During onboarding, we ALWAYS send questions via callback
+  // The LLM should be blocked from generating responses (provider returns null)
+  // So we don't need to check for duplicates - the action handler controls the flow
+  // Only check for exact duplicate content (same text), not timing
   const { isDuplicateMessage } = await import('../../services/messageDeduplication.js');
   if (roomId && isDuplicateMessage(runtime, roomId, text)) {
-    console.log('[Onboarding Action] Skipping callback - message was recently sent (likely by LLM)');
+    // Check if it's an exact duplicate (same content) - if so, skip
+    // But don't skip based on timing alone - action handler needs to send questions
+    console.log('[Onboarding Action] Skipping callback - exact duplicate content detected');
     return;
   }
   

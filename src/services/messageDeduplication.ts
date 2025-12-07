@@ -15,9 +15,10 @@ const BLOCK_WINDOW_MS = 1500; // 1.5 seconds to block ANY message after a messag
  * Creates a simple hash of the message text for deduplication
  */
 function hashMessage(text: string): string {
-  // Simple hash - just use first 50 chars + length
+  // Simple hash - just use first 100 chars + length
   // For exact duplicates, this is sufficient
-  return `${text.length}:${text.substring(0, 50)}`;
+  // Increased to 100 chars to catch more variations of similar messages
+  return `${text.length}:${text.substring(0, 100)}`;
 }
 
 /**
@@ -82,7 +83,20 @@ export function isDuplicateMessage(
   
   const now = Date.now();
   
-  // First check: Block ANY message if a message was sent recently (prevents LLM from sending duplicate after action callback)
+  // CRITICAL: Check for exact duplicate content FIRST (most reliable)
+  // This catches identical messages regardless of timing
+  const messageHash = hashMessage(text);
+  const cacheKey = `${roomId}:${messageHash}`;
+  
+  const lastSent = sentMessagesCache.get(cacheKey);
+  if (lastSent && (now - lastSent) < DEDUP_WINDOW_MS) {
+    console.log('[Message Dedup] Exact duplicate detected, skipping:', text.substring(0, 50));
+    return true; // Duplicate detected
+  }
+  
+  // Second check: Block ANY message if a message was sent recently (prevents LLM from sending duplicate after action callback)
+  // BUT: This should only block LLM messages, not action handler callbacks
+  // Action handler callbacks are checked separately in safeCallback
   const lastMessageTime = lastMessagePerRoom.get(roomId);
   if (lastMessageTime) {
     const timeSinceLastMessage = now - lastMessageTime;
@@ -94,16 +108,6 @@ export function isDuplicateMessage(
     }
   } else {
     console.log('[Message Dedup] No previous message for room, allowing:', text.substring(0, 50));
-  }
-  
-  // Second check: Exact duplicate detection
-  const messageHash = hashMessage(text);
-  const cacheKey = `${roomId}:${messageHash}`;
-  
-  const lastSent = sentMessagesCache.get(cacheKey);
-  if (lastSent && (now - lastSent) < DEDUP_WINDOW_MS) {
-    console.log('[Message Dedup] Exact duplicate detected, skipping:', text.substring(0, 50));
-    return true; // Duplicate detected
   }
   
   return false; // Not a duplicate
