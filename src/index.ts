@@ -458,13 +458,76 @@ async function startAgents() {
             console.log('[Telegram Chat ID Capture] Patched bot.handleError');
           }
           
-          // Also try to patch bot.telegram.sendMessage to intercept all outgoing messages
-          // This is critical: we need to block duplicate messages that might bypass createMemory
+          // CRITICAL: Patch ALL Telegram send methods to catch messages from any path
+          // The second message might be sent through callback, which uses a different bot instance
+          // So we need to patch at the Telegraf class level, not just the instance level
+          
+          // Patch the Telegraf class itself to intercept ALL sendMessage calls
+          try {
+            const TelegrafModule = await import('telegraf');
+            const TelegrafClass = TelegrafModule.Telegraf || TelegrafModule.default;
+            if (TelegrafClass && TelegrafClass.prototype && TelegrafClass.prototype.telegram) {
+              const originalTelegramSendMessage = TelegrafClass.prototype.telegram.sendMessage;
+              if (originalTelegramSendMessage && !originalTelegramSendMessage.__patched) {
+                console.log('[Telegram Chat ID Capture] Patching Telegraf class prototype to intercept ALL sendMessage calls...');
+                TelegrafClass.prototype.telegram.sendMessage = async function(chatId: any, text: string, extra?: any) {
+                  const sendTime = Date.now();
+                  console.log(`[Telegram Chat ID Capture] ========== sendMessage INTERCEPTED (CLASS LEVEL) ==========`);
+                  console.log(`[Telegram Chat ID Capture] Timestamp: ${sendTime}`);
+                  console.log(`[Telegram Chat ID Capture] 📤 sendMessage called - chatId: ${chatId}, text: ${text?.substring(0, 50) || '(empty)'}`);
+                  
+                  // CRITICAL: Check if this message should be blocked due to recent action execution
+                  const { getRoomIdForChatId, checkActionExecutedRecently, getLastAgentMessageTime } = await import('./services/llmResponseInterceptor.js');
+                  
+                  // Find roomId for this chatId
+                  const roomIdToCheck = getRoomIdForChatId(String(chatId));
+                  console.log(`[Telegram Chat ID Capture] 📤 sendMessage called - chatId: ${chatId}, roomId: ${roomIdToCheck || 'NOT FOUND'}, text: ${text?.substring(0, 50) || '(empty)'}`);
+                  
+                  if (roomIdToCheck && text && text.trim()) {
+                    // Check if action was executed recently
+                    console.log(`[Telegram Chat ID Capture] 🔍 Checking action execution for roomId: ${roomIdToCheck}`);
+                    if (checkActionExecutedRecently(roomIdToCheck)) {
+                      console.log('[Telegram Chat ID Capture] 🚫 BLOCKING sendMessage (CLASS LEVEL) - action was executed recently, preventing duplicate');
+                      console.log(`[Telegram Chat ID Capture] Blocked text: ${text.substring(0, 50)}`);
+                      return { message_id: 0, date: Date.now(), chat: { id: chatId } };
+                    }
+                    
+                    // Check for rapid consecutive messages
+                    const lastAgentMessageTime = getLastAgentMessageTime(roomIdToCheck);
+                    console.log(`[Telegram Chat ID Capture] 🔍 Checking rapid consecutive message for roomId: ${roomIdToCheck}`);
+                    console.log(`[Telegram Chat ID Capture] Last agent message time: ${lastAgentMessageTime || 'NOT FOUND'}`);
+                    if (lastAgentMessageTime) {
+                      const elapsed = Date.now() - lastAgentMessageTime;
+                      const AGENT_MESSAGE_BLOCK_WINDOW_MS = 10000;
+                      console.log(`[Telegram Chat ID Capture] 🔍 Checking rapid consecutive message - elapsed: ${elapsed}ms, window: ${AGENT_MESSAGE_BLOCK_WINDOW_MS}ms`);
+                      if (elapsed < AGENT_MESSAGE_BLOCK_WINDOW_MS) {
+                        console.log(`[Telegram Chat ID Capture] 🚫 BLOCKING sendMessage (CLASS LEVEL) - another agent message was sent ${elapsed}ms ago, preventing duplicate`);
+                        console.log(`[Telegram Chat ID Capture] Blocked text: ${text.substring(0, 50)}`);
+                        return { message_id: 0, date: Date.now(), chat: { id: chatId } };
+                      }
+                    }
+                  }
+                  
+                  // Call original method
+                  return originalTelegramSendMessage.call(this, chatId, text, extra);
+                };
+                TelegrafClass.prototype.telegram.sendMessage.__patched = true;
+                console.log('[Telegram Chat ID Capture] ✅ Patched Telegraf class prototype');
+              }
+            }
+          } catch (error: any) {
+            console.error('[Telegram Chat ID Capture] ⚠️ Failed to patch Telegraf class:', error.message);
+          }
+          
+          // Also patch the instance-level sendMessage as a fallback
           if (bot && bot.telegram && bot.telegram.sendMessage) {
-            console.log('[Telegram Chat ID Capture] Found bot.telegram.sendMessage, patching to block duplicates after action execution...');
+            console.log('[Telegram Chat ID Capture] Found bot.telegram.sendMessage, patching instance to block duplicates after action execution...');
             const originalSendMessage = bot.telegram.sendMessage.bind(bot.telegram);
             bot.telegram.sendMessage = async function(chatId: any, text: string, extra?: any) {
-              console.log('[Telegram Chat ID Capture] sendMessage called with chatId:', chatId, 'text:', text?.substring(0, 50));
+              const sendTime = Date.now();
+              console.log(`[Telegram Chat ID Capture] ========== sendMessage INTERCEPTED (INSTANCE LEVEL) ==========`);
+              console.log(`[Telegram Chat ID Capture] Timestamp: ${sendTime}`);
+              console.log(`[Telegram Chat ID Capture] 📤 sendMessage called - chatId: ${chatId}, text: ${text?.substring(0, 50) || '(empty)'}`);
               
               // CRITICAL: Check if this message should be blocked due to recent action execution
               // This catches messages that might bypass createMemory
