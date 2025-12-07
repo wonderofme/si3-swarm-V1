@@ -8,7 +8,7 @@ const sentMessagesCache = new Map<string, number>();
 // Key: `roomId`, Value: timestamp
 const lastMessagePerRoom = new Map<string, number>();
 
-const DEDUP_WINDOW_MS = 5000; // 5 seconds for exact duplicates
+const DEDUP_WINDOW_MS = 10000; // 10 seconds for exact duplicates (increased to catch second identical message)
 const BLOCK_WINDOW_MS = 1500; // 1.5 seconds to block ANY message after a message was sent (prevents LLM duplicates)
 
 /**

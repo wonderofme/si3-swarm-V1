@@ -481,14 +481,23 @@ async function startAgents() {
                   
                   // Find roomId for this chatId
                   const roomIdToCheck = getRoomIdForChatId(String(chatId));
-                  console.log(`[Telegram Chat ID Capture] 📤 sendMessage called - chatId: ${chatId}, roomId: ${roomIdToCheck || 'NOT FOUND'}, text: ${text?.substring(0, 50) || '(empty)'}`);
+                  console.log(`[Telegram Chat ID Capture] 📤 sendMessage called - chatId: ${chatId}, roomId: ${roomIdToCheck || 'NOT FOUND'}, text: ${text?.substring(0, 100) || '(empty)'}`);
                   
                   if (roomIdToCheck && text && text.trim()) {
+                    // CRITICAL: Check for EXACT duplicate content first (most reliable for identical messages)
+                    const { isDuplicateMessage } = await import('./services/messageDeduplication.js');
+                    if (isDuplicateMessage(null as any, roomIdToCheck, text)) {
+                      console.log('[Telegram Chat ID Capture] 🚫 BLOCKING sendMessage (CLASS LEVEL) - EXACT DUPLICATE CONTENT detected');
+                      console.log(`[Telegram Chat ID Capture] Blocked duplicate text: ${text.substring(0, 100)}`);
+                      console.log(`[Telegram Chat ID Capture] This is likely the same message being sent twice - blocking duplicate`);
+                      return { message_id: 0, date: Date.now(), chat: { id: chatId } };
+                    }
+                    
                     // Check if action was executed recently
                     console.log(`[Telegram Chat ID Capture] 🔍 Checking action execution for roomId: ${roomIdToCheck}`);
                     if (checkActionExecutedRecently(roomIdToCheck)) {
                       console.log('[Telegram Chat ID Capture] 🚫 BLOCKING sendMessage (CLASS LEVEL) - action was executed recently, preventing duplicate');
-                      console.log(`[Telegram Chat ID Capture] Blocked text: ${text.substring(0, 50)}`);
+                      console.log(`[Telegram Chat ID Capture] Blocked text: ${text.substring(0, 100)}`);
                       return { message_id: 0, date: Date.now(), chat: { id: chatId } };
                     }
                     
@@ -502,10 +511,15 @@ async function startAgents() {
                       console.log(`[Telegram Chat ID Capture] 🔍 Checking rapid consecutive message - elapsed: ${elapsed}ms, window: ${AGENT_MESSAGE_BLOCK_WINDOW_MS}ms`);
                       if (elapsed < AGENT_MESSAGE_BLOCK_WINDOW_MS) {
                         console.log(`[Telegram Chat ID Capture] 🚫 BLOCKING sendMessage (CLASS LEVEL) - another agent message was sent ${elapsed}ms ago, preventing duplicate`);
-                        console.log(`[Telegram Chat ID Capture] Blocked text: ${text.substring(0, 50)}`);
+                        console.log(`[Telegram Chat ID Capture] Blocked text: ${text.substring(0, 100)}`);
                         return { message_id: 0, date: Date.now(), chat: { id: chatId } };
                       }
                     }
+                    
+                    // Record this message as sent (for duplicate detection)
+                    const { recordMessageSent } = await import('./services/messageDeduplication.js');
+                    recordMessageSent(roomIdToCheck, text);
+                    console.log(`[Telegram Chat ID Capture] ✅ Recorded message in deduplication system: ${text.substring(0, 50)}`);
                   }
                   
                   // Call original method
@@ -535,14 +549,23 @@ async function startAgents() {
               
               // Find roomId for this chatId
               const roomIdToCheck = getRoomIdForChatId(chatId);
-              console.log(`[Telegram Chat ID Capture] 📤 sendMessage called - chatId: ${chatId}, roomId: ${roomIdToCheck || 'NOT FOUND'}, text: ${text?.substring(0, 50) || '(empty)'}`);
+              console.log(`[Telegram Chat ID Capture] 📤 sendMessage called - chatId: ${chatId}, roomId: ${roomIdToCheck || 'NOT FOUND'}, text: ${text?.substring(0, 100) || '(empty)'}`);
               
               if (roomIdToCheck && text && text.trim()) {
+                // CRITICAL: Check for EXACT duplicate content first (most reliable for identical messages)
+                const { isDuplicateMessage } = await import('./services/messageDeduplication.js');
+                if (isDuplicateMessage(null as any, roomIdToCheck, text)) {
+                  console.log('[Telegram Chat ID Capture] 🚫 BLOCKING sendMessage (INSTANCE LEVEL) - EXACT DUPLICATE CONTENT detected');
+                  console.log(`[Telegram Chat ID Capture] Blocked duplicate text: ${text.substring(0, 100)}`);
+                  console.log(`[Telegram Chat ID Capture] This is likely the same message being sent twice - blocking duplicate`);
+                  return { message_id: 0, date: Date.now(), chat: { id: chatId } };
+                }
+                
                 // Check if action was executed recently (using 10 second window to match interceptor)
                 console.log(`[Telegram Chat ID Capture] 🔍 Checking action execution for roomId: ${roomIdToCheck}`);
                 if (checkActionExecutedRecently(roomIdToCheck)) {
-                  console.log('[Telegram Chat ID Capture] 🚫 BLOCKING sendMessage - action was executed recently, preventing duplicate');
-                  console.log(`[Telegram Chat ID Capture] Blocked text: ${text.substring(0, 50)}`);
+                  console.log('[Telegram Chat ID Capture] 🚫 BLOCKING sendMessage (INSTANCE LEVEL) - action was executed recently, preventing duplicate');
+                  console.log(`[Telegram Chat ID Capture] Blocked text: ${text.substring(0, 100)}`);
                   // Return a fake result to prevent sending
                   return { message_id: 0, date: Date.now(), chat: { id: chatId } };
                 }
@@ -556,8 +579,8 @@ async function startAgents() {
                   const AGENT_MESSAGE_BLOCK_WINDOW_MS = 10000; // 10 seconds - increased to catch "No action found" follow-ups
                   console.log(`[Telegram Chat ID Capture] 🔍 Checking rapid consecutive message - elapsed: ${elapsed}ms, window: ${AGENT_MESSAGE_BLOCK_WINDOW_MS}ms`);
                   if (elapsed < AGENT_MESSAGE_BLOCK_WINDOW_MS) {
-                    console.log(`[Telegram Chat ID Capture] 🚫 BLOCKING sendMessage - another agent message was sent ${elapsed}ms ago (window: ${AGENT_MESSAGE_BLOCK_WINDOW_MS}ms), preventing duplicate`);
-                    console.log(`[Telegram Chat ID Capture] Blocked text: ${text.substring(0, 50)}`);
+                    console.log(`[Telegram Chat ID Capture] 🚫 BLOCKING sendMessage (INSTANCE LEVEL) - another agent message was sent ${elapsed}ms ago (window: ${AGENT_MESSAGE_BLOCK_WINDOW_MS}ms), preventing duplicate`);
+                    console.log(`[Telegram Chat ID Capture] Blocked text: ${text.substring(0, 100)}`);
                     console.log(`[Telegram Chat ID Capture] This is likely the "No action found" follow-up response - blocking to prevent duplicate`);
                     // Return a fake result to prevent sending
                     return { message_id: 0, date: Date.now(), chat: { id: chatId } };
@@ -568,6 +591,11 @@ async function startAgents() {
                   console.log(`[Telegram Chat ID Capture] ⚠️ No previous agent message timestamp found for roomId: ${roomIdToCheck}`);
                   console.log(`[Telegram Chat ID Capture] This is the FIRST agent message for this roomId - allowing`);
                 }
+                
+                // Record this message as sent (for duplicate detection)
+                const { recordMessageSent } = await import('./services/messageDeduplication.js');
+                recordMessageSent(roomIdToCheck, text);
+                console.log(`[Telegram Chat ID Capture] ✅ Recorded message in deduplication system: ${text.substring(0, 50)}`);
                 console.log(`[Telegram Chat ID Capture] ✅ All checks passed, allowing sendMessage`);
               } else {
                 console.log(`[Telegram Chat ID Capture] ⚠️ Skipping checks - roomId: ${roomIdToCheck || 'missing'}, text: ${text ? 'present' : 'missing'}`);
