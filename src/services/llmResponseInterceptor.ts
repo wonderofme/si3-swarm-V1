@@ -448,6 +448,22 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
           }
         }
         
+        // CRITICAL: Check if action was executed recently BEFORE sending
+        // If so, block this message entirely to prevent duplicates
+        const actionWasRecent = wasActionExecutedRecently(memory.roomId);
+        if (actionWasRecent) {
+          console.log('[LLM Response Interceptor] 🚫 BLOCKING agent message - action was executed recently, preventing duplicate');
+          console.log('[LLM Response Interceptor] Blocked message text:', memory.content.text?.substring(0, 50));
+          // Return empty memory to prevent sending
+          return await originalCreateMemory({
+            ...memory,
+            content: {
+              ...memory.content,
+              text: '' // Empty text prevents sending
+            }
+          });
+        }
+        
         if (telegramChatId && process.env.TELEGRAM_BOT_TOKEN) {
           try {
             console.log('[LLM Response Interceptor] Sending agent message directly via Telegram API to chat:', telegramChatId);
