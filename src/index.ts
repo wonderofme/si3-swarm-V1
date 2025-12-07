@@ -470,37 +470,41 @@ async function startAgents() {
               // This catches messages that might bypass createMemory
               const { getRoomIdForChatId, checkActionExecutedRecently, getLastAgentMessageTime } = await import('./services/llmResponseInterceptor.js');
               
-             // Find roomId for this chatId
-             const roomIdToCheck = getRoomIdForChatId(chatId);
-             console.log(`[Telegram Chat ID Capture] sendMessage called - chatId: ${chatId}, roomId: ${roomIdToCheck || 'NOT FOUND'}, text: ${text?.substring(0, 50) || '(empty)'}`);
-             
-             if (roomIdToCheck && text && text.trim()) {
-               // Check if action was executed recently
-               console.log(`[Telegram Chat ID Capture] Checking action execution for roomId: ${roomIdToCheck}`);
-               if (checkActionExecutedRecently(roomIdToCheck)) {
-                 console.log('[Telegram Chat ID Capture] 🚫 BLOCKING sendMessage - action was executed recently, preventing duplicate');
-                 // Return a fake result to prevent sending
-                 return { message_id: 0, date: Date.now(), chat: { id: chatId } };
-               }
-               
-               // Also check if another agent message was sent very recently (rapid consecutive blocking)
-               const lastAgentMessageTime = getLastAgentMessageTime(roomIdToCheck);
-               if (lastAgentMessageTime) {
-                 const elapsed = Date.now() - lastAgentMessageTime;
-                 const AGENT_MESSAGE_BLOCK_WINDOW_MS = 2000; // 2 seconds
-                 console.log(`[Telegram Chat ID Capture] Checking rapid consecutive message - elapsed: ${elapsed}ms, window: ${AGENT_MESSAGE_BLOCK_WINDOW_MS}ms`);
-                 if (elapsed < AGENT_MESSAGE_BLOCK_WINDOW_MS) {
-                   console.log(`[Telegram Chat ID Capture] 🚫 BLOCKING sendMessage - another agent message was sent ${elapsed}ms ago (window: ${AGENT_MESSAGE_BLOCK_WINDOW_MS}ms), preventing duplicate`);
-                   // Return a fake result to prevent sending
-                   return { message_id: 0, date: Date.now(), chat: { id: chatId } };
-                 }
-               } else {
-                 console.log(`[Telegram Chat ID Capture] No previous agent message timestamp found for roomId: ${roomIdToCheck}`);
-               }
-               console.log(`[Telegram Chat ID Capture] ✅ All checks passed, allowing sendMessage`);
-             } else {
-               console.log(`[Telegram Chat ID Capture] ⚠️ Skipping checks - roomId: ${roomIdToCheck || 'missing'}, text: ${text ? 'present' : 'missing'}`);
-             }
+              // Find roomId for this chatId
+              const roomIdToCheck = getRoomIdForChatId(chatId);
+              console.log(`[Telegram Chat ID Capture] 📤 sendMessage called - chatId: ${chatId}, roomId: ${roomIdToCheck || 'NOT FOUND'}, text: ${text?.substring(0, 50) || '(empty)'}`);
+              
+              if (roomIdToCheck && text && text.trim()) {
+                // Check if action was executed recently (using 10 second window to match interceptor)
+                console.log(`[Telegram Chat ID Capture] 🔍 Checking action execution for roomId: ${roomIdToCheck}`);
+                if (checkActionExecutedRecently(roomIdToCheck)) {
+                  console.log('[Telegram Chat ID Capture] 🚫 BLOCKING sendMessage - action was executed recently, preventing duplicate');
+                  console.log(`[Telegram Chat ID Capture] Blocked text: ${text.substring(0, 50)}`);
+                  // Return a fake result to prevent sending
+                  return { message_id: 0, date: Date.now(), chat: { id: chatId } };
+                }
+                
+                // Also check if another agent message was sent very recently (rapid consecutive blocking)
+                const lastAgentMessageTime = getLastAgentMessageTime(roomIdToCheck);
+                if (lastAgentMessageTime) {
+                  const elapsed = Date.now() - lastAgentMessageTime;
+                  const AGENT_MESSAGE_BLOCK_WINDOW_MS = 5000; // Increased to 5 seconds to catch follow-up responses
+                  console.log(`[Telegram Chat ID Capture] 🔍 Checking rapid consecutive message - elapsed: ${elapsed}ms, window: ${AGENT_MESSAGE_BLOCK_WINDOW_MS}ms`);
+                  if (elapsed < AGENT_MESSAGE_BLOCK_WINDOW_MS) {
+                    console.log(`[Telegram Chat ID Capture] 🚫 BLOCKING sendMessage - another agent message was sent ${elapsed}ms ago (window: ${AGENT_MESSAGE_BLOCK_WINDOW_MS}ms), preventing duplicate`);
+                    console.log(`[Telegram Chat ID Capture] Blocked text: ${text.substring(0, 50)}`);
+                    // Return a fake result to prevent sending
+                    return { message_id: 0, date: Date.now(), chat: { id: chatId } };
+                  } else {
+                    console.log(`[Telegram Chat ID Capture] ✅ Rapid consecutive check passed - elapsed (${elapsed}ms) > window (${AGENT_MESSAGE_BLOCK_WINDOW_MS}ms)`);
+                  }
+                } else {
+                  console.log(`[Telegram Chat ID Capture] ⚠️ No previous agent message timestamp found for roomId: ${roomIdToCheck}`);
+                }
+                console.log(`[Telegram Chat ID Capture] ✅ All checks passed, allowing sendMessage`);
+              } else {
+                console.log(`[Telegram Chat ID Capture] ⚠️ Skipping checks - roomId: ${roomIdToCheck || 'missing'}, text: ${text ? 'present' : 'missing'}`);
+              }
               
               try {
                 const result = await originalSendMessage(chatId, text, extra);
