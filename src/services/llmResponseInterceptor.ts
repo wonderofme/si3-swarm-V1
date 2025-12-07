@@ -330,12 +330,13 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
             console.log('[LLM Response Interceptor] Timeout reached, no response received, forcing action execution');
             pendingRestartCommands.delete(memory.roomId);
             
-            // Create a simple callback that just creates memory - don't send directly
+            // Create a simple callback that just creates memory with EMPTY TEXT - don't send
             // The action handler will send the message via its callback
+            // This prevents the timeout callback from sending a duplicate message
             const callback = async (response: { text: string }): Promise<any[]> => {
-              console.log('[LLM Response Interceptor] Timeout callback - action handler will send message, just creating memory');
+              console.log('[LLM Response Interceptor] Timeout callback - action handler will send message, creating memory with empty text to prevent sending');
               
-              // Create memory normally - this will go through all interceptors
+              // Create memory with EMPTY TEXT so it doesn't get sent
               // The action handler's callback will actually send the message
               // Mark it to prevent re-processing by our interceptor
               const greetingMemory = await runtime.messageManager.createMemory({
@@ -344,13 +345,13 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
                 agentId: runtime.agentId,
                 roomId: memory.roomId,
                 content: {
-                  text: response.text,
+                  text: '', // EMPTY TEXT - prevents sending, action handler will send it
                   source: 'telegram',
                   // Add marker to prevent re-processing
                   metadata: { timeoutCreated: true }
                 }
               });
-              console.log('[LLM Response Interceptor] Greeting memory created (action handler will send message)');
+              console.log('[LLM Response Interceptor] Greeting memory created with empty text (action handler will send message)');
               
               return Array.isArray(greetingMemory) ? greetingMemory : [greetingMemory];
             };
@@ -422,29 +423,34 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
       }
       
       // CRITICAL FIX: Block agent messages if another agent message was sent very recently
-      // This catches duplicates from "No action found" follow-up responses
-      // The "No action found" warning triggers a second LLM generation (small model) that creates duplicates
-      const lastAgentMessageTime = lastAgentMessageTimestamps.get(memory.roomId);
-      if (lastAgentMessageTime && memory.content.text && memory.content.text.trim()) {
-        const elapsed = Date.now() - lastAgentMessageTime;
-        console.log(`[LLM Response Interceptor] 🔍 Checking rapid consecutive message - elapsed: ${elapsed}ms, window: ${AGENT_MESSAGE_BLOCK_WINDOW_MS}ms`);
-        if (elapsed < AGENT_MESSAGE_BLOCK_WINDOW_MS) {
-          console.log(`[LLM Response Interceptor] 🚫 BLOCKING agent message - another agent message was sent ${elapsed}ms ago (window: ${AGENT_MESSAGE_BLOCK_WINDOW_MS}ms), preventing duplicate`);
-          console.log(`[LLM Response Interceptor] Blocked message text: ${messageText}`);
-          console.log(`[LLM Response Interceptor] This is likely the "No action found" follow-up response - blocking to prevent duplicate`);
-          // Return empty memory to prevent sending
-          return await originalCreateMemory({
-            ...memory,
-            content: {
-              ...memory.content,
-              text: '' // Empty text prevents sending
-            }
-          });
-        } else {
-          console.log(`[LLM Response Interceptor] ✅ Allowing agent message - elapsed time (${elapsed}ms) is outside block window (${AGENT_MESSAGE_BLOCK_WINDOW_MS}ms)`);
+      // BUT: Allow action handler callbacks - they are the ones that should send messages
+      
+      if (!isFromActionHandler) {
+        // Only check rapid consecutive messages for LLM-generated messages, not action handler callbacks
+        const lastAgentMessageTime = lastAgentMessageTimestamps.get(memory.roomId);
+        if (lastAgentMessageTime && memory.content.text && memory.content.text.trim()) {
+          const elapsed = Date.now() - lastAgentMessageTime;
+          console.log(`[LLM Response Interceptor] 🔍 Checking rapid consecutive message - elapsed: ${elapsed}ms, window: ${AGENT_MESSAGE_BLOCK_WINDOW_MS}ms`);
+          if (elapsed < AGENT_MESSAGE_BLOCK_WINDOW_MS) {
+            console.log(`[LLM Response Interceptor] 🚫 BLOCKING agent message - another agent message was sent ${elapsed}ms ago (window: ${AGENT_MESSAGE_BLOCK_WINDOW_MS}ms), preventing duplicate`);
+            console.log(`[LLM Response Interceptor] Blocked message text: ${messageText}`);
+            console.log(`[LLM Response Interceptor] This is likely the "No action found" follow-up response - blocking to prevent duplicate`);
+            // Return empty memory to prevent sending
+            return await originalCreateMemory({
+              ...memory,
+              content: {
+                ...memory.content,
+                text: '' // Empty text prevents sending
+              }
+            });
+          } else {
+            console.log(`[LLM Response Interceptor] ✅ Allowing agent message - elapsed time (${elapsed}ms) is outside block window (${AGENT_MESSAGE_BLOCK_WINDOW_MS}ms)`);
+          }
+        } else if (!lastAgentMessageTime) {
+          console.log(`[LLM Response Interceptor] ⚠️ No previous agent message timestamp found for roomId: ${memory.roomId}`);
         }
-      } else if (!lastAgentMessageTime) {
-        console.log(`[LLM Response Interceptor] ⚠️ No previous agent message timestamp found for roomId: ${memory.roomId}`);
+      } else {
+        console.log(`[LLM Response Interceptor] ✅ ALLOWING agent message - from action handler callback (bypassing rapid consecutive check)`);
       }
       
       // CRITICAL: Record timestamp BEFORE checking for rapid consecutive messages
