@@ -468,9 +468,10 @@ async function startAgents() {
             const TelegrafClass = TelegrafModule.Telegraf || TelegrafModule.default;
             if (TelegrafClass && TelegrafClass.prototype && TelegrafClass.prototype.telegram) {
               const originalTelegramSendMessage = TelegrafClass.prototype.telegram.sendMessage;
-              if (originalTelegramSendMessage && !originalTelegramSendMessage.__patched) {
+              const sendMessageAny = originalTelegramSendMessage as any;
+              if (originalTelegramSendMessage && !sendMessageAny.__patched) {
                 console.log('[Telegram Chat ID Capture] Patching Telegraf class prototype to intercept ALL sendMessage calls...');
-                TelegrafClass.prototype.telegram.sendMessage = async function(chatId: any, text: string, extra?: any) {
+                (TelegrafClass.prototype.telegram as any).sendMessage = async function(chatId: any, text: string, extra?: any): Promise<any> {
                   const sendTime = Date.now();
                   console.log(`[Telegram Chat ID Capture] ========== sendMessage INTERCEPTED (CLASS LEVEL) ==========`);
                   console.log(`[Telegram Chat ID Capture] Timestamp: ${sendTime}`);
@@ -525,7 +526,7 @@ async function startAgents() {
                   // Call original method
                   return originalTelegramSendMessage.call(this, chatId, text, extra);
                 };
-                TelegrafClass.prototype.telegram.sendMessage.__patched = true;
+                (TelegrafClass.prototype.telegram.sendMessage as any).__patched = true;
                 console.log('[Telegram Chat ID Capture] ✅ Patched Telegraf class prototype');
               }
             }
