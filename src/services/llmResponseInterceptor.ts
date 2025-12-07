@@ -119,8 +119,8 @@ const ACTION_EXECUTION_BLOCK_WINDOW_MS = 10000; // 10 seconds
 
 // Time window in milliseconds - block agent messages if another agent message was sent recently
 // This catches duplicates from "No action found" follow-up responses
-// Increased to 5 seconds to catch follow-up responses that happen after action execution
-const AGENT_MESSAGE_BLOCK_WINDOW_MS = 5000; // 5 seconds
+// Increased to 10 seconds to catch the "No action found" follow-up that happens immediately after first response
+const AGENT_MESSAGE_BLOCK_WINDOW_MS = 10000; // 10 seconds - increased to catch "No action found" follow-ups
 
 /**
  * Records that an action handler has executed for a given room
