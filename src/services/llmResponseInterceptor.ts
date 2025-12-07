@@ -506,10 +506,18 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
         if (telegramChatId && process.env.TELEGRAM_BOT_TOKEN) {
           try {
             console.log('[LLM Response Interceptor] Sending agent message directly via Telegram API to chat:', telegramChatId);
-            console.log('[LLM Response Interceptor] Creating new Telegraf instance - this should use the patched class prototype');
+            console.log('[LLM Response Interceptor] Creating new Telegraf instance...');
             const Telegraf = (await import('telegraf')).Telegraf;
             const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
-            console.log('[LLM Response Interceptor] Calling bot.telegram.sendMessage - this should be intercepted by class-level patch');
+            
+            // Apply instance patcher if available
+            const { telegrafInstancePatcher } = await import('../index.js');
+            if (telegrafInstancePatcher) {
+              console.log('[LLM Response Interceptor] Applying instance patcher to new Telegraf instance...');
+              telegrafInstancePatcher(bot);
+            }
+            
+            console.log('[LLM Response Interceptor] Calling bot.telegram.sendMessage - this should be intercepted by instance patcher');
             await bot.telegram.sendMessage(telegramChatId, memory.content.text);
             console.log('[LLM Response Interceptor] ✅ Successfully sent agent message via Telegram API');
             
