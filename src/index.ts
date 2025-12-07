@@ -488,7 +488,7 @@ async function startAgents() {
                 const lastAgentMessageTime = getLastAgentMessageTime(roomIdToCheck);
                 if (lastAgentMessageTime) {
                   const elapsed = Date.now() - lastAgentMessageTime;
-                  const AGENT_MESSAGE_BLOCK_WINDOW_MS = 5000; // Increased to 5 seconds to catch follow-up responses
+                  const AGENT_MESSAGE_BLOCK_WINDOW_MS = 10000; // 10 seconds - increased to catch "No action found" follow-ups
                   console.log(`[Telegram Chat ID Capture] 🔍 Checking rapid consecutive message - elapsed: ${elapsed}ms, window: ${AGENT_MESSAGE_BLOCK_WINDOW_MS}ms`);
                   if (elapsed < AGENT_MESSAGE_BLOCK_WINDOW_MS) {
                     console.log(`[Telegram Chat ID Capture] 🚫 BLOCKING sendMessage - another agent message was sent ${elapsed}ms ago (window: ${AGENT_MESSAGE_BLOCK_WINDOW_MS}ms), preventing duplicate`);
