@@ -114,7 +114,8 @@ const actionExecutionTimestamps = new Map<string, number>();
 const lastAgentMessageTimestamps = new Map<string, number>();
 
 // Time window in milliseconds - block agent messages if action executed within this window
-const ACTION_EXECUTION_BLOCK_WINDOW_MS = 3000; // 3 seconds
+// Increased to 10 seconds to catch the "No action found" follow-up responses that happen after action execution
+const ACTION_EXECUTION_BLOCK_WINDOW_MS = 10000; // 10 seconds
 
 // Time window in milliseconds - block agent messages if another agent message was sent recently
 // This catches duplicates from "No action found" follow-up responses
