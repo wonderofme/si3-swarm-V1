@@ -477,7 +477,7 @@ async function startAgents() {
           if (bot && bot.handler) {
             console.log('[Telegram Chat ID Capture] Found bot.handler, attempting to patch...');
             const originalHandler = bot.handler.bind(bot);
-            bot.handler = function(update: any) {
+            bot.handler = async function(update: any) {
               // Log ALL updates to see what's coming in
               console.log('[Telegram Chat ID Capture] 📥 Handler called with update type:', update?.update_id ? 'update_id: ' + update.update_id : 'no update_id');
               console.log('[Telegram Chat ID Capture] Update keys:', Object.keys(update || {}));
@@ -513,7 +513,7 @@ async function startAgents() {
               // Wrap in try-catch to handle database errors gracefully
               try {
                 console.log('[Telegram Chat ID Capture] Calling original handler...');
-                const result = originalHandler(update);
+                const result = await originalHandler(update);
                 console.log('[Telegram Chat ID Capture] Original handler returned');
                 return result;
               } catch (error: any) {
