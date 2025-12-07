@@ -74,6 +74,9 @@ export const continueOnboardingAction: Action = {
   name: 'CONTINUE_ONBOARDING',
   description: 'Handles onboarding flow - sends exact scripted messages via callback.',
   similes: ['NEXT_STEP', 'SAVE_PROFILE', 'ANSWER_ONBOARDING', 'EDIT_PROFILE'],
+  // CRITICAL FIX: Prevent LLM from sending initial message before action executes
+  // This prevents the "double message" where LLM1 speaks and Action speaks
+  suppressInitialMessage: true,
   
   validate: async (runtime: IAgentRuntime, message: Memory, state?: State) => {
     const step = await getOnboardingStep(runtime, message.userId);
@@ -378,6 +381,33 @@ export const continueOnboardingAction: Action = {
 
     // Note: Action execution is now recorded immediately after each updateOnboardingStep call
     // This ensures it's recorded as soon as state changes, before ElizaOS can generate follow-up response
+    
+    // CRITICAL FIX: Manual State Synchronization (Research-based fix)
+    // The evaluate step receives stale state because the action's output isn't in recentMemories
+    // By manually updating state.recentMemories, we prevent the "Amnesia Bug" where the
+    // evaluate step thinks the user's request is still unanswered
+    if (state && state.recentMemories) {
+      // Get the last agent message from recent memories to understand what was just sent
+      // If the AI already generated a response, we need to ensure it's in the state
+      const lastAgentMemory = state.recentMemories
+        .slice()
+        .reverse()
+        .find(m => m.userId === runtime.agentId);
+      
+      // If there's a recent agent message, ensure it's at the end of recentMemories
+      // This prevents the evaluate step from seeing stale state
+      if (lastAgentMemory) {
+        // Remove any duplicates
+        state.recentMemories = state.recentMemories.filter(m => 
+          !(m.userId === runtime.agentId && 
+            m.content.text === lastAgentMemory.content.text &&
+            m.createdAt === lastAgentMemory.createdAt)
+        );
+        // Add it back at the end
+        state.recentMemories.push(lastAgentMemory);
+        console.log('[Onboarding Action] ✅ Manually synchronized state.recentMemories to prevent evaluate step amnesia');
+      }
+    }
     
     return true;
   },

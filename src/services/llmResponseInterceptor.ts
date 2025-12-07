@@ -172,6 +172,36 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
   // Store reference to original createMemory (before other patches)
   const originalCreateMemory = runtime.messageManager.createMemory.bind(runtime.messageManager);
   
+  // CRITICAL FIX: Patch LLM generation method to block evaluate step hallucinations
+  // The research identifies that the second message comes from the evaluate step
+  // which uses a small model that hallucinates conversational responses
+  // By patching the completion/generation method, we can block these at the source
+  if (runtime.completion && typeof runtime.completion.generateText === 'function') {
+    const originalGenerateText = runtime.completion.generateText.bind(runtime.completion);
+    runtime.completion.generateText = async function(...args: any[]) {
+      // Extract roomId from the arguments if possible
+      // The generateText method typically receives (prompt, options) or similar
+      // We need to check if an action was recently executed for this generation
+      // Since we don't have direct access to roomId here, we'll check all active roomIds
+      const actionWasRecent = Array.from(actionExecutionTimestamps.entries()).some(([roomId, timestamp]) => {
+        const elapsed = Date.now() - timestamp;
+        return elapsed < ACTION_EXECUTION_BLOCK_WINDOW_MS;
+      });
+      
+      if (actionWasRecent) {
+        console.log('[LLM Response Interceptor] 🚫 BLOCKING generateText - action was executed recently, preventing evaluate step hallucination');
+        // Return empty response to prevent the evaluate step from generating text
+        return { text: '', action: null, reasoning: null };
+      }
+      
+      // Call original method
+      return originalGenerateText.apply(this, args);
+    };
+    console.log('[LLM Response Interceptor] ✅ Patched runtime.completion.generateText to block evaluate step hallucinations');
+  } else {
+    console.log('[LLM Response Interceptor] ⚠️ runtime.completion.generateText not found, skipping LLM generation patch');
+  }
+  
   // Patch messageManager.createMemory to track user messages and intercept restart commands
   runtime.messageManager.createMemory = async (memory: Memory) => {
     // Log ALL memory creation to debug why agent messages aren't being created
