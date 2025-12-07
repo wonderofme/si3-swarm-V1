@@ -155,7 +155,111 @@ async function createRuntime(character: any) {
   return runtime;
 }
 
+// CRITICAL: Patch Telegraf BEFORE any instances are created
+// This must happen at module load time, before TelegramClientInterface.start() is called
+async function patchTelegrafGlobally() {
+  try {
+    console.log('[Telegram Chat ID Capture] 🔧 Patching Telegraf class GLOBALLY (before any instances)...');
+    const TelegrafModule = await import('telegraf');
+    const TelegrafClass = TelegrafModule.Telegraf || TelegrafModule.default;
+    
+    if (TelegrafClass && !(TelegrafClass as any).__patched) {
+      console.log('[Telegram Chat ID Capture] ✅ Patching Telegraf constructor to intercept ALL instances...');
+      
+      const OriginalTelegraf = TelegrafClass;
+      
+      // Wrap the constructor
+      const PatchedTelegraf = function(this: any, ...args: any[]) {
+        const instance = new (OriginalTelegraf as any)(...args);
+        
+        // Patch telegram.sendMessage on this instance
+        if (instance.telegram && instance.telegram.sendMessage) {
+          const originalSendMessage = instance.telegram.sendMessage.bind(instance.telegram);
+          const sendMessageAny = originalSendMessage as any;
+          
+          if (!sendMessageAny.__patched) {
+            instance.telegram.sendMessage = async function(chatId: any, text: string, extra?: any): Promise<any> {
+              const sendTime = Date.now();
+              console.log(`[Telegram Chat ID Capture] ========== sendMessage INTERCEPTED (GLOBAL PATCH) ==========`);
+              console.log(`[Telegram Chat ID Capture] Timestamp: ${sendTime}`);
+              console.log(`[Telegram Chat ID Capture] 📤 sendMessage called - chatId: ${chatId}, text: ${text?.substring(0, 100) || '(empty)'}`);
+              
+              // CRITICAL: Check if this message should be blocked due to recent action execution
+              const { getRoomIdForChatId, checkActionExecutedRecently, getLastAgentMessageTime } = await import('./services/llmResponseInterceptor.js');
+              
+              // Find roomId for this chatId
+              const roomIdToCheck = getRoomIdForChatId(String(chatId));
+              
+              if (roomIdToCheck && text && text.trim()) {
+                // CRITICAL: Check for EXACT duplicate content first
+                const { isDuplicateMessage } = await import('./services/messageDeduplication.js');
+                if (isDuplicateMessage(null as any, roomIdToCheck, text)) {
+                  console.log('[Telegram Chat ID Capture] 🚫 BLOCKING sendMessage (GLOBAL PATCH) - EXACT DUPLICATE CONTENT detected');
+                  console.log(`[Telegram Chat ID Capture] Blocked duplicate text: ${text.substring(0, 100)}`);
+                  return { message_id: 0, date: Date.now(), chat: { id: chatId } };
+                }
+                
+                // Check if action was executed recently
+                if (checkActionExecutedRecently(roomIdToCheck)) {
+                  console.log('[Telegram Chat ID Capture] 🚫 BLOCKING sendMessage (GLOBAL PATCH) - action was executed recently, preventing duplicate');
+                  console.log(`[Telegram Chat ID Capture] Blocked text: ${text.substring(0, 100)}`);
+                  return { message_id: 0, date: Date.now(), chat: { id: chatId } };
+                }
+                
+                // Check for rapid consecutive messages
+                const lastAgentMessageTime = getLastAgentMessageTime(roomIdToCheck);
+                if (lastAgentMessageTime) {
+                  const elapsed = Date.now() - lastAgentMessageTime;
+                  const AGENT_MESSAGE_BLOCK_WINDOW_MS = 10000;
+                  if (elapsed < AGENT_MESSAGE_BLOCK_WINDOW_MS) {
+                    console.log(`[Telegram Chat ID Capture] 🚫 BLOCKING sendMessage (GLOBAL PATCH) - another agent message was sent ${elapsed}ms ago, preventing duplicate`);
+                    console.log(`[Telegram Chat ID Capture] Blocked text: ${text.substring(0, 100)}`);
+                    return { message_id: 0, date: Date.now(), chat: { id: chatId } };
+                  }
+                }
+                
+                // Record this message as sent
+                const { recordMessageSent } = await import('./services/messageDeduplication.js');
+                recordMessageSent(roomIdToCheck, text);
+              }
+              
+              // Call original method
+              return originalSendMessage.call(this, chatId, text, extra);
+            };
+            (instance.telegram.sendMessage as any).__patched = true;
+          }
+        }
+        
+        return instance;
+      };
+      
+      // Copy prototype and static properties
+      PatchedTelegraf.prototype = OriginalTelegraf.prototype;
+      Object.setPrototypeOf(PatchedTelegraf, OriginalTelegraf);
+      Object.setPrototypeOf(PatchedTelegraf.prototype, OriginalTelegraf.prototype);
+      
+      // Replace the export
+      if (TelegrafModule.Telegraf) {
+        (TelegrafModule as any).Telegraf = PatchedTelegraf;
+      }
+      if (TelegrafModule.default) {
+        (TelegrafModule as any).default = PatchedTelegraf;
+      }
+      
+      (TelegrafClass as any).__patched = true;
+      console.log('[Telegram Chat ID Capture] ✅ Patched Telegraf constructor GLOBALLY');
+    } else {
+      console.log('[Telegram Chat ID Capture] ⚠️ Telegraf already patched or not found');
+    }
+  } catch (error: any) {
+    console.error('[Telegram Chat ID Capture] ❌ Failed to patch Telegraf globally:', error.message);
+  }
+}
+
 async function startAgents() {
+  // CRITICAL: Patch Telegraf BEFORE creating any runtimes or clients
+  await patchTelegrafGlobally();
+  
   // Wrap each createRuntime call individually to handle errors gracefully
   let kaiaRuntime, moondaoRuntime, si3Runtime;
   
