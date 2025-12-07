@@ -18,14 +18,20 @@ async function safeCallback(
   // CRITICAL: During onboarding, the action handler controls the flow
   // We ALWAYS send questions via callback - the LLM is blocked (provider returns DO NOT RESPOND)
   // The interceptor will handle deduplication at the memory creation level
-  // Action handler callbacks should only be blocked if it's an exact duplicate (same text)
-  // NOT based on timing - action handler controls the flow and needs to send questions immediately
+  // Action handler callbacks should be ALLOWED even if action was executed recently
+  // They are the ones that should send messages, not the LLM
   
   try {
     console.log('[Onboarding Action] Sending callback message:', text.substring(0, 50));
-    // Call the callback - the interceptor will handle deduplication
-    // We rely on exact duplicate detection only (no timing checks)
-    await callback({ text });
+    // Add metadata to identify this as an action handler callback
+    // This allows the interceptor to distinguish it from LLM-generated messages
+    await callback({ 
+      text,
+      metadata: {
+        fromActionHandler: true,
+        timestamp: Date.now()
+      }
+    });
     // Don't record here - the interceptor handles recording when memory is created
     // This prevents double-recording
   } catch (error) {
