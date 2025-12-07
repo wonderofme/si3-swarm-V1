@@ -396,8 +396,11 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
     // For agent messages, check if this is after a restart command
     if (memory.userId === runtime.agentId && memory.roomId) {
       const messageText = memory.content.text?.substring(0, 50) || '(empty)';
-      console.log('[LLM Response Interceptor] Agent message detected, roomId:', memory.roomId, 'text:', messageText);
-      console.log('[LLM Response Interceptor] Checking if action was executed recently for this agent message...');
+      const currentTime = Date.now();
+      console.log(`[LLM Response Interceptor] ========== AGENT MESSAGE INTERCEPTED ==========`);
+      console.log(`[LLM Response Interceptor] Timestamp: ${currentTime}`);
+      console.log(`[LLM Response Interceptor] Agent message detected, roomId: ${memory.roomId}, text: ${messageText}`);
+      console.log(`[LLM Response Interceptor] Checking if action was executed recently for this agent message...`);
       
       // Skip processing if this message was created by timeout callback
       const isTimeoutCreated = (memory.content.metadata as any)?.timeoutCreated === true;
