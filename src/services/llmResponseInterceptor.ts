@@ -454,12 +454,14 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
         console.log(`[LLM Response Interceptor] ⚠️ No previous agent message timestamp found for roomId: ${memory.roomId}`);
       }
       
-      // If we get here, the message is allowed - record the timestamp IMMEDIATELY for future blocking
-      // This must happen BEFORE we send the message, so the second message is blocked
+      // CRITICAL: Record timestamp BEFORE checking for rapid consecutive messages
+      // This ensures the timestamp is available for the second message check
+      // We record it here (before sending) so the second message sees it immediately
       if (memory.content.text && memory.content.text.trim()) {
         const now = Date.now();
         lastAgentMessageTimestamps.set(memory.roomId, now);
         console.log(`[LLM Response Interceptor] ✅ Allowing agent message - recorded timestamp: ${now} for roomId: ${memory.roomId}`);
+        console.log(`[LLM Response Interceptor] 📊 Timestamp map size: ${lastAgentMessageTimestamps.size}, roomIds: [${Array.from(lastAgentMessageTimestamps.keys()).join(', ')}]`);
       }
       
       // For all agent messages, try to send directly via Telegram API if we have the chat ID
