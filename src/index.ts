@@ -197,10 +197,29 @@ async function setupTelegrafInstancePatcher() {
               }
               
               // Check if action was executed recently
-              if (checkActionExecutedRecently(roomIdToCheck)) {
-                console.log('[Telegram Chat ID Capture] 🚫 BLOCKING sendMessage (INSTANCE PATCHER) - action was executed recently, preventing duplicate');
-                console.log(`[Telegram Chat ID Capture] Blocked text: ${text.substring(0, 100)}`);
-                return { message_id: 0, date: Date.now(), chat: { id: chatId } };
+              // BUT: Allow messages sent within 1 second of action execution - these are likely action handler callbacks
+              // Action handler callbacks are sent immediately after action execution and should be allowed
+              const actionWasRecent = checkActionExecutedRecently(roomIdToCheck);
+              if (actionWasRecent) {
+                // Get the action execution timestamp to check how recent it was
+                const { getActionExecutionTime } = await import('./services/llmResponseInterceptor.js');
+                const actionExecutionTime = getActionExecutionTime?.(roomIdToCheck);
+                if (actionExecutionTime) {
+                  const elapsed = Date.now() - actionExecutionTime;
+                  const ACTION_HANDLER_WINDOW_MS = 1000; // 1 second - action handler callbacks are sent immediately
+                  if (elapsed < ACTION_HANDLER_WINDOW_MS) {
+                    console.log(`[Telegram Chat ID Capture] ✅ ALLOWING sendMessage (INSTANCE PATCHER) - sent ${elapsed}ms after action execution (likely action handler callback)`);
+                    // Allow this message - it's likely from an action handler callback
+                  } else {
+                    console.log('[Telegram Chat ID Capture] 🚫 BLOCKING sendMessage (INSTANCE PATCHER) - action was executed recently, preventing duplicate');
+                    console.log(`[Telegram Chat ID Capture] Blocked text: ${text.substring(0, 100)}`);
+                    return { message_id: 0, date: Date.now(), chat: { id: chatId } };
+                  }
+                } else {
+                  console.log('[Telegram Chat ID Capture] 🚫 BLOCKING sendMessage (INSTANCE PATCHER) - action was executed recently, preventing duplicate');
+                  console.log(`[Telegram Chat ID Capture] Blocked text: ${text.substring(0, 100)}`);
+                  return { message_id: 0, date: Date.now(), chat: { id: chatId } };
+                }
               }
               
               // Check for rapid consecutive messages
@@ -599,10 +618,28 @@ async function startAgents() {
                         }
                         
                         // Check if action was executed recently
-                        if (checkActionExecutedRecently(roomIdToCheck)) {
-                          console.log('[Telegram Chat ID Capture] 🚫 BLOCKING sendMessage (INSTANCE CREATION) - action was executed recently, preventing duplicate');
-                          console.log(`[Telegram Chat ID Capture] Blocked text: ${text.substring(0, 100)}`);
-                          return { message_id: 0, date: Date.now(), chat: { id: chatId } };
+                        // BUT: Allow messages sent within 1 second of action execution - these are likely action handler callbacks
+                        const actionWasRecent = checkActionExecutedRecently(roomIdToCheck);
+                        if (actionWasRecent) {
+                          // Get the action execution timestamp to check how recent it was
+                          const { getActionExecutionTime } = await import('./services/llmResponseInterceptor.js');
+                          const actionExecutionTime = getActionExecutionTime?.(roomIdToCheck);
+                          if (actionExecutionTime) {
+                            const elapsed = Date.now() - actionExecutionTime;
+                            const ACTION_HANDLER_WINDOW_MS = 1000; // 1 second - action handler callbacks are sent immediately
+                            if (elapsed < ACTION_HANDLER_WINDOW_MS) {
+                              console.log(`[Telegram Chat ID Capture] ✅ ALLOWING sendMessage (INSTANCE CREATION) - sent ${elapsed}ms after action execution (likely action handler callback)`);
+                              // Allow this message - it's likely from an action handler callback
+                            } else {
+                              console.log('[Telegram Chat ID Capture] 🚫 BLOCKING sendMessage (INSTANCE CREATION) - action was executed recently, preventing duplicate');
+                              console.log(`[Telegram Chat ID Capture] Blocked text: ${text.substring(0, 100)}`);
+                              return { message_id: 0, date: Date.now(), chat: { id: chatId } };
+                            }
+                          } else {
+                            console.log('[Telegram Chat ID Capture] 🚫 BLOCKING sendMessage (INSTANCE CREATION) - action was executed recently, preventing duplicate');
+                            console.log(`[Telegram Chat ID Capture] Blocked text: ${text.substring(0, 100)}`);
+                            return { message_id: 0, date: Date.now(), chat: { id: chatId } };
+                          }
                         }
                         
                         // Check for rapid consecutive messages

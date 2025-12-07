@@ -105,6 +105,15 @@ export function getLastAgentMessageTime(roomId: string | undefined): number | un
   return lastAgentMessageTimestamps.get(roomId);
 }
 
+/**
+ * Gets the timestamp when an action was last executed for a given room
+ * Returns undefined if no action was executed
+ */
+export function getActionExecutionTime(roomId: string | undefined): number | undefined {
+  if (!roomId) return undefined;
+  return actionExecutionTimestamps.get(roomId);
+}
+
 // Track when action handlers execute to prevent duplicate LLM responses
 // Maps roomId to timestamp when action last executed
 const actionExecutionTimestamps = new Map<string, number>();
