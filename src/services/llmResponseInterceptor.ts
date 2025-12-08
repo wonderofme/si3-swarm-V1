@@ -93,6 +93,19 @@ export function getRoomIdForChatId(chatId: string | number): string | undefined 
   return undefined;
 }
 
+// Export function to get Telegram chat ID from roomId (reverse lookup)
+export function getChatIdForRoomId(roomId: string | undefined): string | undefined {
+  if (!roomId) return undefined;
+  
+  // Check if roomId itself is a numeric Telegram chat ID
+  if (/^\d+$/.test(roomId)) {
+    return roomId;
+  }
+  
+  // Look up in mapping
+  return roomIdToTelegramChatId.get(roomId);
+}
+
 // Export function to check if action was executed recently (for use in sendMessage patch)
 export function checkActionExecutedRecently(roomId: string | undefined): boolean {
   if (!roomId) return false;

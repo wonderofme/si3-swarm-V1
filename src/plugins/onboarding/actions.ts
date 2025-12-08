@@ -3,28 +3,135 @@ import { getOnboardingStep, updateOnboardingStep, getUserProfile } from './utils
 import { OnboardingStep, UserProfile } from './types.js';
 import { getMessages, parseLanguageCode, LanguageCode } from './translations.js';
 import { recordMessageSent } from '../../services/messageDeduplication.js';
-import { recordActionExecution } from '../../services/llmResponseInterceptor.js';
+import { recordActionExecution, getChatIdForRoomId } from '../../services/llmResponseInterceptor.js';
+
+// APPROACH #8.1: Send messages directly via Telegram API instead of using callbacks
+// This bypasses ElizaOS's message flow entirely, preventing duplicate messages
+async function sendDirectTelegramMessage(
+  runtime: IAgentRuntime,
+  roomId: string | undefined,
+  userId: string | undefined,
+  text: string
+): Promise<void> {
+  if (!roomId || !text || !text.trim()) {
+    console.log('[Onboarding Action] ⚠️ Cannot send direct message - missing roomId or text');
+    return;
+  }
+  
+  try {
+    // Get Telegram chat ID from roomId using the interceptor's mapping
+    let telegramChatId = getChatIdForRoomId(roomId);
+    
+    if (!telegramChatId) {
+      // Try to get from global map (set by Telegram client interceptor)
+      const globalMap = (global as any).__telegramChatIdMap;
+      if (globalMap && globalMap.size > 0) {
+        // The global map stores messageText -> chatId, so we need to find the most recent one
+        // This is a fallback - ideally we should have the mapping from roomId
+        console.log('[Onboarding Action] ⚠️ Chat ID not in roomId mapping, trying global map (fallback)');
+      }
+      
+      // Last resort: try to query database for the user's most recent Telegram message
+      if (!telegramChatId && userId) {
+        try {
+          const adapter = runtime.databaseAdapter as any;
+          const result = await adapter.query(
+            `SELECT "roomId" FROM memories 
+             WHERE "userId" = $1 
+             AND content->>'source' = 'telegram'
+             AND "roomId"::text ~ '^[0-9]+$'
+             ORDER BY "createdAt" DESC 
+             LIMIT 1`,
+            [userId]
+          );
+          
+          if (result.rows && result.rows.length > 0) {
+            const foundChatId = result.rows[0].roomId;
+            if (foundChatId && /^\d+$/.test(foundChatId)) {
+              telegramChatId = foundChatId;
+              console.log('[Onboarding Action] ✅ Found Telegram chat ID from database:', telegramChatId);
+            }
+          }
+        } catch (error) {
+          console.error('[Onboarding Action] Error querying for chat ID:', error);
+        }
+      }
+    }
+    
+    if (!telegramChatId) {
+      console.log('[Onboarding Action] ⚠️ Could not find Telegram chat ID for roomId:', roomId);
+      console.log('[Onboarding Action] Falling back to callback method');
+      return; // Will fall back to callback if available
+    }
+    
+    // Send directly via Telegram API
+    if (!process.env.TELEGRAM_BOT_TOKEN) {
+      console.error('[Onboarding Action] ⚠️ TELEGRAM_BOT_TOKEN not found, cannot send direct message');
+      return;
+    }
+    
+    console.log('[Onboarding Action] 📤 Sending message directly via Telegram API to chat:', telegramChatId);
+    console.log('[Onboarding Action] Message:', text.substring(0, 50));
+    
+    const Telegraf = (await import('telegraf')).Telegraf;
+    const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
+    
+    await bot.telegram.sendMessage(telegramChatId, text);
+    console.log('[Onboarding Action] ✅ Successfully sent message directly via Telegram API');
+    
+    // Record in deduplication system
+    recordMessageSent(roomId, text);
+    
+    // Also create memory with empty text so it's logged but not sent again
+    // This maintains the memory trail without causing duplicates
+    await runtime.messageManager.createMemory({
+      id: undefined,
+      userId: runtime.agentId,
+      agentId: runtime.agentId,
+      roomId: roomId,
+      content: {
+        text: '', // Empty text prevents ElizaOS from sending again
+        source: 'telegram',
+        metadata: {
+          fromActionHandler: true,
+          sentViaDirectAPI: true,
+          originalText: text,
+          timestamp: Date.now()
+        }
+      }
+    });
+    
+  } catch (error) {
+    console.error('[Onboarding Action] ❌ Error sending direct Telegram message:', error);
+    // Fall back to callback if direct send fails
+    throw error;
+  }
+}
 
 // Helper to safely call callback - deduplication is handled at memory creation level
-// NOTE: We're now using AI-generated messages, so callbacks are only used for restart commands
+// NOTE: APPROACH #8.1 - We now send directly via Telegram API, but keep this as fallback
 async function safeCallback(
   callback: HandlerCallback | undefined,
   runtime: IAgentRuntime,
   roomId: string | undefined,
+  userId: string | undefined,
   text: string
 ): Promise<void> {
-  if (!callback) return;
+  // APPROACH #8.1: Try direct Telegram API first
+  try {
+    await sendDirectTelegramMessage(runtime, roomId, userId, text);
+    console.log('[Onboarding Action] ✅ Sent via direct Telegram API, skipping callback');
+    return; // Success, don't use callback
+  } catch (error) {
+    console.log('[Onboarding Action] ⚠️ Direct send failed, falling back to callback:', error);
+    // Fall through to callback
+  }
   
-  // CRITICAL: During onboarding, the action handler controls the flow
-  // We ALWAYS send questions via callback - the LLM is blocked (provider returns DO NOT RESPOND)
-  // The interceptor will handle deduplication at the memory creation level
-  // Action handler callbacks should be ALLOWED even if action was executed recently
-  // They are the ones that should send messages, not the LLM
+  // Fallback to callback if direct send fails
+  if (!callback) return;
   
   try {
     console.log('[Onboarding Action] Sending callback message:', text.substring(0, 50));
-    // Add metadata to identify this as an action handler callback
-    // This allows the interceptor to distinguish it from LLM-generated messages
     await callback({ 
       text,
       metadata: {
@@ -32,8 +139,6 @@ async function safeCallback(
         timestamp: Date.now()
       }
     });
-    // Don't record here - the interceptor handles recording when memory is created
-    // This prevents double-recording
   } catch (error) {
     console.error('[Onboarding Action] Callback error:', error);
   }
@@ -134,7 +239,7 @@ export const continueOnboardingAction: Action = {
       // Get fresh messages (will default to English)
       const freshMsgs = getMessages('en');
       console.log('[Onboarding Action] Sending greeting via callback');
-      await safeCallback(callback, runtime, roomId, freshMsgs.GREETING);
+      await safeCallback(callback, runtime, roomId, message.userId, freshMsgs.GREETING);
       return true;
     }
 
@@ -145,16 +250,16 @@ export const continueOnboardingAction: Action = {
       if (profile.name) {
         if (profile.language) {
           // Both name and language exist, skip to location
-          await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_LOCATION');
-          if (roomId) recordActionExecution(roomId);
-          // Send the location question via callback
-          await safeCallback(callback, runtime, roomId, msgs.LOCATION);
+            await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_LOCATION');
+            if (roomId) recordActionExecution(roomId);
+            // Send the location question via callback
+            await safeCallback(callback, runtime, roomId, message.userId, msgs.LOCATION);
         } else {
           // Name exists but language doesn't, ask for language
-          await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_LANGUAGE');
-          if (roomId) recordActionExecution(roomId);
-          // Send the language question via callback
-          await safeCallback(callback, runtime, roomId, msgs.LANGUAGE);
+              await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_LANGUAGE');
+              if (roomId) recordActionExecution(roomId);
+              // Send the language question via callback
+              await safeCallback(callback, runtime, roomId, message.userId, msgs.LANGUAGE);
         }
       } else {
         // No name, start with greeting
@@ -162,7 +267,7 @@ export const continueOnboardingAction: Action = {
         if (roomId) recordActionExecution(roomId);
         // Send the greeting via callback (it already asks for name)
         console.log('[Onboarding Action] Sending greeting via callback');
-        await safeCallback(callback, runtime, roomId, msgs.GREETING);
+        await safeCallback(callback, runtime, roomId, message.userId, msgs.GREETING);
       }
       return true;
     }
@@ -190,7 +295,7 @@ export const continueOnboardingAction: Action = {
             if (roomId) recordActionExecution(roomId);
             // Send the language question via callback
             console.log('[Onboarding Action] Sending language question via callback');
-            await safeCallback(callback, runtime, roomId, msgs.LANGUAGE);
+            await safeCallback(callback, runtime, roomId, message.userId, msgs.LANGUAGE);
           }
         }
         break;
@@ -215,7 +320,7 @@ export const continueOnboardingAction: Action = {
         if (roomId) recordActionExecution(roomId);
         // Send the location question via callback
         console.log('[Onboarding Action] Sending location question via callback');
-        await safeCallback(callback, runtime, roomId, msgs.LOCATION);
+        await safeCallback(callback, runtime, roomId, message.userId, msgs.LOCATION);
         break;
 
       case 'ASK_LOCATION':
@@ -229,7 +334,7 @@ export const continueOnboardingAction: Action = {
           if (roomId) recordActionExecution(roomId);
           // Send the roles question via callback
           console.log('[Onboarding Action] Sending roles question via callback');
-          await safeCallback(callback, runtime, roomId, msgs.ROLES);
+          await safeCallback(callback, runtime, roomId, message.userId, msgs.ROLES);
         }
         break;
 
@@ -254,7 +359,7 @@ export const continueOnboardingAction: Action = {
           if (roomId) recordActionExecution(roomId);
           // Send the interests question via callback
           console.log('[Onboarding Action] Sending interests question via callback');
-          await safeCallback(callback, runtime, roomId, msgs.INTERESTS);
+          await safeCallback(callback, runtime, roomId, message.userId, msgs.INTERESTS);
         }
         break;
 
@@ -278,7 +383,7 @@ export const continueOnboardingAction: Action = {
           if (roomId) recordActionExecution(roomId);
           // Send the goals question via callback
           console.log('[Onboarding Action] Sending goals question via callback');
-          await safeCallback(callback, runtime, roomId, msgs.GOALS);
+          await safeCallback(callback, runtime, roomId, message.userId, msgs.GOALS);
         }
         break;
 
@@ -298,11 +403,11 @@ export const continueOnboardingAction: Action = {
           await updateOnboardingStep(runtime, message.userId, roomId, 'CONFIRMATION', { connectionGoals, isEditing: false, editingField: undefined });
           if (roomId) recordActionExecution(roomId);
         } else {
-          await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_EVENTS', { connectionGoals });
+          await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_EVENTS', { connectionGoals }); 
           if (roomId) recordActionExecution(roomId);
           // Send the events question via callback
           console.log('[Onboarding Action] Sending events question via callback');
-          await safeCallback(callback, runtime, roomId, msgs.EVENTS);
+          await safeCallback(callback, runtime, roomId, message.userId, msgs.EVENTS);
         }
         break;
 
@@ -317,7 +422,7 @@ export const continueOnboardingAction: Action = {
           if (roomId) recordActionExecution(roomId);
           // Send the socials question via callback
           console.log('[Onboarding Action] Sending socials question via callback');
-          await safeCallback(callback, runtime, roomId, msgs.SOCIALS);
+          await safeCallback(callback, runtime, roomId, message.userId, msgs.SOCIALS);
         }
         break;
 
@@ -332,7 +437,7 @@ export const continueOnboardingAction: Action = {
           if (roomId) recordActionExecution(roomId);
           // Send the Telegram question via callback
           console.log('[Onboarding Action] Sending Telegram question via callback');
-          await safeCallback(callback, runtime, roomId, msgs.TELEGRAM);
+          await safeCallback(callback, runtime, roomId, message.userId, msgs.TELEGRAM);
         }
         break;
 
@@ -349,7 +454,7 @@ export const continueOnboardingAction: Action = {
           if (roomId) recordActionExecution(roomId);
           // Send the gender question via callback
           console.log('[Onboarding Action] Sending gender question via callback');
-          await safeCallback(callback, runtime, roomId, msgs.GENDER);
+          await safeCallback(callback, runtime, roomId, message.userId, msgs.GENDER);
         }
         break;
 
@@ -364,7 +469,7 @@ export const continueOnboardingAction: Action = {
           if (roomId) recordActionExecution(roomId);
           // Send the notifications question via callback
           console.log('[Onboarding Action] Sending notifications question via callback');
-          await safeCallback(callback, runtime, roomId, msgs.NOTIFICATIONS);
+          await safeCallback(callback, runtime, roomId, message.userId, msgs.NOTIFICATIONS);
         }
         break;
 
