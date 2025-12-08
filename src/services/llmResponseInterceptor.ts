@@ -431,12 +431,13 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
         if (actionWasRecent) {
           console.log('[LLM Response Interceptor] 🚫 BLOCKING agent message - action was executed recently, preventing duplicate response');
           console.log('[LLM Response Interceptor] Blocked message text:', messageText);
-          // Return empty memory to prevent sending
+          // Return empty memory with action removed to prevent both sending AND action execution
           return await originalCreateMemory({
             ...memory,
             content: {
               ...memory.content,
-              text: '' // Empty text prevents sending
+              text: '', // Empty text prevents sending
+              action: undefined // Remove action to prevent duplicate execution
             }
           });
         } else {
@@ -457,12 +458,13 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
             console.log(`[LLM Response Interceptor] 🚫 BLOCKING agent message - another agent message was sent ${elapsed}ms ago (window: ${AGENT_MESSAGE_BLOCK_WINDOW_MS}ms), preventing duplicate`);
             console.log(`[LLM Response Interceptor] Blocked message text: ${messageText}`);
             console.log(`[LLM Response Interceptor] This is likely the "No action found" follow-up response - blocking to prevent duplicate`);
-            // Return empty memory to prevent sending
+            // Return empty memory with action removed to prevent both sending AND action execution
             return await originalCreateMemory({
               ...memory,
               content: {
                 ...memory.content,
-                text: '' // Empty text prevents sending
+                text: '', // Empty text prevents sending
+                action: undefined // Remove action to prevent duplicate execution
               }
             });
           } else {
