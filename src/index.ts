@@ -203,17 +203,21 @@ async function setupTelegrafInstancePatcher() {
               try {
                 const { getUserIdForRoomId, getOnboardingStepFromCache } = await import('./services/llmResponseInterceptor.js');
                 const userId = getUserIdForRoomId(roomIdToCheck);
+                console.log(`[Telegram Chat ID Capture] 🔍 Checking onboarding step - roomId: ${roomIdToCheck}, userId: ${userId || 'NOT FOUND'}`);
                 if (userId) {
                   // Try synchronous cache first (fast)
                   let onboardingStep = getOnboardingStepFromCache?.(userId);
+                  console.log(`[Telegram Chat ID Capture] 🔍 Onboarding step from cache: ${onboardingStep || 'NOT FOUND'}`);
                   
                   // If cache miss, do async check (slower, but fallback)
                   if (!onboardingStep && kaiaRuntimeForOnboardingCheck) {
                     const { getOnboardingStep } = await import('./plugins/onboarding/utils.js');
                     onboardingStep = await getOnboardingStep(kaiaRuntimeForOnboardingCheck, userId as any);
+                    console.log(`[Telegram Chat ID Capture] 🔍 Onboarding step from async check: ${onboardingStep || 'NOT FOUND'}`);
                   }
                   
                   if (onboardingStep && onboardingStep !== 'COMPLETED' && onboardingStep !== 'CONFIRMATION' && onboardingStep !== 'NONE') {
+                    console.log(`[Telegram Chat ID Capture] 🔍 User is in onboarding step: ${onboardingStep}, checking if this is action handler message...`);
                     // During onboarding, only action handler messages should be sent
                     // Action handler messages are sent within 1 second of action execution
                     // All other messages during onboarding are LLM responses and should be blocked
