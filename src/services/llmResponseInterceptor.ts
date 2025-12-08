@@ -654,6 +654,16 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
             if (hasActionInMemory) {
               console.log('[LLM Response Interceptor] Restart detected and action found in response, allowing normal flow');
             } else if (!memory.content.text || !memory.content.text.trim()) {
+              // Check if this empty message came from an action handler that already sent the message
+              const metadata = memory.content.metadata as any || {};
+              const fromActionHandler = metadata?.fromActionHandler || metadata?.sentViaDirectAPI;
+              
+              if (fromActionHandler) {
+                console.log('[LLM Response Interceptor] Empty message came from action handler (already sent), skipping force-execution to prevent infinite loop');
+                lastUserMessagePerRoom.delete(memory.roomId);
+                return await originalCreateMemory(memory);
+              }
+              
               console.log('[LLM Response Interceptor] Restart detected but LLM response is empty, forcing action execution anyway');
               // Even if LLM response is empty, we should still execute the action
               const callback = async (response: { text: string }): Promise<any[]> => {
