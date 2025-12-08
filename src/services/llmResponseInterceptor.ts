@@ -1,6 +1,7 @@
 import { IAgentRuntime, Memory } from '@elizaos/core';
 import { continueOnboardingAction } from '../plugins/onboarding/actions.js';
 import { getMessages } from '../plugins/onboarding/translations.js';
+import { getOnboardingStep } from '../plugins/onboarding/utils.js';
 import { TelegramClientInterface } from '@elizaos/client-telegram';
 
 /**
@@ -421,6 +422,32 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
       if (isFromActionHandler) {
         console.log('[LLM Response Interceptor] ✅ ALLOWING agent message - from action handler callback (should send message)');
       } else {
+        // CRITICAL FIX: Block LLM responses during onboarding steps (except CONFIRMATION)
+        // The action handler sends all onboarding messages, so LLM should not respond
+        // Get the actual user's userId from the last user message (agent messages have agentId as userId)
+        try {
+          const lastUserMessage = lastUserMessagePerRoom.get(memory.roomId);
+          if (lastUserMessage) {
+            const onboardingStep = await getOnboardingStep(runtime, lastUserMessage.userId);
+            if (onboardingStep && onboardingStep !== 'COMPLETED' && onboardingStep !== 'CONFIRMATION' && onboardingStep !== 'NONE') {
+              console.log(`[LLM Response Interceptor] 🚫 BLOCKING agent message - user is in onboarding step: ${onboardingStep}`);
+              console.log('[LLM Response Interceptor] Blocked message text:', messageText);
+              // Return empty memory with action removed to prevent both sending AND action execution
+              return await originalCreateMemory({
+                ...memory,
+                content: {
+                  ...memory.content,
+                  text: '', // Empty text prevents sending
+                  action: undefined // Remove action to prevent duplicate execution
+                }
+              });
+            }
+          }
+        } catch (error) {
+          console.error('[LLM Response Interceptor] Error checking onboarding step:', error);
+          // Continue with normal checks if we can't determine onboarding step
+        }
+        
         // CRITICAL FIX: Block agent messages if an action was executed recently
         // This prevents ElizaOS from generating a duplicate response after action execution
         // Even if the provider wasn't called (which seems to be the case for follow-up responses)
