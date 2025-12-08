@@ -1018,10 +1018,45 @@ async function startAgents() {
   startFollowUpScheduler(kaiaRuntime);
 }
 
-// Add global error handlers to catch unhandled promise rejections
+// Add global error handlers to catch unhandled promise rejections (including 409 conflicts)
+process.on('unhandledRejection', (reason: any, promise: Promise<any>) => {
+  // Check if it's a 409 Conflict error from Telegram
+  const errorMessage = reason?.message || reason?.toString() || '';
+  const errorCode = reason?.response?.error_code || reason?.code;
+  
+  if (errorCode === 409 || errorMessage.includes('409') || errorMessage.includes('Conflict') || errorMessage.includes('terminated by other getUpdates')) {
+    console.error('❌ Unhandled promise rejection: TelegramError: 409: Conflict: terminated by other getUpdates request; make sure that only one bot instance is running');
+    console.error('💡 SOLUTION: Stop all other bot instances and restart this one');
+    console.error('💡 Or wait 60 seconds and the conflict should resolve automatically');
+    console.error('⚠️ This may cause the bot to be unstable');
+    // Don't exit - let bot continue (it just won't receive messages)
+    return;
+  }
+  
+  // For other errors, log and continue
+  console.error('❌ Unhandled promise rejection:', reason);
+  console.error('⚠️ This may cause the bot to be unstable');
+});
+
 process.on('unhandledRejection', (reason: any, promise: Promise<any>) => {
   const errorMessage = reason?.message || reason?.toString() || 'Unknown error';
-  const errorCode = reason?.code || '';
+  const errorCode = reason?.code || reason?.response?.error_code || '';
+  
+  // Check if it's a 409 Conflict error from Telegram
+  const is409Conflict = 
+    errorCode === 409 ||
+    errorMessage.includes('409') ||
+    errorMessage.includes('Conflict') ||
+    errorMessage.includes('terminated by other getUpdates');
+  
+  if (is409Conflict) {
+    console.error('❌ Unhandled promise rejection: TelegramError: 409: Conflict: terminated by other getUpdates request; make sure that only one bot instance is running');
+    console.error('💡 SOLUTION: Stop all other bot instances and restart this one');
+    console.error('💡 Or wait 60 seconds and the conflict should resolve automatically');
+    console.error('⚠️ This may cause the bot to be unstable');
+    // Don't exit - let bot continue (it just won't receive messages)
+    return;
+  }
   
   // Check if it's a database connection error
   const isDatabaseError = 
