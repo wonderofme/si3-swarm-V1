@@ -546,9 +546,11 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
               console.log(`[LLM Response Interceptor] 🚫 BLOCKING LLM-generated message - user is in onboarding step: ${cachedStep} (from cache)`);
               console.log('[LLM Response Interceptor] Blocked message text:', messageText);
               console.log('[LLM Response Interceptor] Action handler will send the correct message instead');
-              // Return empty memory WITHOUT calling originalCreateMemory to prevent Telegram client from sending
-              // Create a minimal memory object for logging only
-              return {
+              
+              // CRITICAL: Don't call originalCreateMemory at all - this prevents Telegram client from sending
+              // The Telegram client's callback is triggered by createMemory, so if we don't call it, the message won't be sent
+              // Return a minimal memory object for logging only (but don't let it propagate to Telegram client)
+              const blockedMemory = {
                 id: undefined,
                 userId: memory.userId,
                 agentId: memory.agentId,
@@ -559,11 +561,15 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
                   metadata: {
                     blocked: true,
                     reason: 'onboarding_in_progress',
-                    originalText: messageText
+                    originalText: messageText,
+                    blockedAt: Date.now()
                   }
                 },
                 createdAt: Date.now()
               } as any;
+              
+              console.log('[LLM Response Interceptor] ⚠️ Returning blocked memory WITHOUT calling originalCreateMemory to prevent Telegram send');
+              return blockedMemory;
             }
             
             // If cache miss, do async check (but this might be too late)
@@ -575,8 +581,10 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
               console.log(`[LLM Response Interceptor] 🚫 BLOCKING LLM-generated message - user is in onboarding step: ${onboardingStep}`);
               console.log('[LLM Response Interceptor] Blocked message text:', messageText);
               console.log('[LLM Response Interceptor] Action handler will send the correct message instead');
-              // Return empty memory WITHOUT calling originalCreateMemory to prevent Telegram client from sending
-              return {
+              
+              // CRITICAL: Don't call originalCreateMemory at all - this prevents Telegram client from sending
+              // The Telegram client's callback is triggered by createMemory, so if we don't call it, the message won't be sent
+              const blockedMemory = {
                 id: undefined,
                 userId: memory.userId,
                 agentId: memory.agentId,
@@ -587,11 +595,15 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
                   metadata: {
                     blocked: true,
                     reason: 'onboarding_in_progress',
-                    originalText: messageText
+                    originalText: messageText,
+                    blockedAt: Date.now()
                   }
                 },
                 createdAt: Date.now()
               } as any;
+              
+              console.log('[LLM Response Interceptor] ⚠️ Returning blocked memory WITHOUT calling originalCreateMemory to prevent Telegram send');
+              return blockedMemory;
             } else {
               console.log(`[LLM Response Interceptor] ✅ User is not in active onboarding step (step: ${onboardingStep}), allowing LLM message`);
             }

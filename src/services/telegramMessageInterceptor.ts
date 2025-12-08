@@ -10,6 +10,26 @@ export async function setupTelegramMessageInterceptor(runtime: IAgentRuntime) {
   const originalCreateMemory = runtime.messageManager.createMemory.bind(runtime.messageManager);
   
   runtime.messageManager.createMemory = async (memory: Memory) => {
+    // CRITICAL: Check if this message was blocked by LLM interceptor
+    // The LLM interceptor returns a memory with metadata.blocked = true
+    // If blocked, don't call originalCreateMemory to prevent Telegram client from sending
+    const isBlocked = (memory.content.metadata as any)?.blocked === true;
+    if (isBlocked) {
+      console.log('[Message Interceptor] 🚫 Message was blocked by LLM interceptor, not calling originalCreateMemory to prevent Telegram send');
+      console.log('[Message Interceptor] Blocked reason:', (memory.content.metadata as any)?.reason);
+      // Call originalCreateMemory with empty text to prevent Telegram client from sending
+      // But the LLM interceptor already returned early, so this shouldn't be called
+      // This is a safety check in case the LLM interceptor didn't block properly
+      await originalCreateMemory({
+        ...memory,
+        content: {
+          ...memory.content,
+          text: '' // Ensure empty text
+        }
+      });
+      return;
+    }
+    
     // Only intercept agent messages (messages from the bot) with text
     if (memory.userId === runtime.agentId && memory.content.text && memory.content.text.trim()) {
       const text = memory.content.text;
