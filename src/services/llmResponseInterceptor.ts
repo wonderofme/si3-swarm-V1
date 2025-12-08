@@ -296,6 +296,29 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
     const textPreview = memory.content.text?.substring(0, 50) || '(empty)';
     console.log(`[LLM Response Interceptor] Memory created - userId: ${memory.userId}, agentId: ${runtime.agentId}, isAgent: ${isAgent}, text: ${textPreview}, roomId: ${memory.roomId}`);
     
+    // CRITICAL: Check for OnboardingInProgressError in memory metadata
+    // This error is thrown by the provider during onboarding to prevent LLM generation
+    // If we see this error, we should block the message creation
+    const metadata = memory.content.metadata as any;
+    if (metadata?.onboardingInProgress === true || metadata?.error?.includes('ONBOARDING_IN_PROGRESS')) {
+      console.log('[LLM Response Interceptor] 🚫 Blocking memory creation - OnboardingInProgressError detected');
+      // Return minimal memory object without calling originalCreateMemory
+      return {
+        id: undefined,
+        userId: memory.userId,
+        agentId: memory.agentId,
+        roomId: memory.roomId,
+        content: {
+          text: '',
+          metadata: {
+            blocked: true,
+            reason: 'onboarding_in_progress'
+          }
+        },
+        createdAt: Date.now()
+      } as any;
+    }
+    
     // Only generate stack trace for agent messages to reduce overhead
     if (isAgent) {
       try {
