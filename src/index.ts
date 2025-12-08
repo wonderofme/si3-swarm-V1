@@ -188,6 +188,14 @@ async function setupTelegrafInstancePatcher() {
             const roomIdToCheck = getRoomIdForChatId(String(chatId));
             
             if (roomIdToCheck && text && text.trim()) {
+              // CRITICAL: Check if message lock is active (action handler is executing)
+              const { isMessageLocked } = await import('./services/llmResponseInterceptor.js');
+              if (isMessageLocked(roomIdToCheck)) {
+                console.log(`[Telegram Chat ID Capture] 🚫 BLOCKING sendMessage (INSTANCE PATCHER) - message lock is active (action handler executing)`);
+                console.log(`[Telegram Chat ID Capture] Blocked text: ${text.substring(0, 100)}`);
+                return { message_id: 0, date: Date.now(), chat: { id: chatId } };
+              }
+              
               // CRITICAL: Block LLM responses during onboarding steps (except CONFIRMATION)
               // The action handler sends all onboarding messages, so LLM should not respond
               // Action handler messages are sent immediately after action execution (within 1 second)

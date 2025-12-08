@@ -211,15 +211,24 @@ export const continueOnboardingAction: Action = {
 
   handler: async (runtime: IAgentRuntime, message: Memory, state?: State, _options?: any, callback?: HandlerCallback) => {
     console.log('[Onboarding Action] Handler started');
-    let currentStep = await getOnboardingStep(runtime, message.userId);
-    console.log('[Onboarding Action] Current step:', currentStep);
-    const text = message.content.text;
+    
+    // CRITICAL: Acquire message lock to prevent LLM from sending messages during action execution
     const roomId = message.roomId;
-    const profile = await getUserProfile(runtime, message.userId);
-    const isEditing = profile.isEditing || false;
-    console.log('[Onboarding Action] Has callback:', !!callback);
-    console.log('[Onboarding Action] roomId:', roomId);
-    console.log('[Onboarding Action] userId:', message.userId);
+    if (roomId) {
+      const { acquireMessageLock, releaseMessageLock } = await import('../../services/llmResponseInterceptor.js');
+      acquireMessageLock(roomId);
+      console.log('[Onboarding Action] 🔒 Acquired message lock');
+    }
+    
+    try {
+      let currentStep = await getOnboardingStep(runtime, message.userId);
+      console.log('[Onboarding Action] Current step:', currentStep);
+      const text = message.content.text;
+      const profile = await getUserProfile(runtime, message.userId);
+      const isEditing = profile.isEditing || false;
+      console.log('[Onboarding Action] Has callback:', !!callback);
+      console.log('[Onboarding Action] roomId:', roomId);
+      console.log('[Onboarding Action] userId:', message.userId);
 
     // Get user's language preference (default to English)
     const userLang: LanguageCode = profile.language || 'en';
@@ -552,6 +561,14 @@ export const continueOnboardingAction: Action = {
     }
     
     return true;
+    } finally {
+      // CRITICAL: Always release message lock when action handler completes
+      if (roomId) {
+        const { releaseMessageLock } = await import('../../services/llmResponseInterceptor.js');
+        releaseMessageLock(roomId);
+        console.log('[Onboarding Action] 🔓 Released message lock');
+      }
+    }
   },
   examples: []
 };

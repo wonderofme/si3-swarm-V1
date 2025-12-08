@@ -143,6 +143,38 @@ const actionExecutionTimestamps = new Map<string, number>();
 // Maps roomId to timestamp when agent message was last sent
 const lastAgentMessageTimestamps = new Map<string, number>();
 
+// Global message lock: prevents any message from being sent while action handler is executing
+// Maps roomId to lock state (true = locked, false = unlocked)
+const messageLocks = new Map<string, boolean>();
+
+/**
+ * Acquire a message lock for a room (prevents all messages from being sent)
+ */
+export function acquireMessageLock(roomId: string): void {
+  if (roomId) {
+    messageLocks.set(roomId, true);
+    console.log('[LLM Response Interceptor] 🔒 Acquired message lock for roomId:', roomId);
+  }
+}
+
+/**
+ * Release a message lock for a room (allows messages to be sent again)
+ */
+export function releaseMessageLock(roomId: string): void {
+  if (roomId) {
+    messageLocks.set(roomId, false);
+    console.log('[LLM Response Interceptor] 🔓 Released message lock for roomId:', roomId);
+  }
+}
+
+/**
+ * Check if a message lock is active for a room
+ */
+export function isMessageLocked(roomId: string | undefined): boolean {
+  if (!roomId) return false;
+  return messageLocks.get(roomId) === true;
+}
+
 // Time window in milliseconds - block agent messages if action executed within this window
 // Increased to 10 seconds to catch the "No action found" follow-up responses that happen after action execution
 const ACTION_EXECUTION_BLOCK_WINDOW_MS = 10000; // 10 seconds
@@ -460,6 +492,21 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
           console.error('[LLM Response Interceptor] Error checking onboarding step:', error);
           console.log('[LLM Response Interceptor] Allowing message due to error');
           // Continue with normal checks if we can't determine onboarding step
+        }
+        
+        // CRITICAL: Check if message lock is active (action handler is executing)
+        if (isMessageLocked(memory.roomId)) {
+          console.log('[LLM Response Interceptor] 🚫 BLOCKING agent message - message lock is active (action handler executing)');
+          console.log('[LLM Response Interceptor] Blocked message text:', messageText);
+          // Return empty memory with action removed to prevent both sending AND action execution
+          return await originalCreateMemory({
+            ...memory,
+            content: {
+              ...memory.content,
+              text: '', // Empty text prevents sending
+              action: undefined // Remove action to prevent duplicate execution
+            }
+          });
         }
         
         // CRITICAL FIX: Block agent messages if an action was executed recently
