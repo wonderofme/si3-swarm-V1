@@ -249,6 +249,23 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
   // By patching the completion/generation method, we can block these at the source
   // Note: runtime.completion may not exist on IAgentRuntime type, so we use type assertion
   const runtimeAny = runtime as any;
+  
+  // DEBUG: Log all runtime properties to find the actual LLM method
+  console.log('[LLM Response Interceptor] 🔍 Searching for LLM generation method...');
+  console.log('[LLM Response Interceptor] Runtime keys:', Object.keys(runtimeAny).slice(0, 20).join(', '));
+  if (runtimeAny.completion) {
+    console.log('[LLM Response Interceptor] Found runtime.completion, keys:', Object.keys(runtimeAny.completion).join(', '));
+  }
+  if (runtimeAny.generateText) {
+    console.log('[LLM Response Interceptor] Found runtime.generateText');
+  }
+  if (runtimeAny.generate) {
+    console.log('[LLM Response Interceptor] Found runtime.generate');
+  }
+  if (runtimeAny.completionService) {
+    console.log('[LLM Response Interceptor] Found runtime.completionService, keys:', Object.keys(runtimeAny.completionService).join(', '));
+  }
+  
   if (runtimeAny.completion && typeof runtimeAny.completion.generateText === 'function') {
     const originalGenerateText = runtimeAny.completion.generateText.bind(runtimeAny.completion);
     runtimeAny.completion.generateText = async function(...args: any[]) {
