@@ -19,9 +19,14 @@ export const onboardingEvaluator: Evaluator = {
   examples: [],
   
   handler: async (runtime: IAgentRuntime, message: Memory, state?: State): Promise<any> => {
+    console.log(`[Onboarding Evaluator] 🔍 Evaluator called - userId: ${message.userId}, roomId: ${message.roomId}, text: ${message.content.text?.substring(0, 50) || '(empty)'}`);
+    console.log(`[Onboarding Evaluator] State available: ${!!state}, state keys: ${state ? Object.keys(state).join(', ') : 'none'}`);
+    
     const userId = message.userId;
     const step = await getOnboardingStep(runtime, userId);
     const text = (message.content.text || '').trim();
+    
+    console.log(`[Onboarding Evaluator] Current step: ${step}`);
     
     // Check for restart commands - if detected, force onboarding step to NONE
     if (isRestartCommand(text)) {
@@ -31,6 +36,7 @@ export const onboardingEvaluator: Evaluator = {
         state.forceOnboardingAction = true; // Flag to force action
         state.restartDetected = true; // Additional flag
         state.skipLLMResponse = false; // Allow LLM for restart
+        console.log('[Onboarding Evaluator] Set skipLLMResponse=false for restart');
       }
       return 'NONE';
     }
@@ -38,6 +44,7 @@ export const onboardingEvaluator: Evaluator = {
     if (step === 'NONE' || step === 'COMPLETED') {
       if (state) {
         state.skipLLMResponse = false; // Allow LLM for completed/none
+        console.log('[Onboarding Evaluator] Set skipLLMResponse=false for NONE/COMPLETED');
       }
       return null;
     }
@@ -52,8 +59,11 @@ export const onboardingEvaluator: Evaluator = {
         console.log('[Onboarding Evaluator] CONFIRMATION step - allowing LLM for summary');
       } else {
         state.skipLLMResponse = true; // Block LLM during all other onboarding steps
-        console.log(`[Onboarding Evaluator] Step ${step} - setting skipLLMResponse=true to prevent LLM generation`);
+        console.log(`[Onboarding Evaluator] ⚠️ Step ${step} - setting skipLLMResponse=true to prevent LLM generation`);
+        console.log(`[Onboarding Evaluator] State after setting flag: skipLLMResponse=${(state as any).skipLLMResponse}`);
       }
+    } else {
+      console.log('[Onboarding Evaluator] ⚠️ WARNING: No state object available! Cannot set skipLLMResponse flag');
     }
     
     return step;

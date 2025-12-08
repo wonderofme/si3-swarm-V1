@@ -11,9 +11,14 @@ export const onboardingProvider: Provider = {
       // CRITICAL: Check if evaluator set skipLLMResponse flag (APPROACH #1.2)
       // This is set by the onboarding evaluator during active onboarding steps
       // The evaluator runs BEFORE the provider, so this flag is available here
+      console.log(`[Onboarding Provider] Checking skipLLMResponse flag - state: ${!!state}, skipLLMResponse: ${state ? (state as any).skipLLMResponse : 'no state'}`);
       if (state && (state as any).skipLLMResponse === true) {
         console.log('[Onboarding Provider] 🚫 Evaluator set skipLLMResponse=true, returning null to prevent LLM generation');
         return null;
+      } else if (state) {
+        console.log(`[Onboarding Provider] ⚠️ skipLLMResponse is not true (value: ${(state as any).skipLLMResponse}), continuing with provider logic`);
+      } else {
+        console.log('[Onboarding Provider] ⚠️ No state object available, cannot check skipLLMResponse flag');
       }
       
       const userId = message.userId;
