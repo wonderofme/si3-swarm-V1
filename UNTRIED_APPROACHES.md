@@ -16,6 +16,10 @@
 13. ✅ Metadata tunneling via registry (v183 - reverted)
 14. ✅ Force-execution of actions (v185 - reverted)
 15. ✅ Enhanced provider JSON format instructions (v183 - reverted)
+16. ✅ Block LLM responses at Telegram API level during onboarding (v191)
+17. ✅ Global Message Lock - acquire/release during action execution (v192)
+18. ✅ Action handler sends directly via Telegram API (v186-v192)
+19. ✅ Action handler creates memory with empty text (v186-v192)
 
 ## What We HAVEN'T Tried
 
@@ -112,12 +116,13 @@
 - **Cons**: Complex, might delay messages
 - **Files**: New file `src/services/messageQueue.ts`
 
-**4.2: Global Message Lock**
+**4.2: Global Message Lock** ✅ TRIED (v192)
 - **Description**: Lock that prevents any message from sending until action handler completes
 - **Implementation**: Acquire lock when action executes, release after callback
 - **Pros**: Simple, guarantees no race condition
 - **Cons**: Might block legitimate messages
 - **Files**: `src/services/llmResponseInterceptor.ts`
+- **Status**: Implemented in v192 - testing in progress
 
 **4.3: Debounce/Throttle LLM Responses**
 - **Description**: Throttle LLM response generation to prevent rapid duplicates
@@ -183,19 +188,21 @@
 
 ### Category 8: Action Handler Modifications
 
-**8.1: Action Handler Sends Immediately, No Callback**
+**8.1: Action Handler Sends Immediately, No Callback** ✅ PARTIALLY TRIED (v186-v192)
 - **Description**: Action handler sends message directly via Telegram API, doesn't use callback
 - **Implementation**: Remove callback usage, send directly
 - **Pros**: Bypasses ElizaOS message creation
 - **Cons**: Messages won't be in memory
 - **Files**: `src/plugins/onboarding/actions.ts`
+- **Status**: We send directly via Telegram API but still create empty memory for logging
 
-**8.2: Action Handler Creates Memory with Empty Text**
+**8.2: Action Handler Creates Memory with Empty Text** ✅ TRIED (v186-v192)
 - **Description**: Action handler creates memory with empty text, sends via Telegram separately
 - **Implementation**: `callback({ text: '' })` then send via Telegram API
 - **Pros**: Memory created but not sent by ElizaOS
 - **Cons**: Still creates memory
 - **Files**: `src/plugins/onboarding/actions.ts`
+- **Status**: Implemented - we create empty memory after sending directly
 
 **8.3: Action Handler Returns Early to Prevent Follow-up**
 - **Description**: Action handler returns a special value to prevent ElizaOS follow-up
