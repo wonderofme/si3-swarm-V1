@@ -110,8 +110,8 @@ async function sendDirectTelegramMessage(
   }
 }
 
-// Helper to safely call callback - deduplication is handled at memory creation level
-// NOTE: APPROACH #8.1 - We now send directly via Telegram API, but keep this as fallback
+// APPROACH #3.3: Make Action Silent (No Callback) - Send ONLY via Telegram API
+// This completely bypasses ElizaOS message flow to prevent duplicates
 async function safeCallback(
   callback: HandlerCallback | undefined,
   runtime: IAgentRuntime,
@@ -119,30 +119,17 @@ async function safeCallback(
   userId: string | undefined,
   text: string
 ): Promise<void> {
-  // APPROACH #8.1: Try direct Telegram API first
+  // APPROACH #3.3: Send ONLY via Telegram API, never use callback
+  // This bypasses ElizaOS message creation entirely
   try {
     await sendDirectTelegramMessage(runtime, roomId, userId, text);
-    console.log('[Onboarding Action] ✅ Sent via direct Telegram API, skipping callback');
-    return; // Success, don't use callback
+    console.log('[Onboarding Action] ✅ Sent via direct Telegram API (no callback used)');
+    return; // Success, never use callback
   } catch (error) {
-    console.log('[Onboarding Action] ⚠️ Direct send failed, falling back to callback:', error);
-    // Fall through to callback
-  }
-  
-  // Fallback to callback if direct send fails
-  if (!callback) return;
-  
-  try {
-    console.log('[Onboarding Action] Sending callback message:', text.substring(0, 50));
-    await callback({ 
-      text,
-      metadata: {
-        fromActionHandler: true,
-        timestamp: Date.now()
-      }
-    });
-  } catch (error) {
-    console.error('[Onboarding Action] Callback error:', error);
+    console.error('[Onboarding Action] ❌ Direct send failed, NOT using callback:', error);
+    // Do NOT fall back to callback - this would create duplicates
+    // If direct send fails, we just log the error
+    throw error;
   }
 }
 
