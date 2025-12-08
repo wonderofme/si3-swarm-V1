@@ -8,6 +8,14 @@ export const onboardingProvider: Provider = {
     console.log(`[Onboarding Provider] Provider called - userId: ${message.userId}, roomId: ${message.roomId}, text: ${message.content.text?.substring(0, 50) || '(empty)'}`);
     
     try {
+      // CRITICAL: Check if evaluator set skipLLMResponse flag (APPROACH #1.2)
+      // This is set by the onboarding evaluator during active onboarding steps
+      // The evaluator runs BEFORE the provider, so this flag is available here
+      if (state && (state as any).skipLLMResponse === true) {
+        console.log('[Onboarding Provider] 🚫 Evaluator set skipLLMResponse=true, returning null to prevent LLM generation');
+        return null;
+      }
+      
       const userId = message.userId;
       const step = await getOnboardingStep(runtime, userId);
       console.log(`[Onboarding Provider] Current step: ${step}`);

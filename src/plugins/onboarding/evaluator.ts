@@ -30,17 +30,30 @@ export const onboardingEvaluator: Evaluator = {
         state.onboardingStep = 'NONE';
         state.forceOnboardingAction = true; // Flag to force action
         state.restartDetected = true; // Additional flag
+        state.skipLLMResponse = false; // Allow LLM for restart
       }
       return 'NONE';
     }
     
     if (step === 'NONE' || step === 'COMPLETED') {
+      if (state) {
+        state.skipLLMResponse = false; // Allow LLM for completed/none
+      }
       return null;
     }
 
-    // Inject into state so actions can use it
+    // CRITICAL: During active onboarding steps, set flag to prevent LLM generation
+    // The action handler will send all messages, so LLM should not respond
+    // Exception: CONFIRMATION step allows LLM to generate summary
     if (state) {
       state.onboardingStep = step;
+      if (step === 'CONFIRMATION') {
+        state.skipLLMResponse = false; // Allow LLM for confirmation summary
+        console.log('[Onboarding Evaluator] CONFIRMATION step - allowing LLM for summary');
+      } else {
+        state.skipLLMResponse = true; // Block LLM during all other onboarding steps
+        console.log(`[Onboarding Evaluator] Step ${step} - setting skipLLMResponse=true to prevent LLM generation`);
+      }
     }
     
     return step;
