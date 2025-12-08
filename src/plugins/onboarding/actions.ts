@@ -84,22 +84,24 @@ async function sendDirectTelegramMessage(
     
     // Also create memory with empty text so it's logged but not sent again
     // This maintains the memory trail without causing duplicates
-    await runtime.messageManager.createMemory({
-      id: undefined,
-      userId: runtime.agentId,
-      agentId: runtime.agentId,
-      roomId: roomId,
-      content: {
-        text: '', // Empty text prevents ElizaOS from sending again
-        source: 'telegram',
-        metadata: {
-          fromActionHandler: true,
-          sentViaDirectAPI: true,
-          originalText: text,
-          timestamp: Date.now()
+    if (roomId) {
+      await runtime.messageManager.createMemory({
+        id: undefined,
+        userId: runtime.agentId,
+        agentId: runtime.agentId,
+        roomId: roomId as any, // Type assertion needed because roomId might not match UUID format exactly
+        content: {
+          text: '', // Empty text prevents ElizaOS from sending again
+          source: 'telegram',
+          metadata: {
+            fromActionHandler: true,
+            sentViaDirectAPI: true,
+            originalText: text,
+            timestamp: Date.now()
+          }
         }
-      }
-    });
+      });
+    }
     
   } catch (error) {
     console.error('[Onboarding Action] ❌ Error sending direct Telegram message:', error);
