@@ -425,13 +425,15 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
         // CRITICAL FIX: Block LLM responses during onboarding steps (except CONFIRMATION)
         // The action handler sends all onboarding messages, so LLM should not respond
         // Get the actual user's userId from the last user message (agent messages have agentId as userId)
+        // IMPORTANT: Only block if this is NOT from action handler (checked above)
         try {
           const lastUserMessage = lastUserMessagePerRoom.get(memory.roomId);
-          if (lastUserMessage) {
+          if (lastUserMessage && lastUserMessage.userId) {
             const onboardingStep = await getOnboardingStep(runtime, lastUserMessage.userId);
             if (onboardingStep && onboardingStep !== 'COMPLETED' && onboardingStep !== 'CONFIRMATION' && onboardingStep !== 'NONE') {
-              console.log(`[LLM Response Interceptor] 🚫 BLOCKING agent message - user is in onboarding step: ${onboardingStep}`);
+              console.log(`[LLM Response Interceptor] 🚫 BLOCKING LLM-generated message - user is in onboarding step: ${onboardingStep}`);
               console.log('[LLM Response Interceptor] Blocked message text:', messageText);
+              console.log('[LLM Response Interceptor] Action handler will send the correct message instead');
               // Return empty memory with action removed to prevent both sending AND action execution
               return await originalCreateMemory({
                 ...memory,
@@ -441,10 +443,15 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
                   action: undefined // Remove action to prevent duplicate execution
                 }
               });
+            } else {
+              console.log(`[LLM Response Interceptor] ✅ User is not in active onboarding step (step: ${onboardingStep}), allowing LLM message`);
             }
+          } else {
+            console.log('[LLM Response Interceptor] ⚠️ No last user message found, cannot check onboarding step - allowing message');
           }
         } catch (error) {
           console.error('[LLM Response Interceptor] Error checking onboarding step:', error);
+          console.log('[LLM Response Interceptor] Allowing message due to error');
           // Continue with normal checks if we can't determine onboarding step
         }
         
