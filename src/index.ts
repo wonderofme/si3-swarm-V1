@@ -199,13 +199,20 @@ async function setupTelegrafInstancePatcher() {
               // CRITICAL: Block LLM responses during onboarding steps (except CONFIRMATION)
               // The action handler sends all onboarding messages, so LLM should not respond
               // Action handler messages are sent immediately after action execution (within 1 second)
-              // So if action was executed recently and this is NOT within 1 second, and we're in onboarding, block it
+              // Use synchronous cache for fast checking
               try {
-                const { getUserIdForRoomId } = await import('./services/llmResponseInterceptor.js');
-                const { getOnboardingStep } = await import('./plugins/onboarding/utils.js');
+                const { getUserIdForRoomId, getOnboardingStepFromCache } = await import('./services/llmResponseInterceptor.js');
                 const userId = getUserIdForRoomId(roomIdToCheck);
-                if (userId && kaiaRuntimeForOnboardingCheck) {
-                  const onboardingStep = await getOnboardingStep(kaiaRuntimeForOnboardingCheck, userId as any);
+                if (userId) {
+                  // Try synchronous cache first (fast)
+                  let onboardingStep = getOnboardingStepFromCache?.(userId);
+                  
+                  // If cache miss, do async check (slower, but fallback)
+                  if (!onboardingStep && kaiaRuntimeForOnboardingCheck) {
+                    const { getOnboardingStep } = await import('./plugins/onboarding/utils.js');
+                    onboardingStep = await getOnboardingStep(kaiaRuntimeForOnboardingCheck, userId as any);
+                  }
+                  
                   if (onboardingStep && onboardingStep !== 'COMPLETED' && onboardingStep !== 'CONFIRMATION' && onboardingStep !== 'NONE') {
                     // During onboarding, only action handler messages should be sent
                     // Action handler messages are sent within 1 second of action execution

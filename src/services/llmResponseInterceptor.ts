@@ -95,6 +95,11 @@ const roomIdToTelegramChatId = new Map<string, string>();
 // Updated when user messages are processed
 const onboardingStepCache = new Map<string, string>();
 
+// Export function to get onboarding step from cache (synchronous)
+export function getOnboardingStepFromCache(userId: string): string | undefined {
+  return onboardingStepCache.get(userId);
+}
+
 // Export roomIdToTelegramChatId map so it can be accessed from other modules
 export function getRoomIdForChatId(chatId: string | number): string | undefined {
   for (const [roomId, mappedChatId] of roomIdToTelegramChatId.entries()) {
@@ -238,7 +243,7 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
   // Store reference to original createMemory (before other patches)
   const originalCreateMemory = runtime.messageManager.createMemory.bind(runtime.messageManager);
   
-  // CRITICAL FIX: Patch LLM generation method to block evaluate step hallucinations
+  // CRITICAL FIX: Patch LLM generation method to block evaluate step hallucinations AND onboarding LLM responses
   // The research identifies that the second message comes from the evaluate step
   // which uses a small model that hallucinates conversational responses
   // By patching the completion/generation method, we can block these at the source
@@ -247,9 +252,23 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
   if (runtimeAny.completion && typeof runtimeAny.completion.generateText === 'function') {
     const originalGenerateText = runtimeAny.completion.generateText.bind(runtimeAny.completion);
     runtimeAny.completion.generateText = async function(...args: any[]) {
-      // Extract roomId from the arguments if possible
-      // The generateText method typically receives (prompt, options) or similar
-      // We need to check if an action was recently executed for this generation
+      // CRITICAL: Check if ANY user is in an active onboarding step
+      // If so, block ALL LLM generation during onboarding (except CONFIRMATION/COMPLETED/NONE)
+      // This is a broad check, but necessary since we can't get roomId from generateText args
+      const activeOnboardingUsers = Array.from(onboardingStepCache.entries()).filter(([userId, step]) => {
+        return step && step !== 'COMPLETED' && step !== 'CONFIRMATION' && step !== 'NONE';
+      });
+      
+      if (activeOnboardingUsers.length > 0) {
+        console.log(`[LLM Response Interceptor] 🚫 BLOCKING generateText - ${activeOnboardingUsers.length} user(s) in active onboarding steps`);
+        activeOnboardingUsers.forEach(([userId, step]) => {
+          console.log(`[LLM Response Interceptor]   - User ${userId}: ${step}`);
+        });
+        // Return empty response to prevent LLM generation during onboarding
+        return { text: '', action: null, reasoning: null };
+      }
+      
+      // Check if an action was recently executed for any room
       // Since we don't have direct access to roomId here, we'll check all active roomIds
       const actionWasRecent = Array.from(actionExecutionTimestamps.entries()).some(([roomId, timestamp]) => {
         const elapsed = Date.now() - timestamp;
@@ -265,7 +284,7 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
       // Call original method
       return originalGenerateText.apply(this, args);
     };
-    console.log('[LLM Response Interceptor] ✅ Patched runtime.completion.generateText to block evaluate step hallucinations');
+    console.log('[LLM Response Interceptor] ✅ Patched runtime.completion.generateText to block evaluate step hallucinations AND onboarding LLM responses');
   } else {
     console.log('[LLM Response Interceptor] ⚠️ runtime.completion.generateText not found, skipping LLM generation patch');
   }
