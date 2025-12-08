@@ -486,16 +486,42 @@ async function startAgents() {
               // Check if bot is polling (Telegraf uses polling by default)
               if (bot.polling) {
                 console.log('[Telegram Client] ✅ Bot is using polling mode');
-                console.log('[Telegram Client] Polling status:', bot.polling?.isRunning ? 'RUNNING' : 'NOT RUNNING');
+                const pollingStatus = bot.polling?.isRunning ? 'RUNNING' : 'NOT RUNNING';
+                console.log('[Telegram Client] Polling status:', pollingStatus);
+                if (pollingStatus === 'NOT RUNNING') {
+                  console.error('[Telegram Client] ❌ CRITICAL: Polling is NOT RUNNING - bot will not receive messages!');
+                  console.error('[Telegram Client] This is likely why messages are not being received');
+                }
               } else if (bot.webhookReply) {
                 console.log('[Telegram Client] ⚠️ Bot might be using webhook mode (not polling)');
               } else {
                 console.log('[Telegram Client] ⚠️ Could not determine bot connection mode');
+                // Try to check if bot has a launch method or polling property
+                console.log('[Telegram Client] Bot properties:', Object.keys(bot).slice(0, 20).join(', '));
               }
               
               // Log bot options to see polling/webhook settings
               if (bot.options) {
                 console.log('[Telegram Client] Bot options:', JSON.stringify(bot.options, null, 2).substring(0, 200));
+              }
+              
+              // CRITICAL: Verify bot is actually listening for updates
+              // Check if there's a conflict with another bot instance
+              try {
+                const updates = await bot.telegram.getUpdates({ limit: 1, timeout: 1 });
+                console.log('[Telegram Client] ✅ Successfully fetched updates from Telegram API');
+                console.log('[Telegram Client] Pending updates count:', updates.length);
+                if (updates.length > 0) {
+                  console.log('[Telegram Client] ⚠️ There are pending updates - bot should be processing them');
+                }
+              } catch (updateError: any) {
+                if (updateError.response?.error_code === 409) {
+                  console.error('[Telegram Client] ❌ CRITICAL: 409 Conflict detected!');
+                  console.error('[Telegram Client] Another bot instance is consuming updates');
+                  console.error('[Telegram Client] You must stop the other instance for this bot to receive messages');
+                } else {
+                  console.error('[Telegram Client] ⚠️ Could not fetch updates:', updateError.message);
+                }
               }
             }
             
@@ -592,23 +618,40 @@ async function startAgents() {
                 console.log('[Telegram Chat ID Capture] ⚠️ No chat ID found in update');
               }
               
+              // CRITICAL: Always call original handler to ensure messages are processed
               // Wrap in try-catch to handle database errors gracefully
               try {
                 console.log('[Telegram Chat ID Capture] Calling original handler...');
                 const result = await originalHandler(update);
-                console.log('[Telegram Chat ID Capture] Original handler returned');
+                console.log('[Telegram Chat ID Capture] ✅ Original handler returned successfully');
                 return result;
               } catch (error: any) {
                 console.error('[Telegram Chat ID Capture] ❌ Error in message handler:', error);
-                console.error('[Telegram Chat ID Capture] Error stack:', error.stack);
+                console.error('[Telegram Chat ID Capture] Error message:', error.message);
+                console.error('[Telegram Chat ID Capture] Error code:', error.code);
+                if (error.stack) {
+                  console.error('[Telegram Chat ID Capture] Error stack:', error.stack.substring(0, 500));
+                }
+                
                 // If it's a database error and we have a chat ID, send a fallback response
                 if (chatId && (error.code === 'ETIMEDOUT' || error.message?.includes('timeout') || error.message?.includes('database'))) {
                   console.log('[Telegram Chat ID Capture] Database error detected, sending fallback response to chat:', chatId);
-                  bot.telegram.sendMessage(chatId, "I'm experiencing some technical difficulties right now. Please try again in a moment! 🔧").catch((err: any) => {
-                    console.error('[Telegram Chat ID Capture] Failed to send fallback response:', err);
-                  });
+                  try {
+                    await bot.telegram.sendMessage(chatId, "I'm experiencing some technical difficulties right now. Please try again in a moment! 🔧");
+                    console.log('[Telegram Chat ID Capture] ✅ Sent fallback response');
+                  } catch (sendErr: any) {
+                    console.error('[Telegram Chat ID Capture] Failed to send fallback response:', sendErr);
+                  }
                 }
-                throw error; // Re-throw to let ElizaOS handle it
+                
+                // CRITICAL: Don't re-throw if it's a database timeout - let the message be processed
+                // Re-throwing might prevent message processing entirely
+                if (error.code === 'ETIMEDOUT' || error.message?.includes('timeout')) {
+                  console.log('[Telegram Chat ID Capture] ⚠️ Database timeout - continuing despite error to allow message processing');
+                  return; // Return undefined to allow processing to continue
+                }
+                
+                throw error; // Re-throw other errors to let ElizaOS handle them
               }
             };
             console.log('[Telegram Chat ID Capture] Patched bot.handler to capture chat IDs');
