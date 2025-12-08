@@ -468,7 +468,7 @@ async function startAgents() {
             telegramClient = await TelegramClientInterface.start(kaiaRuntime);
             console.log(`[Telegram Client] ✅ Successfully started Telegram client on attempt ${attempt}`);
             
-            // Verify bot is ready and listening
+              // Verify bot is ready and listening
             if (telegramClient && (telegramClient as any).bot) {
               const bot = (telegramClient as any).bot;
               console.log('[Telegram Client] Bot info:', bot.botInfo);
@@ -481,6 +481,21 @@ async function startAgents() {
                 console.log('[Telegram Client] ✅ Bot is connected and verified:', me.username);
               } catch (error: any) {
                 console.error('[Telegram Client] ⚠️ Could not verify bot connection:', error.message);
+              }
+              
+              // Check if bot is polling (Telegraf uses polling by default)
+              if (bot.polling) {
+                console.log('[Telegram Client] ✅ Bot is using polling mode');
+                console.log('[Telegram Client] Polling status:', bot.polling?.isRunning ? 'RUNNING' : 'NOT RUNNING');
+              } else if (bot.webhookReply) {
+                console.log('[Telegram Client] ⚠️ Bot might be using webhook mode (not polling)');
+              } else {
+                console.log('[Telegram Client] ⚠️ Could not determine bot connection mode');
+              }
+              
+              // Log bot options to see polling/webhook settings
+              if (bot.options) {
+                console.log('[Telegram Client] Bot options:', JSON.stringify(bot.options, null, 2).substring(0, 200));
               }
             }
             
@@ -602,33 +617,23 @@ async function startAgents() {
           }
           
           // Also try patching bot.on() for message events (Telegraf's main event handler)
+          // NOTE: We'll patch it but NOT wrap handlers to avoid breaking message processing
+          // Just log event registration, don't interfere with handler execution
           if (bot && bot.on) {
-            console.log('[Telegram Chat ID Capture] Found bot.on, patching to log message events...');
+            console.log('[Telegram Chat ID Capture] Found bot.on, patching to log event registration (NOT wrapping handlers)...');
             const originalOn = bot.on.bind(bot);
             bot.on = function(event: string, ...handlers: any[]) {
-              console.log(`[Telegram Chat ID Capture] bot.on('${event}') called with ${handlers.length} handler(s)`);
+              console.log(`[Telegram Chat ID Capture] 📋 Event registered: ${event}, handlers: ${handlers.length}`);
               
-              // Wrap handlers to log when they're called
-              const wrappedHandlers = handlers.map((handler, index) => {
-                if (typeof handler === 'function') {
-                  return async (ctx: any, next: any) => {
-                    console.log(`[Telegram Chat ID Capture] Handler ${index} for '${event}' called`);
-                    if (ctx?.update) {
-                      console.log(`[Telegram Chat ID Capture] Update type: ${Object.keys(ctx.update).join(', ')}`);
-                      if (ctx.update.message) {
-                        console.log(`[Telegram Chat ID Capture] Message text: ${ctx.update.message.text?.substring(0, 50) || '(no text)'}`);
-                      }
-                    }
-                    return handler(ctx, next);
-                  };
-                }
-                return handler;
-              });
+              // For message events, log but don't wrap handlers (wrapping might break message processing)
+              if (event === 'message' || event === 'text') {
+                console.log(`[Telegram Chat ID Capture] Message event registered - handlers will process messages normally`);
+              }
               
-              // Call original on() to register the event
-              return originalOn.apply(this, [event, ...wrappedHandlers]);
+              // Call original on() WITHOUT wrapping handlers - let Telegraf handle them normally
+              return originalOn.apply(this, [event, ...handlers]);
             };
-            console.log('[Telegram Chat ID Capture] Patched bot.on to log event registration and handler calls');
+            console.log('[Telegram Chat ID Capture] Patched bot.on to log event registration (handlers NOT wrapped)');
           } else {
             console.log('[Telegram Chat ID Capture] ⚠️ bot.on not found');
           }
