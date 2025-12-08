@@ -20,6 +20,11 @@
 17. ✅ Global Message Lock - acquire/release during action execution (v192)
 18. ✅ Action handler sends directly via Telegram API (v186-v192)
 19. ✅ Action handler creates memory with empty text (v186-v192)
+20. ✅ v194: #1.3 Throw Error in Provider - FAILED (blocked action handler execution)
+21. ✅ v195: #3.3 Make Action Silent (No Callback) - FAILED (still duplicates)
+22. ✅ v196: Synchronous onboarding step cache - FAILED (still duplicates)
+23. ✅ v197: Enhanced sendMessage patcher with cache - FAILED (still duplicates)
+24. 🔄 v198: Diagnostic logging for message reception - IN PROGRESS
 
 ## What We HAVEN'T Tried
 
@@ -39,12 +44,13 @@
 - **Cons**: Need to verify ElizaOS respects this evaluator
 - **Files**: `src/plugins/onboarding/evaluator.ts` (already exists, could add shouldRespond)
 
-**1.3: Throw Error in Provider to Stop LLM**
+**1.3: Throw Error in Provider to Stop LLM** ✅ TRIED (v194)
 - **Description**: Make provider throw an error during onboarding to prevent LLM call
 - **Implementation**: `throw new Error("Onboarding in progress")` in provider
 - **Pros**: Simple, might stop LLM generation
 - **Cons**: Could break error handling, might cause crashes
 - **Files**: `src/plugins/onboarding/provider.ts`
+- **Status**: FAILED - Error blocked action handler execution, preventing all messages
 
 ### Category 2: Patch ElizaOS Core Methods
 
@@ -93,12 +99,13 @@
 - **Cons**: IGNORE might prevent other actions too
 - **Files**: `src/plugins/onboarding/provider.ts`
 
-**3.3: Make Action Silent (No Callback)**
+**3.3: Make Action Silent (No Callback)** ✅ TRIED (v195)
 - **Description**: Action handler doesn't use callback, sends directly via Telegram API only
 - **Implementation**: Remove all `safeCallback` calls, send directly via Telegram
 - **Pros**: Bypasses ElizaOS message flow entirely
 - **Cons**: Loses integration with ElizaOS memory system
 - **Files**: `src/plugins/onboarding/actions.ts`
+- **Status**: FAILED - Still had duplicates, LLM still generating responses
 
 **3.4: Use Composite Action Pattern**
 - **Description**: Create a composite action that includes IGNORE behavior
@@ -313,7 +320,37 @@ Based on the problem, these seem most likely to work:
 4. **#8.1: Action Handler Sends Immediately** - Direct Telegram API, no callback
 5. **#12.1: Disable "Small Model" Follow-up** - Directly addresses the duplicate source
 
+## Decision Framework: When to Move to Next Approach
+
+**Move to next approach if:**
+1. ✅ Current approach has been tested with real user messages
+2. ✅ Logs show the approach is working (blocking is happening) but duplicates still occur
+3. ✅ OR logs show the approach is NOT working (blocking not happening)
+4. ✅ We've tried at least 2-3 variations of the current approach
+
+**Continue debugging current approach if:**
+1. ⏳ Logs show blocking is working but we need to refine timing/windows
+2. ⏳ New issue discovered (e.g., messages not being received) that needs fixing first
+3. ⏳ Approach shows promise but needs minor adjustments
+
+## Current Status (v198)
+
+**v198 Status**: 🔄 IN PROGRESS - Diagnostic logging added
+- **Issue**: Messages not being received from Telegram
+- **Action**: Added diagnostic logging to see if handlers are being called
+- **Next Step**: Wait for v198 logs to determine:
+  - If messages ARE being received → Continue with duplicate fix
+  - If messages are NOT being received → Fix message reception first
+
+## Next Approaches to Try (Priority Order)
+
+1. **#1.2: Use Evaluator to Prevent LLM Generation** - Most promising, uses built-in mechanism
+2. **#1.1: Remove Provider During Onboarding** - Completely disables LLM during onboarding
+3. **#12.1: Disable "Small Model" Follow-up** - Directly addresses the duplicate source (evaluate step)
+
 ## Recommendation
 
-Start with **#1.2 (Evaluator shouldRespond)** as it uses ElizaOS's built-in mechanism and is the least invasive. If that doesn't work, try **#8.1 (Action sends directly via Telegram)** to completely bypass ElizaOS's message flow.
+**After v198 logs are reviewed:**
+- If messages ARE received but duplicates persist → Try **#1.2 (Evaluator shouldRespond)**
+- If messages are NOT received → Fix message reception first, then continue with duplicate fixes
 
