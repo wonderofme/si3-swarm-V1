@@ -91,6 +91,10 @@ const timeoutCreatedMessages = new Set<string>();
 // When we receive a Telegram message, we store the chat ID from the message metadata
 const roomIdToTelegramChatId = new Map<string, string>();
 
+// Cache onboarding steps per userId for synchronous checking
+// Updated when user messages are processed
+const onboardingStepCache = new Map<string, string>();
+
 // Export roomIdToTelegramChatId map so it can be accessed from other modules
 export function getRoomIdForChatId(chatId: string | number): string | undefined {
   for (const [roomId, mappedChatId] of roomIdToTelegramChatId.entries()) {
@@ -303,6 +307,14 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
       console.log('[LLM Response Interceptor] Tracking user message:', memory.content.text?.substring(0, 50), 'roomId:', memory.roomId);
       lastUserMessagePerRoom.set(memory.roomId, memory);
       
+      // Update onboarding step cache for this user (async, but we'll use cached value for blocking)
+      getOnboardingStep(runtime, memory.userId).then(step => {
+        onboardingStepCache.set(memory.userId, step);
+        console.log(`[LLM Response Interceptor] Cached onboarding step for user ${memory.userId}: ${step}`);
+      }).catch(() => {
+        // Silently fail - cache will be updated on next check
+      });
+      
       // Try to get Telegram chat ID from global map (set by Telegram client interceptor)
       const messageText = memory.content.text || '';
       if (messageText && (global as any).__telegramChatIdMap) {
@@ -465,23 +477,62 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
         // The action handler sends all onboarding messages, so LLM should not respond
         // Get the actual user's userId from the last user message (agent messages have agentId as userId)
         // IMPORTANT: Only block if this is NOT from action handler (checked above)
+        // Use cached onboarding step for synchronous check (updated when user messages are processed)
         try {
           const lastUserMessage = lastUserMessagePerRoom.get(memory.roomId);
           if (lastUserMessage && lastUserMessage.userId) {
+            // Check cache first (synchronous) - this is updated when user messages are processed
+            const cachedStep = onboardingStepCache.get(lastUserMessage.userId);
+            if (cachedStep && cachedStep !== 'COMPLETED' && cachedStep !== 'CONFIRMATION' && cachedStep !== 'NONE') {
+              console.log(`[LLM Response Interceptor] 🚫 BLOCKING LLM-generated message - user is in onboarding step: ${cachedStep} (from cache)`);
+              console.log('[LLM Response Interceptor] Blocked message text:', messageText);
+              console.log('[LLM Response Interceptor] Action handler will send the correct message instead');
+              // Return empty memory WITHOUT calling originalCreateMemory to prevent Telegram client from sending
+              // Create a minimal memory object for logging only
+              return {
+                id: undefined,
+                userId: memory.userId,
+                agentId: memory.agentId,
+                roomId: memory.roomId,
+                content: {
+                  text: '', // Empty text
+                  action: undefined, // Remove action
+                  metadata: {
+                    blocked: true,
+                    reason: 'onboarding_in_progress',
+                    originalText: messageText
+                  }
+                },
+                createdAt: Date.now()
+              } as any;
+            }
+            
+            // If cache miss, do async check (but this might be too late)
             const onboardingStep = await getOnboardingStep(runtime, lastUserMessage.userId);
+            // Update cache for next time
+            onboardingStepCache.set(lastUserMessage.userId, onboardingStep);
+            
             if (onboardingStep && onboardingStep !== 'COMPLETED' && onboardingStep !== 'CONFIRMATION' && onboardingStep !== 'NONE') {
               console.log(`[LLM Response Interceptor] 🚫 BLOCKING LLM-generated message - user is in onboarding step: ${onboardingStep}`);
               console.log('[LLM Response Interceptor] Blocked message text:', messageText);
               console.log('[LLM Response Interceptor] Action handler will send the correct message instead');
-              // Return empty memory with action removed to prevent both sending AND action execution
-              return await originalCreateMemory({
-                ...memory,
+              // Return empty memory WITHOUT calling originalCreateMemory to prevent Telegram client from sending
+              return {
+                id: undefined,
+                userId: memory.userId,
+                agentId: memory.agentId,
+                roomId: memory.roomId,
                 content: {
-                  ...memory.content,
-                  text: '', // Empty text prevents sending
-                  action: undefined // Remove action to prevent duplicate execution
-                }
-              });
+                  text: '', // Empty text
+                  action: undefined, // Remove action
+                  metadata: {
+                    blocked: true,
+                    reason: 'onboarding_in_progress',
+                    originalText: messageText
+                  }
+                },
+                createdAt: Date.now()
+              } as any;
             } else {
               console.log(`[LLM Response Interceptor] ✅ User is not in active onboarding step (step: ${onboardingStep}), allowing LLM message`);
             }
