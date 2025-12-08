@@ -593,6 +593,40 @@ async function startAgents() {
               }
             };
             console.log('[Telegram Chat ID Capture] Patched bot.handler to capture chat IDs');
+          } else {
+            console.log('[Telegram Chat ID Capture] ⚠️ bot.handler not found - messages may not be intercepted');
+          }
+          
+          // Also try patching bot.on() for message events (Telegraf's main event handler)
+          if (bot && bot.on) {
+            console.log('[Telegram Chat ID Capture] Found bot.on, patching to log message events...');
+            const originalOn = bot.on.bind(bot);
+            bot.on = function(event: string, ...handlers: any[]) {
+              console.log(`[Telegram Chat ID Capture] bot.on('${event}') called with ${handlers.length} handler(s)`);
+              
+              // Wrap handlers to log when they're called
+              const wrappedHandlers = handlers.map((handler, index) => {
+                if (typeof handler === 'function') {
+                  return async (ctx: any, next: any) => {
+                    console.log(`[Telegram Chat ID Capture] Handler ${index} for '${event}' called`);
+                    if (ctx?.update) {
+                      console.log(`[Telegram Chat ID Capture] Update type: ${Object.keys(ctx.update).join(', ')}`);
+                      if (ctx.update.message) {
+                        console.log(`[Telegram Chat ID Capture] Message text: ${ctx.update.message.text?.substring(0, 50) || '(no text)'}`);
+                      }
+                    }
+                    return handler(ctx, next);
+                  };
+                }
+                return handler;
+              });
+              
+              // Call original on() to register the event
+              return originalOn.apply(this, [event, ...wrappedHandlers]);
+            };
+            console.log('[Telegram Chat ID Capture] Patched bot.on to log event registration and handler calls');
+          } else {
+            console.log('[Telegram Chat ID Capture] ⚠️ bot.on not found');
           }
           
           // Also patch handleError to catch database errors and send fallback responses
