@@ -160,6 +160,7 @@ async function createRuntime(character: any) {
 // Instead, we'll patch instances when they're created by intercepting the constructor
 // We'll store a reference to patch instances globally
 let telegrafInstancePatcher: ((instance: any) => Promise<void> | void) | null = null;
+let kaiaRuntimeForOnboardingCheck: any = null; // IAgentRuntime - using any to avoid import issues
 
 async function setupTelegrafInstancePatcher() {
   try {
@@ -187,6 +188,50 @@ async function setupTelegrafInstancePatcher() {
             const roomIdToCheck = getRoomIdForChatId(String(chatId));
             
             if (roomIdToCheck && text && text.trim()) {
+              // CRITICAL: Block LLM responses during onboarding steps (except CONFIRMATION)
+              // The action handler sends all onboarding messages, so LLM should not respond
+              // Action handler messages are sent immediately after action execution (within 1 second)
+              // So if action was executed recently and this is NOT within 1 second, and we're in onboarding, block it
+              try {
+                const { getUserIdForRoomId } = await import('./services/llmResponseInterceptor.js');
+                const { getOnboardingStep } = await import('./plugins/onboarding/utils.js');
+                const userId = getUserIdForRoomId(roomIdToCheck);
+                if (userId && kaiaRuntimeForOnboardingCheck) {
+                  const onboardingStep = await getOnboardingStep(kaiaRuntimeForOnboardingCheck, userId as any);
+                  if (onboardingStep && onboardingStep !== 'COMPLETED' && onboardingStep !== 'CONFIRMATION' && onboardingStep !== 'NONE') {
+                    // During onboarding, only action handler messages should be sent
+                    // Action handler messages are sent within 1 second of action execution
+                    // All other messages during onboarding are LLM responses and should be blocked
+                    const actionWasRecent = checkActionExecutedRecently(roomIdToCheck);
+                    let isActionHandlerMessage = false;
+                    
+                    if (actionWasRecent) {
+                      const { getActionExecutionTime } = await import('./services/llmResponseInterceptor.js');
+                      const actionExecutionTime = getActionExecutionTime?.(roomIdToCheck);
+                      if (actionExecutionTime) {
+                        const elapsed = Date.now() - actionExecutionTime;
+                        const ACTION_HANDLER_WINDOW_MS = 1000; // 1 second
+                        if (elapsed < ACTION_HANDLER_WINDOW_MS) {
+                          // This is likely an action handler callback - allow it
+                          isActionHandlerMessage = true;
+                          console.log(`[Telegram Chat ID Capture] ✅ ALLOWING sendMessage (INSTANCE PATCHER) - action handler message during onboarding (${elapsed}ms after action)`);
+                        }
+                      }
+                    }
+                    
+                    if (!isActionHandlerMessage) {
+                      // This is an LLM response during onboarding, block it
+                      console.log(`[Telegram Chat ID Capture] 🚫 BLOCKING sendMessage (INSTANCE PATCHER) - LLM response during onboarding step: ${onboardingStep}`);
+                      console.log(`[Telegram Chat ID Capture] Blocked text: ${text.substring(0, 100)}`);
+                      return { message_id: 0, date: Date.now(), chat: { id: chatId } };
+                    }
+                  }
+                }
+              } catch (error) {
+                console.error('[Telegram Chat ID Capture] Error checking onboarding step:', error);
+                // Continue with other checks if onboarding check fails
+              }
+              
               // CRITICAL: Check for EXACT duplicate content first
               const dedupModule = await import('./services/messageDeduplication.js');
               const { isDuplicateMessage } = dedupModule;
@@ -384,6 +429,9 @@ async function startAgents() {
         // This must be BEFORE the message interceptor so patches chain correctly
         const { setupLLMResponseInterceptor } = await import('./services/llmResponseInterceptor.js');
         await setupLLMResponseInterceptor(kaiaRuntime);
+        
+        // Store runtime reference for onboarding step check in sendMessage patcher
+        kaiaRuntimeForOnboardingCheck = kaiaRuntime;
         
         // Setup message interceptor for deduplication (this will wrap the LLM interceptor)
         const { setupTelegramMessageInterceptor } = await import('./services/telegramMessageInterceptor.js');

@@ -74,6 +74,13 @@ function hasAction(response: any): boolean {
 // Store the last user message per room to check for restart commands
 const lastUserMessagePerRoom = new Map<string, Memory>();
 
+// Export function to get userId from roomId (for onboarding step check in sendMessage patcher)
+export function getUserIdForRoomId(roomId: string | undefined): string | undefined {
+  if (!roomId) return undefined;
+  const lastUserMessage = lastUserMessagePerRoom.get(roomId);
+  return lastUserMessage?.userId;
+}
+
 // Store pending restart commands with timestamps for timeout-based execution
 const pendingRestartCommands = new Map<string, { message: Memory; timestamp: number }>();
 
