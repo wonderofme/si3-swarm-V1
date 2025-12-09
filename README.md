@@ -159,7 +159,7 @@ docker run -d \
 
 See `deploy.sdl.yaml` for Akash deployment configuration. The image is automatically built and pushed to GitHub Container Registry on push to `main` branch.
 
-**Important**: The GHCR package must be set to **public** for Akash to pull it. See [docs/deployment/GHCR_PUBLIC_IMAGE.md](./docs/deployment/GHCR_PUBLIC_IMAGE.md) for instructions.
+**Important**: The GHCR package must be set to **public** for Akash to pull it. Go to package settings → Change visibility → Public. See [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) for details.
 
 ## Documentation
 

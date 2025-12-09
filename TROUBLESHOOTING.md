@@ -301,19 +301,28 @@ npm install
 **Symptoms:**
 - "Invalid: deployment hash" error
 - 503 Service Unavailable
+- 401 Unauthorized when pulling image
 
 **Solution:**
-1. **Invalid Deployment Hash:**
+1. **401 Unauthorized (Image Pull Error):**
+   - **Cause**: GHCR package is private by default
+   - **Fix**: Make the package public:
+     1. Go to `https://github.com/orgs/si3-ecosystem/packages`
+     2. Find `agentkaia` package → Package settings
+     3. Danger Zone → Change visibility → Public
+   - **Why Safe**: Image doesn't contain secrets (they're in env vars)
+
+2. **Invalid Deployment Hash:**
    - Check `deploy.sdl.yaml` syntax
    - Verify storage field format: `storage: - size: 1Gi class: default`
    - Ensure SDL version is correct (v2.0)
 
-2. **503 Service Unavailable:**
+3. **503 Service Unavailable:**
    - Provider infrastructure issue
    - Wait and retry
    - Try different provider
 
-3. **Image Not Found:**
+4. **Image Not Found:**
    - Verify image is built and pushed to GHCR
    - Check image path: `ghcr.io/si3-ecosystem/agentkaia:latest`
    - Ensure GitHub Actions workflow completed successfully
