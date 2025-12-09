@@ -24,7 +24,8 @@ profiles:
         memory:
           size: 2Gi
         storage:
-          size: 1Gi
+          - size: 1Gi
+            class: default
 
   placement:
     akash:
