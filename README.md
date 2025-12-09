@@ -163,8 +163,14 @@ See `deploy.sdl.yaml` for Akash deployment configuration. The image is automatic
 
 - [ARCHITECTURE.md](./ARCHITECTURE.md) - System architecture and design
 - [PROJECT_STATE.md](./PROJECT_STATE.md) - Complete project state documentation
+- [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) - Troubleshooting guide for common issues
 - [DUPLICATE_MESSAGE_PROBLEM.md](./DUPLICATE_MESSAGE_PROBLEM.md) - Duplicate message issue explanation
 - [MIGRATION_GUIDE.md](./MIGRATION_GUIDE.md) - Repository migration guide
+
+### Detailed Issue Documentation
+
+For detailed historical documentation about known issues and attempted fixes, see:
+- [docs/known-issues/](./docs/known-issues/) - Detailed issue analysis and attempted solutions
 
 ## Contributing
 
