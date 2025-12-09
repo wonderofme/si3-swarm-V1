@@ -305,12 +305,24 @@ npm install
 
 **Solution:**
 1. **401 Unauthorized (Image Pull Error):**
-   - **Cause**: GHCR package is private by default
-   - **Fix**: Make the package public:
+   - **Cause**: GHCR package is private by default, and Akash can't authenticate
+   - **Solution Options**:
+     
+     **Option A: Use Docker Hub (Recommended if no GHCR permissions)**
+     1. Create Docker Hub account at https://hub.docker.com
+     2. Add `DOCKER_USERNAME` and `DOCKER_PASSWORD` to GitHub Secrets
+     3. Update `deploy.sdl.yaml` to use: `docker.io/yourusername/agentkaia:latest`
+     4. GitHub Actions will push to both GHCR and Docker Hub
+     5. See [DOCKER_HUB_SETUP.md](./DOCKER_HUB_SETUP.md) for detailed steps
+     
+     **Option B: Make GHCR Package Public (If you have permissions)**
      1. Go to `https://github.com/orgs/si3-ecosystem/packages`
      2. Find `agentkaia` package → Package settings
      3. Danger Zone → Change visibility → Public
-   - **Why Safe**: Image doesn't contain secrets (they're in env vars)
+     
+   - **Security Note**: 
+     - ✅ **Safe**: Image contains only code, no secrets (all secrets are in env vars)
+     - ✅ **Verified**: No hardcoded secrets in codebase (all use `process.env.*`)
 
 2. **Invalid Deployment Hash:**
    - Check `deploy.sdl.yaml` syntax
