@@ -179,6 +179,31 @@ async function setupTelegrafInstancePatcher() {
             console.log(`[Telegram Chat ID Capture] Timestamp: ${sendTime}`);
             console.log(`[Telegram Chat ID Capture] 📤 sendMessage called - chatId: ${chatId}, text: ${text?.substring(0, 100) || '(empty)'}`);
             
+            // NEW: Check if we've already replied to the most recent user message
+            // This prevents duplicate replies to the same user message
+            try {
+              const { getUnrepliedMessages, markMessageAsReplied, hasRepliedToMessage } = await import('./services/messageIdTracker.js');
+              const unreplied = getUnrepliedMessages(chatId);
+              
+              // If there are unreplied messages, check if we've already replied to the most recent one
+              if (unreplied.length > 0) {
+                const mostRecentMessage = unreplied[unreplied.length - 1];
+                const messageId = mostRecentMessage.messageId;
+                
+                if (hasRepliedToMessage(chatId, messageId)) {
+                  console.log(`[Telegram Chat ID Capture] 🚫 BLOCKING sendMessage - already replied to message ${messageId}`);
+                  return { message_id: 0, date: Date.now(), chat: { id: chatId } };
+                }
+                
+                // Mark as replied BEFORE sending (prevents race conditions)
+                markMessageAsReplied(chatId, messageId);
+                console.log(`[Telegram Chat ID Capture] ✅ Marked message ${messageId} as replied before sending`);
+              }
+            } catch (error) {
+              console.error('[Telegram Chat ID Capture] Error checking message ID tracker:', error);
+              // Continue with other checks if message ID tracking fails
+            }
+            
             // CRITICAL: Check if this message should be blocked due to recent action execution
             // Use dynamic import to avoid circular dependency issues
             const interceptorModule = await import('./services/llmResponseInterceptor.js');
@@ -590,17 +615,33 @@ async function startAgents() {
               console.log('[Telegram Chat ID Capture] 📥 Handler called with update type:', update?.update_id ? 'update_id: ' + update.update_id : 'no update_id');
               console.log('[Telegram Chat ID Capture] Update keys:', Object.keys(update || {}));
               
-              // Try to extract chat ID from update
+              // Try to extract chat ID and message ID from update
               const chatId = update?.message?.chat?.id || 
                             update?.callback_query?.message?.chat?.id ||
                             update?.edited_message?.chat?.id ||
                             update?.channel_post?.chat?.id;
+              const messageId = update?.message?.message_id ||
+                               update?.edited_message?.message_id ||
+                               update?.callback_query?.message?.message_id;
               const messageText = update?.message?.text || 
                                  update?.edited_message?.text || 
                                  update?.callback_query?.data ||
                                  '';
               
-              console.log('[Telegram Chat ID Capture] Extracted chatId:', chatId, 'messageText:', messageText?.substring(0, 50) || '(empty)');
+              console.log('[Telegram Chat ID Capture] Extracted chatId:', chatId, 'messageId:', messageId, 'messageText:', messageText?.substring(0, 50) || '(empty)');
+              
+              // Record user message ID for tracking
+              if (chatId && messageId && messageText) {
+                try {
+                  const { recordUserMessage } = await import('./services/messageIdTracker.js');
+                  // We need roomId - try to get it from the update or use chatId temporarily
+                  // The roomId will be set properly when the message is processed by ElizaOS
+                  const roomId = String(chatId); // Use chatId as roomId initially
+                  recordUserMessage(chatId, messageId, roomId);
+                } catch (error) {
+                  console.error('[Telegram Chat ID Capture] Error recording user message:', error);
+                }
+              }
               
               if (chatId && messageText) {
                 console.log('[Telegram Chat ID Capture] ✅ Captured chat ID from handler:', chatId, 'for message:', messageText.substring(0, 50));
