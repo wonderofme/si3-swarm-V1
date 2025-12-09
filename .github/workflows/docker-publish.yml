@@ -43,9 +43,9 @@ jobs:
           context: .
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/agentkaia:latest
-            ghcr.io/${{ github.repository_owner }}/agentkaia:${{ github.sha }}
-            ${{ secrets.DOCKER_USERNAME != '' && format('docker.io/{0}/agentkaia:latest', secrets.DOCKER_USERNAME) || '' }}
-            ${{ secrets.DOCKER_USERNAME != '' && format('docker.io/{0}/agentkaia:{1}', secrets.DOCKER_USERNAME, github.sha) || '' }}
+            ghcr.io/${{ github.repository_owner }}/kaia-swarm:latest
+            ghcr.io/${{ github.repository_owner }}/kaia-swarm:${{ github.sha }}
+            ${{ secrets.DOCKER_USERNAME != '' && format('docker.io/{0}/kaia-swarm:latest', secrets.DOCKER_USERNAME) || '' }}
+            ${{ secrets.DOCKER_USERNAME != '' && format('docker.io/{0}/kaia-swarm:{1}', secrets.DOCKER_USERNAME, github.sha) || '' }}
 
 

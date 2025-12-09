@@ -336,7 +336,7 @@ npm install
 
 4. **Image Not Found:**
    - Verify image is built and pushed to GHCR
-   - Check image path: `ghcr.io/si3-ecosystem/agentkaia:latest`
+   - Check image path: `ghcr.io/wonderofme/kaia-swarm:latest`
    - Ensure GitHub Actions workflow completed successfully
 
 ---
