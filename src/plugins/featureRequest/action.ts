@@ -23,8 +23,14 @@ export const featureRequestAction: Action = {
     
     // Don't trigger if user is just saying they want to make a feature request
     // Only trigger when they actually provide the feature request details
-    // Check for combinations: (want/like) + (make/submit/send) + "feature request"
-    const hasWantPhrase = text.includes('want') || text.includes('would like') || text.includes('like to');
+    // Check for combinations: (want/would like/i'd like/id like/like) + (make/submit/send) + "feature request"
+    const hasWantPhrase = 
+      text.includes('want') || 
+      text.includes('would like') || 
+      text.includes('like to') ||
+      text.includes('id like') ||
+      text.includes('i\'d like') ||
+      (text.includes('like') && (text.includes('make') || text.includes('submit') || text.includes('send')));
     const hasMakePhrase = text.includes('make') || text.includes('submit') || text.includes('send');
     const hasFeatureRequest = text.includes('feature request');
     

@@ -22,9 +22,15 @@ export const featureRequestProvider: Provider = {
     const userText = (message.content.text || '').toLowerCase().trim();
     
     // Check if user explicitly wants to make a feature request
-    // Look for combinations of: (want/would like/like) + (make/submit/send) + "feature request"
-    // This handles variations like "I want to make a new feature request"
-    const hasWantPhrase = userText.includes('want') || userText.includes('would like') || userText.includes('like to');
+    // Look for combinations of: (want/would like/i'd like/id like/like) + (make/submit/send) + "feature request"
+    // This handles variations like "I want to make a new feature request" or "id like to make a feature request"
+    const hasWantPhrase = 
+      userText.includes('want') || 
+      userText.includes('would like') || 
+      userText.includes('like to') ||
+      userText.includes('id like') ||
+      userText.includes('i\'d like') ||
+      (userText.includes('like') && (userText.includes('make') || userText.includes('submit') || userText.includes('send')));
     const hasMakePhrase = userText.includes('make') || userText.includes('submit') || userText.includes('send');
     const hasFeatureRequest = userText.includes('feature request');
     
@@ -35,7 +41,9 @@ export const featureRequestProvider: Provider = {
     const simpleVariations = 
       userText.includes('make a feature request') ||
       userText.includes('submit a feature request') ||
-      userText.includes('send a feature request');
+      userText.includes('send a feature request') ||
+      userText.includes('make feature request') ||
+      (userText.includes('feature request') && (userText.includes('make') || userText.includes('submit') || userText.includes('send')));
     
     if (wantsToMakeFeatureRequest || simpleVariations) {
       // User wants to make a feature request - ask for details
