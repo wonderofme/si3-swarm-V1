@@ -589,6 +589,33 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
               });
             }
           }
+          
+          // Block if: we're in ASK_ROLE step AND LLM generated incorrect "What's your role in the Web3 space" message
+          // The correct message should start with "To be able to match you with members and opportunities..."
+          if (cachedStep === 'ASK_ROLE') {
+            const isIncorrectRoleMessage = fullMessageText.includes("what's your role in the web3 space") ||
+                                         (fullMessageText.includes("thanks for sharing your location") && 
+                                          fullMessageText.includes("what's your role"));
+            
+            const isCorrectRoleMessage = fullMessageText.includes("to be able to match you with members") ||
+                                       fullMessageText.includes("founder/builder") ||
+                                       fullMessageText.includes("marketing/bd/partnerships");
+            
+            // Block if it's the incorrect message (not the correct ROLES message)
+            if (isIncorrectRoleMessage && !isCorrectRoleMessage) {
+              console.log('[LLM Response Interceptor] 🚫 BLOCKING agent message - LLM generated incorrect role question instead of using exact ROLES message from provider');
+              console.log('[LLM Response Interceptor] Blocked message text:', memory.content.text?.substring(0, 100));
+              // Return empty memory to prevent sending
+              return await originalCreateMemory({
+                ...memory,
+                content: {
+                  ...memory.content,
+                  text: '', // Empty text prevents sending
+                  action: undefined
+                }
+              });
+            }
+          }
         }
         
         // NEW APPROACH: Allow LLM to generate onboarding messages
