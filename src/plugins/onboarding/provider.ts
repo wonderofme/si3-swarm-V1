@@ -114,6 +114,25 @@ After sending this message, wait for the user's response with their name.]`;
   
   // ASK_LANGUAGE step
   if (step === 'ASK_LANGUAGE') {
+    // CRITICAL: If user has already provided a valid language selection (1-4), skip to location question
+    // This prevents the language question from being sent again when user responds with their selection
+    const trimmedText = userText.trim();
+    const isValidLanguageSelection = /^[1-4]$/.test(trimmedText);
+    
+    console.log(`[Onboarding Provider] ASK_LANGUAGE step - userText: "${userText}", isValidLanguageSelection: ${isValidLanguageSelection}`);
+    
+    // If user provided a valid language selection, show location question instead
+    if (isValidLanguageSelection) {
+      console.log(`[Onboarding Provider] Detected valid language selection, returning location question`);
+      return `[ONBOARDING STEP: ASK_LOCATION - Send this EXACT message word-for-word. Do not modify, paraphrase, or add anything:
+
+${msgs.LOCATION}
+
+After sending this message, wait for the user's response with their location or "Next" to skip.]`;
+    }
+    
+    // First time - show language question
+    console.log(`[Onboarding Provider] Showing language question`);
     return `[ONBOARDING STEP: ASK_LANGUAGE - Send this EXACT message word-for-word. Do not modify, paraphrase, or add anything:
 
 ${msgs.LANGUAGE}
