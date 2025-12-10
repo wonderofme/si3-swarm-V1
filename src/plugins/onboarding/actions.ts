@@ -221,22 +221,30 @@ export const continueOnboardingAction: Action = {
     const userLang: LanguageCode = profile.language || 'en';
     const msgs = getMessages(userLang);
 
-    // Check for restart commands
+    // Check for restart commands - MUST be checked BEFORE getting userLang
+    // to ensure we always use English on restart
     if (isRestartCommand(text)) {
       console.log('[Onboarding Action] Restart command detected, resetting onboarding');
       // Clear the entire onboarding state by setting a fresh state
       const freshState = {
         step: 'ASK_NAME' as OnboardingStep, // Set to ASK_NAME so we can send the greeting
-        profile: {} as UserProfile
+        profile: {} as UserProfile // Clear all profile data including language
       };
       await runtime.cacheManager.set(`onboarding_${message.userId}`, freshState as any);
+      
+      // CRITICAL: Update onboarding step cache immediately to ASK_NAME
+      // This ensures the LLM response interceptor blocks any LLM-generated messages
+      const { updateOnboardingStepCache } = await import('../../services/llmResponseInterceptor.js');
+      if (typeof updateOnboardingStepCache === 'function') {
+        updateOnboardingStepCache(message.userId, 'ASK_NAME');
+      }
       
       // Record action execution immediately after state change
       if (roomId) recordActionExecution(roomId);
       
-      // Get fresh messages (will default to English)
+      // ALWAYS use English for restart greeting
       const freshMsgs = getMessages('en');
-      console.log('[Onboarding Action] Sending greeting via callback');
+      console.log('[Onboarding Action] Sending greeting via callback (English)');
       await safeCallback(callback, runtime, roomId, message.userId, freshMsgs.GREETING);
       return true;
     }

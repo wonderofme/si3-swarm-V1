@@ -100,6 +100,12 @@ export function getOnboardingStepFromCache(userId: string): string | undefined {
   return onboardingStepCache.get(userId);
 }
 
+// Export function to update onboarding step cache (for immediate updates during restart)
+export function updateOnboardingStepCache(userId: string, step: string): void {
+  onboardingStepCache.set(userId, step);
+  console.log(`[LLM Response Interceptor] Updated onboarding step cache for user ${userId}: ${step}`);
+}
+
 // Export roomIdToTelegramChatId map so it can be accessed from other modules
 export function getRoomIdForChatId(chatId: string | number): string | undefined {
   for (const [roomId, mappedChatId] of roomIdToTelegramChatId.entries()) {
