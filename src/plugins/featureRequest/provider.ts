@@ -1,14 +1,25 @@
 import { IAgentRuntime, Memory, Provider, State } from '@elizaos/core';
 
-const FEATURE_REQUEST_PROMPT_CANT_DO = `I am not able to perform that request yet, but will be able to do a lot more soon.
-
-I am taking feature requests! What would you like me to do?`;
-
+// Exact messages for LLM to use word-for-word (like onboarding)
 const FEATURE_REQUEST_PROMPT_ASK_DETAILS = `[FEATURE REQUEST PROMPT] - Send this EXACT message word-for-word. Do not modify, paraphrase, or add anything:
 
 Great! I'd love to hear your feature request. What would you like me to be able to do? Please describe the feature in detail.
 
 After sending this message, wait for the user's response with their feature request details.]`;
+
+const FEATURE_REQUEST_PROMPT_CANT_DO = `[FEATURE REQUEST PROMPT] - Send this EXACT message word-for-word. Do not modify, paraphrase, or add anything:
+
+I am not able to perform that request yet, but will be able to do a lot more soon.
+
+I am taking feature requests! What would you like me to do?
+
+After sending this message, wait for the user's response.]`;
+
+const FEATURE_REQUEST_PROMPT_ACKNOWLEDGE = `[FEATURE REQUEST PROMPT] - Send this EXACT message word-for-word. Do not modify, paraphrase, or add anything:
+
+Thank you for your feature request! I've sent it to our team at opereayoola@gmail.com. We'll review it and work on adding it soon. 💜
+
+After sending this message, use action: SUBMIT_FEATURE_REQUEST to send the email.]`;
 
 export const featureRequestProvider: Provider = {
   get: async (runtime: IAgentRuntime, message: Memory, state?: State): Promise<string | null> => {
@@ -25,10 +36,17 @@ export const featureRequestProvider: Provider = {
     
     const userText = (message.content.text || '').toLowerCase().trim();
     
-    // Check if user explicitly wants to make a feature request
-    // Look for various ways people might phrase wanting to make a feature request
+    // Check if an action was just executed (feature request was submitted)
+    const hasAction = state?.actionNames && state.actionNames.length > 0;
+    const isFeatureRequestAction = hasAction && state.actionNames?.includes('SUBMIT_FEATURE_REQUEST');
     
-    // Phrases indicating they want to make/request a feature
+    if (isFeatureRequestAction) {
+      // Action just executed - acknowledge and tell LLM to use the action
+      console.log(`[Feature Request Provider] ✅ Action executed, returning acknowledgment prompt`);
+      return FEATURE_REQUEST_PROMPT_ACKNOWLEDGE;
+    }
+    
+    // Check if user explicitly wants to make a feature request (asking to make one, not providing details)
     const hasRequestPhrase = 
       userText.includes('feature request') ||
       userText.includes('request for') ||
@@ -41,7 +59,6 @@ export const featureRequestProvider: Provider = {
       userText.includes('add feature') ||
       userText.includes('suggest feature');
     
-    // Action words indicating they want to do something
     const hasActionPhrase = 
       userText.includes('make') ||
       userText.includes('submit') ||
@@ -50,7 +67,6 @@ export const featureRequestProvider: Provider = {
       userText.includes('suggest') ||
       userText.includes('add');
     
-    // Desire/intent words
     const hasWantPhrase = 
       userText.includes('want') || 
       userText.includes('would like') || 
@@ -60,11 +76,9 @@ export const featureRequestProvider: Provider = {
       userText.includes('need') ||
       userText.includes('wish');
     
-    // If they mention feature-related terms AND have action/want phrases, they're asking to make one
     const wantsToMakeFeatureRequest = 
       hasRequestPhrase && (hasActionPhrase || hasWantPhrase);
     
-    // Also check for direct combinations
     const directVariations = 
       userText.includes('make a feature request') ||
       userText.includes('submit a feature request') ||
@@ -78,28 +92,18 @@ export const featureRequestProvider: Provider = {
       userText.includes('add feature') ||
       (userText.includes('feature') && (userText.includes('request') || userText.includes('suggest') || userText.includes('add')));
     
-    console.log(`[Feature Request Provider] hasRequestPhrase: ${hasRequestPhrase}, hasActionPhrase: ${hasActionPhrase}, hasWantPhrase: ${hasWantPhrase}`);
-    console.log(`[Feature Request Provider] wantsToMakeFeatureRequest: ${wantsToMakeFeatureRequest}, directVariations: ${directVariations}`);
-    
     if (wantsToMakeFeatureRequest || directVariations) {
       // User wants to make a feature request - ask for details
-      console.log(`[Feature Request Provider] ✅ Returning ASK_DETAILS prompt`);
+      console.log(`[Feature Request Provider] ✅ User wants to make feature request, returning ASK_DETAILS prompt`);
       return FEATURE_REQUEST_PROMPT_ASK_DETAILS;
-    }
-    
-    // Check if any action was triggered
-    const hasAction = state?.actionNames && state.actionNames.length > 0;
-    if (hasAction) {
-      return null; // Don't show feature request if an action was triggered
     }
     
     // Check if the message seems like a request the bot can't fulfill
     // (but NOT if they're explicitly asking to make a feature request - handled above)
-    // Also exclude if they're asking to add/suggest/make a feature
     const isAskingToMakeFeature = 
-      userText.includes('add') && userText.includes('feature') ||
-      userText.includes('suggest') && userText.includes('feature') ||
-      userText.includes('make') && userText.includes('feature');
+      (userText.includes('add') && userText.includes('feature')) ||
+      (userText.includes('suggest') && userText.includes('feature')) ||
+      (userText.includes('make') && userText.includes('feature'));
     
     const isFeatureRequestTrigger = 
       (userText.includes('can you') ||
@@ -108,11 +112,12 @@ export const featureRequestProvider: Provider = {
       userText.includes('i want') ||
       userText.includes('please') ||
       userText.includes('help me')) &&
-      !userText.includes('feature request') && // Don't trigger if they're asking about feature requests
-      !isAskingToMakeFeature; // Don't trigger if they're asking to make/add/suggest a feature
+      !userText.includes('feature request') &&
+      !isAskingToMakeFeature;
     
     if (isFeatureRequestTrigger) {
-      // Return the feature request prompt for when bot can't do something
+      // Bot can't do something - suggest feature requests
+      console.log(`[Feature Request Provider] ✅ Bot can't fulfill request, returning CANT_DO prompt`);
       return FEATURE_REQUEST_PROMPT_CANT_DO;
     }
     
