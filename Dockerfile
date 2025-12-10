@@ -15,8 +15,9 @@ COPY package.json package-lock.json tsconfig.json ./
 # Force clean install to ensure overrides are applied
 # Remove any existing node_modules to ensure fresh install with overrides
 RUN rm -rf node_modules .npm && npm ci --include=optional
-# Verify overrides are applied
+# Verify overrides are applied and show actual zod version in use
 RUN npm list zod zod-to-json-schema || true
+RUN node -e "const zod = require('zod'); console.log('Zod version:', require('zod/package.json').version); console.log('Zod exports:', Object.keys(require('zod/package.json').exports || {}));" || true
 
 # Copy source
 COPY src ./src
