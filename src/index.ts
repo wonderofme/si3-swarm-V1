@@ -490,6 +490,37 @@ async function startAgents() {
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
           try {
             console.log(`[Telegram Client] Attempting to start Telegram client (attempt ${attempt}/${maxRetries})...`);
+            
+            // CRITICAL: Delete any existing webhook before starting polling
+            // If a webhook is set, polling won't work
+            try {
+              const botToken = process.env.TELEGRAM_BOT_TOKEN;
+              if (botToken) {
+                const webhookInfo = await fetch(`https://api.telegram.org/bot${botToken}/getWebhookInfo`);
+                const webhookData = await webhookInfo.json();
+                if (webhookData.ok && webhookData.result.url) {
+                  console.log('[Telegram Client] ⚠️ Webhook detected, deleting it to enable polling...');
+                  console.log('[Telegram Client] Webhook URL:', webhookData.result.url);
+                  const deleteResponse = await fetch(`https://api.telegram.org/bot${botToken}/deleteWebhook`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ drop_pending_updates: true })
+                  });
+                  const deleteResult = await deleteResponse.json();
+                  if (deleteResult.ok) {
+                    console.log('[Telegram Client] ✅ Webhook deleted successfully');
+                  } else {
+                    console.error('[Telegram Client] ⚠️ Failed to delete webhook:', deleteResult.description);
+                  }
+                } else {
+                  console.log('[Telegram Client] ✅ No webhook set (polling can work)');
+                }
+              }
+            } catch (webhookError: any) {
+              console.error('[Telegram Client] ⚠️ Error checking/deleting webhook:', webhookError.message);
+              // Continue anyway - might still work
+            }
+            
             telegramClient = await TelegramClientInterface.start(kaiaRuntime);
             console.log(`[Telegram Client] ✅ Successfully started Telegram client on attempt ${attempt}`);
             
