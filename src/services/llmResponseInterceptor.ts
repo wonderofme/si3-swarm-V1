@@ -566,6 +566,29 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
               }
             }
           }
+          
+          // Block if: we're in ASK_LANGUAGE step AND user provided a valid language selection (1-4)
+          if (cachedStep === 'ASK_LANGUAGE' && /^[1-4]$/.test(userText.trim())) {
+            // Check if the generated message is the language question (duplicate)
+            const isLanguageQuestion = fullMessageText.includes("what's your preferred language") ||
+                                     fullMessageText.includes("1. english") ||
+                                     fullMessageText.includes("2. spanish") ||
+                                     fullMessageText.includes("reply with the number");
+            
+            if (isLanguageQuestion) {
+              console.log('[LLM Response Interceptor] 🚫 BLOCKING agent message - user provided valid language selection during ASK_LANGUAGE step AND LLM generated language question again (preventing duplicate)');
+              console.log('[LLM Response Interceptor] Blocked message text:', memory.content.text?.substring(0, 100));
+              // Return empty memory to prevent sending
+              return await originalCreateMemory({
+                ...memory,
+                content: {
+                  ...memory.content,
+                  text: '', // Empty text prevents sending
+                  action: undefined
+                }
+              });
+            }
+          }
         }
         
         // NEW APPROACH: Allow LLM to generate onboarding messages
