@@ -1,4 +1,5 @@
 name: Build and Publish Docker image to GHCR
+# Workflow builds and pushes to ghcr.io/wonderofme/si3-swarm-v1
 
 on:
   push:
