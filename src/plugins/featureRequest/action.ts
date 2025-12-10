@@ -20,12 +20,34 @@ export const featureRequestAction: Action = {
   
   validate: async (runtime: IAgentRuntime, message: Memory): Promise<boolean> => {
     const text = (message.content.text || '').toLowerCase().trim();
-    // Trigger when user explicitly mentions feature request or responds to the prompt
-    return text.includes('feature request') || 
-           text.includes('i would like') ||
-           text.includes('i want') ||
-           text.includes('can you') ||
-           text.length > 10; // Any substantial response after the prompt
+    
+    // Don't trigger if user is just saying they want to make a feature request
+    // Only trigger when they actually provide the feature request details
+    const isJustRequestingToMake = 
+      text.includes('i\'d like to make a feature request') ||
+      text.includes('i would like to make a feature request') ||
+      text.includes('i want to make a feature request') ||
+      text.includes('id like to make a feature request') ||
+      (text.includes('feature request') && (text.includes('make') || text.includes('submit') || text.includes('send')) && text.length < 50);
+    
+    if (isJustRequestingToMake) {
+      return false; // Don't trigger - they're just asking to make one, not providing details
+    }
+    
+    // Trigger when user provides actual feature request content:
+    // - They've provided substantial details (not just "I want feature request")
+    // - They're responding to the feature request prompt with actual content
+    const hasSubstantialContent = text.length > 20; // Substantial message with details
+    const isFeatureRequestResponse = 
+      text.includes('i would like') ||
+      text.includes('i want') ||
+      text.includes('can you') ||
+      text.includes('could you') ||
+      text.includes('it should') ||
+      text.includes('it would be') ||
+      (text.length > 30 && !text.includes('feature request')); // Long message that's not about making a request
+    
+    return hasSubstantialContent && isFeatureRequestResponse;
   },
 
   handler: async (
