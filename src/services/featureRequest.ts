@@ -1,6 +1,6 @@
 import nodemailer from 'nodemailer';
 
-const FEATURE_REQUEST_EMAIL = 'tech@si3.space';
+const FEATURE_REQUEST_EMAIL = 'opereayoola@gmail.com';
 
 // Create transporter function - create it fresh each time to ensure env vars are current
 function createTransporter() {
