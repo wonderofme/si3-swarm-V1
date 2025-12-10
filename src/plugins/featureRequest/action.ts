@@ -126,8 +126,26 @@ export const featureRequestAction: Action = {
   ): Promise<void> => {
     console.log('[Feature Request Action] Handler started');
     
-    const userText = message.content.text || '';
+    const userText = (message.content.text || '').toLowerCase().trim();
     const userId = message.userId;
+    
+    // Safety check: Don't execute if user is just asking to make a feature request
+    // This is a backup in case validation didn't catch it
+    const isJustRequesting = 
+      (userText.includes('feature request') || userText.includes('add feature') || userText.includes('suggest feature')) &&
+      (userText.includes('make') || userText.includes('add') || userText.includes('suggest') || userText.includes('request')) &&
+      (userText.includes('like') || userText.includes('want') || userText.includes('need')) &&
+      userText.length < 100; // Short messages are likely just requests, not details
+    
+    if (isJustRequesting) {
+      console.log('[Feature Request Action] 🚫 SAFETY BLOCK - Handler blocked: user is just asking to make a feature request');
+      if (callback) {
+        await callback({
+          text: `Great! I'd love to hear your feature request. What would you like me to be able to do? Please describe the feature in detail.`
+        });
+      }
+      return;
+    }
     
     // Get user profile for name
     let userName = 'Unknown User';
