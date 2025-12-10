@@ -82,12 +82,19 @@ After sending this message, the action handler will update the onboarding state.
     // CRITICAL: If user has already provided a name (this is a name response), skip to language question
     // This prevents the greeting from being sent again when user responds with their name
     // Check if the message looks like a name (not a command, not empty, and we're in ASK_NAME step)
-    const looksLikeName = userText.trim().length > 0 && 
+    const trimmedText = userText.trim();
+    const looksLikeName = trimmedText.length > 0 && 
                           !isRestartCommand(userText) && 
-                          userText.trim().length < 100; // Reasonable name length
+                          trimmedText.length < 100 && // Reasonable name length
+                          trimmedText.length >= 1; // At least 1 character
     
-    // If we have a name in profile OR user just provided a name, show language question
-    if (profile.name || looksLikeName) {
+    console.log(`[Onboarding Provider] ASK_NAME step - userText: "${userText}", profile.name: "${profile.name}", looksLikeName: ${looksLikeName}`);
+    
+    // If we have a name in profile OR user just provided a name (and it's not a restart command), show language question
+    // IMPORTANT: Only show language question if this is NOT the initial greeting (i.e., user has responded)
+    // We detect this by checking if the text is NOT a restart command and looks like a name
+    if (profile.name || (looksLikeName && !isRestart)) {
+      console.log(`[Onboarding Provider] Detected name response, returning language question`);
       // User has provided name, show language question instead
       return `[ONBOARDING STEP: ASK_LANGUAGE - Send this EXACT message word-for-word. Do not modify, paraphrase, or add anything:
 
@@ -96,7 +103,8 @@ ${msgs.LANGUAGE}
 After sending this message, wait for the user's response with a number (1-4).]`;
     }
     
-    // First time - show greeting
+    // First time - show greeting (only if this is a restart or initial greeting)
+    console.log(`[Onboarding Provider] Showing initial greeting`);
     return `[ONBOARDING STEP: ASK_NAME - Send this EXACT message word-for-word. Do not modify, paraphrase, or add anything:
 
 ${msgs.GREETING}
