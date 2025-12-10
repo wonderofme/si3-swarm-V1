@@ -1,5 +1,5 @@
 name: Build and Publish Docker image to GHCR
-# Workflow builds and pushes to ghcr.io/wonderofme/si3-swarm-v1
+# Workflow builds and pushes to ghcr.io/wonderofme/kaia-swarm
 
 on:
   push:
@@ -38,8 +38,8 @@ jobs:
           context: .
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/si3-swarm-v1:v0.2.0
-            ghcr.io/${{ github.repository_owner }}/si3-swarm-v1:latest
-            ghcr.io/${{ github.repository_owner }}/si3-swarm-v1:${{ github.sha }}
+            ghcr.io/${{ github.repository_owner }}/kaia-swarm:v0.2.0
+            ghcr.io/${{ github.repository_owner }}/kaia-swarm:latest
+            ghcr.io/${{ github.repository_owner }}/kaia-swarm:${{ github.sha }}
 
 
