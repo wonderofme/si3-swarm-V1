@@ -530,46 +530,44 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
         // The provider now gives exact messages for LLM to use word-for-word
         // No blocking needed - LLM will use the exact messages from provider context
         console.log('[LLM Response Interceptor] ✅ Allowing LLM message generation (onboarding messages now handled by provider)');
-          // Continue with normal checks if we can't determine onboarding step
-        }
-        
-        // CRITICAL: Check if message lock is active (action handler is executing)
-        if (isMessageLocked(memory.roomId)) {
-          console.log('[LLM Response Interceptor] 🚫 BLOCKING agent message - message lock is active (action handler executing)');
-          console.log('[LLM Response Interceptor] Blocked message text:', messageText);
-          // Return empty memory with action removed to prevent both sending AND action execution
-          return await originalCreateMemory({
-            ...memory,
-            content: {
-              ...memory.content,
-              text: '', // Empty text prevents sending
-              action: undefined // Remove action to prevent duplicate execution
-            }
-          });
-        }
-        
-        // CRITICAL FIX: Block agent messages if an action was executed recently
-        // This prevents ElizaOS from generating a duplicate response after action execution
-        // Even if the provider wasn't called (which seems to be the case for follow-up responses)
-        console.log('[LLM Response Interceptor] 🔍 Checking action execution status before blocking check...');
-        console.log('[LLM Response Interceptor] Current map size:', actionExecutionTimestamps.size);
-        console.log('[LLM Response Interceptor] All roomIds in map:', Array.from(actionExecutionTimestamps.keys()));
-        const actionWasRecent = wasActionExecutedRecently(memory.roomId);
-        if (actionWasRecent) {
-          console.log('[LLM Response Interceptor] 🚫 BLOCKING agent message - action was executed recently, preventing duplicate response');
-          console.log('[LLM Response Interceptor] Blocked message text:', messageText);
-          // Return empty memory with action removed to prevent both sending AND action execution
-          return await originalCreateMemory({
-            ...memory,
-            content: {
-              ...memory.content,
-              text: '', // Empty text prevents sending
-              action: undefined // Remove action to prevent duplicate execution
-            }
-          });
-        } else {
-          console.log('[LLM Response Interceptor] ✅ Action was NOT recent, allowing agent message');
-        }
+      }
+      
+      // CRITICAL: Check if message lock is active (action handler is executing)
+      if (isMessageLocked(memory.roomId)) {
+        console.log('[LLM Response Interceptor] 🚫 BLOCKING agent message - message lock is active (action handler executing)');
+        console.log('[LLM Response Interceptor] Blocked message text:', messageText);
+        // Return empty memory with action removed to prevent both sending AND action execution
+        return await originalCreateMemory({
+          ...memory,
+          content: {
+            ...memory.content,
+            text: '', // Empty text prevents sending
+            action: undefined // Remove action to prevent duplicate execution
+          }
+        });
+      }
+      
+      // CRITICAL FIX: Block agent messages if an action was executed recently
+      // This prevents ElizaOS from generating a duplicate response after action execution
+      // Even if the provider wasn't called (which seems to be the case for follow-up responses)
+      console.log('[LLM Response Interceptor] 🔍 Checking action execution status before blocking check...');
+      console.log('[LLM Response Interceptor] Current map size:', actionExecutionTimestamps.size);
+      console.log('[LLM Response Interceptor] All roomIds in map:', Array.from(actionExecutionTimestamps.keys()));
+      const actionWasRecent = wasActionExecutedRecently(memory.roomId);
+      if (actionWasRecent) {
+        console.log('[LLM Response Interceptor] 🚫 BLOCKING agent message - action was executed recently, preventing duplicate response');
+        console.log('[LLM Response Interceptor] Blocked message text:', messageText);
+        // Return empty memory with action removed to prevent both sending AND action execution
+        return await originalCreateMemory({
+          ...memory,
+          content: {
+            ...memory.content,
+            text: '', // Empty text prevents sending
+            action: undefined // Remove action to prevent duplicate execution
+          }
+        });
+      } else {
+        console.log('[LLM Response Interceptor] ✅ Action was NOT recent, allowing agent message');
       }
       
       // CRITICAL FIX: Block agent messages if another agent message was sent very recently

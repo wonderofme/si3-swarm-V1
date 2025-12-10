@@ -17,8 +17,7 @@ import si3Character from '../characters/si3.character.json' with { type: 'json' 
 import { createRouterPlugin } from './plugins/router/index.js';
 import { createOnboardingPlugin } from './plugins/onboarding/index.js';
 import { createMatchingPlugin } from './plugins/matching/index.js';
-import { DbCacheAdapter } from './adapters/dbCache.js';
-import { startFollowUpScheduler } from './services/followUpScheduler.js';
+import { MemoryCacheAdapter } from './adapters/memoryCache.js';
 
 async function runMigrations(db: PostgresDatabaseAdapter) {
   console.log('Running database migrations...');
@@ -98,9 +97,9 @@ async function createRuntime(character: any) {
     await runMigrations(db);
   }
 
-  // Use database-backed cache for persistent storage
+  // Use in-memory cache adapter
   const agentId = character.id || character.name;
-  const cacheManager = new CacheManager(new DbCacheAdapter(process.env.DATABASE_URL as string, agentId));
+  const cacheManager = new CacheManager(new MemoryCacheAdapter());
 
   const plugins = [];
   if (character.plugins?.includes('router')) plugins.push(createRouterPlugin());
@@ -1140,9 +1139,6 @@ async function startAgents() {
   }
 
   console.log('Kaia, MoonDAO, and SI<3> runtimes started.');
-  
-  // Start Scheduler
-  startFollowUpScheduler(kaiaRuntime);
 }
 
 // Add global error handlers to catch unhandled promise rejections (including 409 conflicts)
