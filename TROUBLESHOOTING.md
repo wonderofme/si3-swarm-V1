@@ -302,6 +302,7 @@ npm install
 - "Invalid: deployment hash" error
 - 503 Service Unavailable
 - 401 Unauthorized when pulling image
+- "Error while sending manifest to provider" / "Something went wrong"
 
 **Solution:**
 1. **401 Unauthorized (Image Pull Error):**
@@ -338,6 +339,18 @@ npm install
    - Verify image is built and pushed to GHCR
    - Check image path: `ghcr.io/wonderofme/kaia-swarm:latest`
    - Ensure GitHub Actions workflow completed successfully
+
+5. **"Error while sending manifest to provider" / "Something went wrong":**
+   - **Most Common Cause**: Image tag doesn't exist yet (e.g., `v0.2.0` not built)
+   - **Solution**: 
+     - Use `latest` tag temporarily: `ghcr.io/wonderofme/kaia-swarm:latest`
+     - Or wait for GitHub Actions to build the version tag, then retry
+     - Or push code to trigger build, wait for workflow to complete
+   - **Other Causes**:
+     - Image is private (make GHCR package public or use Docker Hub)
+     - Provider connectivity issues (refresh page, try different provider)
+     - SDL syntax error (validate YAML syntax)
+     - Network timeout (retry after a few minutes)
 
 ---
 
