@@ -3,12 +3,16 @@ version: "2.0"
 services:
   kaia-swarm:
     image: ghcr.io/wonderofme/kaia-swarm:v221
-    env:
-      - DATABASE_URL=${DATABASE_URL}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      - JWT_SECRET=${JWT_SECRET}
-      - DIRECT_PORT=3000
+          env:
+            - DATABASE_URL=${DATABASE_URL}
+            - OPENAI_API_KEY=${OPENAI_API_KEY}
+            - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+            - JWT_SECRET=${JWT_SECRET}
+            - DIRECT_PORT=3000
+            - SMTP_HOST=${SMTP_HOST}
+            - SMTP_PORT=${SMTP_PORT}
+            - SMTP_USER=${SMTP_USER}
+            - SMTP_PASS=${SMTP_PASS}
     expose:
       - port: 3000
         as: 80
