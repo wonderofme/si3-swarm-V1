@@ -275,24 +275,12 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
   if (runtimeAny.completion && typeof runtimeAny.completion.generateText === 'function') {
     const originalGenerateText = runtimeAny.completion.generateText.bind(runtimeAny.completion);
     runtimeAny.completion.generateText = async function(...args: any[]) {
-      // CRITICAL: Check if ANY user is in an active onboarding step
-      // If so, block ALL LLM generation during onboarding (except CONFIRMATION/COMPLETED/NONE)
-      // This is a broad check, but necessary since we can't get roomId from generateText args
-      const activeOnboardingUsers = Array.from(onboardingStepCache.entries()).filter(([userId, step]) => {
-        return step && step !== 'COMPLETED' && step !== 'CONFIRMATION' && step !== 'NONE';
-      });
+      // NEW APPROACH: Allow LLM to generate onboarding messages
+      // The provider now gives exact messages for LLM to use word-for-word
+      // No blocking needed - LLM will use the exact messages from provider context
       
-      if (activeOnboardingUsers.length > 0) {
-        console.log(`[LLM Response Interceptor] 🚫 BLOCKING generateText - ${activeOnboardingUsers.length} user(s) in active onboarding steps`);
-        activeOnboardingUsers.forEach(([userId, step]) => {
-          console.log(`[LLM Response Interceptor]   - User ${userId}: ${step}`);
-        });
-        // Return empty response to prevent LLM generation during onboarding
-        return { text: '', action: null, reasoning: null };
-      }
-      
-      // Check if an action was recently executed for any room
-      // Since we don't have direct access to roomId here, we'll check all active roomIds
+      // Still check if an action was recently executed to prevent evaluate step hallucinations
+      // (but allow onboarding messages since they're now controlled by provider)
       const actionWasRecent = Array.from(actionExecutionTimestamps.entries()).some(([roomId, timestamp]) => {
         const elapsed = Date.now() - timestamp;
         return elapsed < ACTION_EXECUTION_BLOCK_WINDOW_MS;
@@ -307,7 +295,7 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
       // Call original method
       return originalGenerateText.apply(this, args);
     };
-    console.log('[LLM Response Interceptor] ✅ Patched runtime.completion.generateText to block evaluate step hallucinations AND onboarding LLM responses');
+    console.log('[LLM Response Interceptor] ✅ Patched runtime.completion.generateText (onboarding messages now handled by provider)');
   } else {
     console.log('[LLM Response Interceptor] ⚠️ runtime.completion.generateText not found, skipping LLM generation patch');
   }
@@ -538,87 +526,10 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
       if (isFromActionHandler) {
         console.log('[LLM Response Interceptor] ✅ ALLOWING agent message - from action handler callback (should send message)');
       } else {
-        // CRITICAL FIX: Block LLM responses during onboarding steps (except CONFIRMATION)
-        // The action handler sends all onboarding messages, so LLM should not respond
-        // Get the actual user's userId from the last user message (agent messages have agentId as userId)
-        // IMPORTANT: Only block if this is NOT from action handler (checked above)
-        // Use cached onboarding step for synchronous check (updated when user messages are processed)
-        try {
-          const lastUserMessage = lastUserMessagePerRoom.get(memory.roomId);
-          if (lastUserMessage && lastUserMessage.userId) {
-            // Check cache first (synchronous) - this is updated when user messages are processed
-            const cachedStep = onboardingStepCache.get(lastUserMessage.userId);
-            if (cachedStep && cachedStep !== 'COMPLETED' && cachedStep !== 'CONFIRMATION' && cachedStep !== 'NONE') {
-              console.log(`[LLM Response Interceptor] 🚫 BLOCKING LLM-generated message - user is in onboarding step: ${cachedStep} (from cache)`);
-              console.log('[LLM Response Interceptor] Blocked message text:', messageText);
-              console.log('[LLM Response Interceptor] Action handler will send the correct message instead');
-              
-              // CRITICAL: Don't call originalCreateMemory at all - this prevents Telegram client from sending
-              // The Telegram client's callback is triggered by createMemory, so if we don't call it, the message won't be sent
-              // Return a minimal memory object for logging only (but don't let it propagate to Telegram client)
-              const blockedMemory = {
-                id: undefined,
-                userId: memory.userId,
-                agentId: memory.agentId,
-                roomId: memory.roomId,
-                content: {
-                  text: '', // Empty text
-                  action: undefined, // Remove action
-                  metadata: {
-                    blocked: true,
-                    reason: 'onboarding_in_progress',
-                    originalText: messageText,
-                    blockedAt: Date.now()
-                  }
-                },
-                createdAt: Date.now()
-              } as any;
-              
-              console.log('[LLM Response Interceptor] ⚠️ Returning blocked memory WITHOUT calling originalCreateMemory to prevent Telegram send');
-              return blockedMemory;
-            }
-            
-            // If cache miss, do async check (but this might be too late)
-            const onboardingStep = await getOnboardingStep(runtime, lastUserMessage.userId);
-            // Update cache for next time
-            onboardingStepCache.set(lastUserMessage.userId, onboardingStep);
-            
-            if (onboardingStep && onboardingStep !== 'COMPLETED' && onboardingStep !== 'CONFIRMATION' && onboardingStep !== 'NONE') {
-              console.log(`[LLM Response Interceptor] 🚫 BLOCKING LLM-generated message - user is in onboarding step: ${onboardingStep}`);
-              console.log('[LLM Response Interceptor] Blocked message text:', messageText);
-              console.log('[LLM Response Interceptor] Action handler will send the correct message instead');
-              
-              // CRITICAL: Don't call originalCreateMemory at all - this prevents Telegram client from sending
-              // The Telegram client's callback is triggered by createMemory, so if we don't call it, the message won't be sent
-              const blockedMemory = {
-                id: undefined,
-                userId: memory.userId,
-                agentId: memory.agentId,
-                roomId: memory.roomId,
-                content: {
-                  text: '', // Empty text
-                  action: undefined, // Remove action
-                  metadata: {
-                    blocked: true,
-                    reason: 'onboarding_in_progress',
-                    originalText: messageText,
-                    blockedAt: Date.now()
-                  }
-                },
-                createdAt: Date.now()
-              } as any;
-              
-              console.log('[LLM Response Interceptor] ⚠️ Returning blocked memory WITHOUT calling originalCreateMemory to prevent Telegram send');
-              return blockedMemory;
-            } else {
-              console.log(`[LLM Response Interceptor] ✅ User is not in active onboarding step (step: ${onboardingStep}), allowing LLM message`);
-            }
-          } else {
-            console.log('[LLM Response Interceptor] ⚠️ No last user message found, cannot check onboarding step - allowing message');
-          }
-        } catch (error) {
-          console.error('[LLM Response Interceptor] Error checking onboarding step:', error);
-          console.log('[LLM Response Interceptor] Allowing message due to error');
+        // NEW APPROACH: Allow LLM to generate onboarding messages
+        // The provider now gives exact messages for LLM to use word-for-word
+        // No blocking needed - LLM will use the exact messages from provider context
+        console.log('[LLM Response Interceptor] ✅ Allowing LLM message generation (onboarding messages now handled by provider)');
           // Continue with normal checks if we can't determine onboarding step
         }
         

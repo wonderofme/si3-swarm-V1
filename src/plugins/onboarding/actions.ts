@@ -227,13 +227,13 @@ export const continueOnboardingAction: Action = {
       console.log('[Onboarding Action] Restart command detected, resetting onboarding');
       // Clear the entire onboarding state by setting a fresh state
       const freshState = {
-        step: 'ASK_NAME' as OnboardingStep, // Set to ASK_NAME so we can send the greeting
+        step: 'ASK_NAME' as OnboardingStep, // Set to ASK_NAME so LLM can send the greeting
         profile: {} as UserProfile // Clear all profile data including language
       };
       await runtime.cacheManager.set(`onboarding_${message.userId}`, freshState as any);
       
       // CRITICAL: Update onboarding step cache immediately to ASK_NAME
-      // This ensures the LLM response interceptor blocks any LLM-generated messages
+      // This ensures the provider gives the correct message to the LLM
       const { updateOnboardingStepCache } = await import('../../services/llmResponseInterceptor.js');
       if (typeof updateOnboardingStepCache === 'function') {
         updateOnboardingStepCache(message.userId, 'ASK_NAME');
@@ -242,10 +242,8 @@ export const continueOnboardingAction: Action = {
       // Record action execution immediately after state change
       if (roomId) recordActionExecution(roomId);
       
-      // ALWAYS use English for restart greeting
-      const freshMsgs = getMessages('en');
-      console.log('[Onboarding Action] Sending greeting via callback (English)');
-      await safeCallback(callback, runtime, roomId, message.userId, freshMsgs.GREETING);
+      // NEW APPROACH: Don't send message via callback - LLM will send it based on provider instructions
+      console.log('[Onboarding Action] State updated to ASK_NAME - LLM will send greeting via provider');
       return true;
     }
 
@@ -258,22 +256,21 @@ export const continueOnboardingAction: Action = {
           // Both name and language exist, skip to location
             await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_LOCATION');
             if (roomId) recordActionExecution(roomId);
-            // Send the location question via callback
-            await safeCallback(callback, runtime, roomId, message.userId, msgs.LOCATION);
+            // LLM will send the location question via provider
+            console.log('[Onboarding Action] State updated to ASK_LOCATION - LLM will send message via provider');
         } else {
           // Name exists but language doesn't, ask for language
               await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_LANGUAGE');
               if (roomId) recordActionExecution(roomId);
-              // Send the language question via callback
-              await safeCallback(callback, runtime, roomId, message.userId, msgs.LANGUAGE);
+              // LLM will send the language question via provider
+              console.log('[Onboarding Action] State updated to ASK_LANGUAGE - LLM will send message via provider');
         }
       } else {
         // No name, start with greeting
         await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_NAME');
         if (roomId) recordActionExecution(roomId);
-        // Send the greeting via callback (it already asks for name)
-        console.log('[Onboarding Action] Sending greeting via callback');
-        await safeCallback(callback, runtime, roomId, message.userId, msgs.GREETING);
+        // LLM will send the greeting via provider
+        console.log('[Onboarding Action] State updated to ASK_NAME - LLM will send greeting via provider');
       }
       return true;
     }
@@ -299,9 +296,8 @@ export const continueOnboardingAction: Action = {
           } else {
             await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_LANGUAGE', { name: text });
             if (roomId) recordActionExecution(roomId);
-            // Send the language question via callback
-            console.log('[Onboarding Action] Sending language question via callback');
-            await safeCallback(callback, runtime, roomId, message.userId, msgs.LANGUAGE);
+            // LLM will send the language question via provider
+            console.log('[Onboarding Action] State updated to ASK_LANGUAGE - LLM will send message via provider');
           }
         }
         break;
@@ -324,9 +320,8 @@ export const continueOnboardingAction: Action = {
         // Update language and move to location step
         await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_LOCATION', { language: langCode });
         if (roomId) recordActionExecution(roomId);
-        // Send the location question via callback
-        console.log('[Onboarding Action] Sending location question via callback');
-        await safeCallback(callback, runtime, roomId, message.userId, msgs.LOCATION);
+        // LLM will send the location question via provider
+        console.log('[Onboarding Action] State updated to ASK_LOCATION - LLM will send message via provider');
         break;
 
       case 'ASK_LOCATION':
@@ -338,9 +333,8 @@ export const continueOnboardingAction: Action = {
           const locationValue = text.toLowerCase().trim() === 'next' ? undefined : text;
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_ROLE', { location: locationValue });
           if (roomId) recordActionExecution(roomId);
-          // Send the roles question via callback
-          console.log('[Onboarding Action] Sending roles question via callback');
-          await safeCallback(callback, runtime, roomId, message.userId, msgs.ROLES);
+          // LLM will send the roles question via provider
+          console.log('[Onboarding Action] State updated to ASK_ROLE - LLM will send message via provider');
         }
         break;
 
@@ -363,9 +357,8 @@ export const continueOnboardingAction: Action = {
         } else {
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_INTERESTS', { roles }); 
           if (roomId) recordActionExecution(roomId);
-          // Send the interests question via callback
-          console.log('[Onboarding Action] Sending interests question via callback');
-          await safeCallback(callback, runtime, roomId, message.userId, msgs.INTERESTS);
+          // LLM will send the interests question via provider
+          console.log('[Onboarding Action] State updated to ASK_INTERESTS - LLM will send message via provider');
         }
         break;
 
@@ -387,9 +380,8 @@ export const continueOnboardingAction: Action = {
         } else {
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_CONNECTION_GOALS', { interests });
           if (roomId) recordActionExecution(roomId);
-          // Send the goals question via callback
-          console.log('[Onboarding Action] Sending goals question via callback');
-          await safeCallback(callback, runtime, roomId, message.userId, msgs.GOALS);
+          // LLM will send the goals question via provider
+          console.log('[Onboarding Action] State updated to ASK_CONNECTION_GOALS - LLM will send message via provider');
         }
         break;
 
@@ -411,9 +403,8 @@ export const continueOnboardingAction: Action = {
         } else {
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_EVENTS', { connectionGoals }); 
           if (roomId) recordActionExecution(roomId);
-          // Send the events question via callback
-          console.log('[Onboarding Action] Sending events question via callback');
-          await safeCallback(callback, runtime, roomId, message.userId, msgs.EVENTS);
+          // LLM will send the events question via provider
+          console.log('[Onboarding Action] State updated to ASK_EVENTS - LLM will send message via provider');
         }
         break;
 
@@ -426,9 +417,8 @@ export const continueOnboardingAction: Action = {
           const eventsValue = text.toLowerCase().trim() === 'next' ? [] : [text];
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_SOCIALS', { events: eventsValue });
           if (roomId) recordActionExecution(roomId);
-          // Send the socials question via callback
-          console.log('[Onboarding Action] Sending socials question via callback');
-          await safeCallback(callback, runtime, roomId, message.userId, msgs.SOCIALS);
+          // LLM will send the socials question via provider
+          console.log('[Onboarding Action] State updated to ASK_SOCIALS - LLM will send message via provider');
         }
         break;
 
@@ -441,9 +431,8 @@ export const continueOnboardingAction: Action = {
           const socialsValue = text.toLowerCase().trim() === 'next' ? [] : [text];
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_TELEGRAM_HANDLE', { socials: socialsValue });
           if (roomId) recordActionExecution(roomId);
-          // Send the Telegram question via callback
-          console.log('[Onboarding Action] Sending Telegram question via callback');
-          await safeCallback(callback, runtime, roomId, message.userId, msgs.TELEGRAM);
+          // LLM will send the Telegram question via provider
+          console.log('[Onboarding Action] State updated to ASK_TELEGRAM_HANDLE - LLM will send message via provider');
         }
         break;
 
@@ -458,9 +447,8 @@ export const continueOnboardingAction: Action = {
         } else {
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_GENDER', { telegramHandle: handleToSave });
           if (roomId) recordActionExecution(roomId);
-          // Send the gender question via callback
-          console.log('[Onboarding Action] Sending gender question via callback');
-          await safeCallback(callback, runtime, roomId, message.userId, msgs.GENDER);
+          // LLM will send the gender question via provider
+          console.log('[Onboarding Action] State updated to ASK_GENDER - LLM will send message via provider');
         }
         break;
 
@@ -473,9 +461,8 @@ export const continueOnboardingAction: Action = {
           const genderValue = text.toLowerCase().trim() === 'next' ? undefined : text;
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_NOTIFICATIONS', { gender: genderValue });
           if (roomId) recordActionExecution(roomId);
-          // Send the notifications question via callback
-          console.log('[Onboarding Action] Sending notifications question via callback');
-          await safeCallback(callback, runtime, roomId, message.userId, msgs.NOTIFICATIONS);
+          // LLM will send the notifications question via provider
+          console.log('[Onboarding Action] State updated to ASK_NOTIFICATIONS - LLM will send message via provider');
         }
         break;
 
