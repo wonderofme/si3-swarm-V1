@@ -9,6 +9,10 @@ services:
             - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
             - JWT_SECRET=${JWT_SECRET}
             - DIRECT_PORT=3000
+            - USE_OPENAI_EMBEDDING=true
+            - SMALL_OPENAI_MODEL=gpt-4o-mini
+            - MEDIUM_OPENAI_MODEL=gpt-4o-mini
+            - LARGE_OPENAI_MODEL=gpt-4o-mini
             - SMTP_HOST=${SMTP_HOST}
             - SMTP_PORT=${SMTP_PORT}
             - SMTP_USER=${SMTP_USER}
