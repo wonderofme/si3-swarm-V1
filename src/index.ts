@@ -17,6 +17,7 @@ import si3Character from '../characters/si3.character.json' with { type: 'json' 
 import { createRouterPlugin } from './plugins/router/index.js';
 import { createOnboardingPlugin } from './plugins/onboarding/index.js';
 import { createMatchingPlugin } from './plugins/matching/index.js';
+import { createFeatureRequestPlugin } from './plugins/featureRequest/index.js';
 import { MemoryCacheAdapter } from './adapters/memoryCache.js';
 
 async function runMigrations(db: PostgresDatabaseAdapter) {
@@ -105,6 +106,7 @@ async function createRuntime(character: any) {
   if (character.plugins?.includes('router')) plugins.push(createRouterPlugin());
   if (character.plugins?.includes('onboarding')) plugins.push(createOnboardingPlugin());
   if (character.plugins?.includes('matching')) plugins.push(createMatchingPlugin());
+  plugins.push(createFeatureRequestPlugin()); // Always include feature request plugin
 
   const runtime = new AgentRuntime({
     character,

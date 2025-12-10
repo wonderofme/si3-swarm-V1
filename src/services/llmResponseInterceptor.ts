@@ -622,6 +622,36 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
         // The provider now gives exact messages for LLM to use word-for-word
         // No blocking needed - LLM will use the exact messages from provider context
         console.log('[LLM Response Interceptor] ✅ Allowing LLM message generation (onboarding messages now handled by provider)');
+        
+        // CRITICAL: Strip out any instruction text that the LLM may have included
+        // The LLM should only send the message text, not the instructions
+        if (memory.content.text) {
+          let cleanedText = memory.content.text;
+          
+          // Remove instruction patterns that might be included
+          // Pattern 1: "[ONBOARDING STEP: ...] - Send this EXACT message..."
+          cleanedText = cleanedText.replace(/\[ONBOARDING STEP:[^\]]+\]\s*-?\s*Send this EXACT message[^\n]*\n?/gi, '');
+          
+          // Pattern 2: "Do not modify, paraphrase, or add anything:"
+          cleanedText = cleanedText.replace(/Do not modify, paraphrase, or add anything:\s*/gi, '');
+          
+          // Pattern 3: "After sending this message, wait for..."
+          cleanedText = cleanedText.replace(/After sending this message[^\n]*\n?/gi, '');
+          
+          // Pattern 4: Any remaining "[ONBOARDING STEP:" patterns
+          cleanedText = cleanedText.replace(/\[ONBOARDING STEP:[^\]]+\]\s*/gi, '');
+          
+          // Remove leading/trailing whitespace and newlines
+          cleanedText = cleanedText.trim();
+          
+          // If the text was modified, update the memory
+          if (cleanedText !== memory.content.text) {
+            console.log('[LLM Response Interceptor] 🧹 Cleaned instruction text from LLM response');
+            console.log('[LLM Response Interceptor] Original:', memory.content.text.substring(0, 200));
+            console.log('[LLM Response Interceptor] Cleaned:', cleanedText.substring(0, 200));
+            memory.content.text = cleanedText;
+          }
+        }
       }
       
       // CRITICAL: Check if message lock is active (action handler is executing)
