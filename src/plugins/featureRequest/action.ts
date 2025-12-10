@@ -19,46 +19,12 @@ export const featureRequestAction: Action = {
   ],
   
   validate: async (runtime: IAgentRuntime, message: Memory): Promise<boolean> => {
-    const text = (message.content.text || '').toLowerCase().trim();
-    
-    console.log(`[Feature Request Action] Validate called with: "${text}"`);
-    
-    // Only trigger when user provides actual feature request DETAILS
-    // Don't trigger if they're just asking to make a feature request
-    
-    // Block if they're asking to make/submit/send a feature request
-    const isAskingToMake = 
-      (text.includes('feature request') && (text.includes('make') || text.includes('submit') || text.includes('send'))) ||
-      (text.includes('add') && text.includes('feature') && (text.includes('like') || text.includes('want') || text.includes('need'))) ||
-      (text.includes('suggest') && text.includes('feature') && (text.includes('like') || text.includes('want'))) ||
-      text.includes('make a feature request') ||
-      text.includes('submit a feature request') ||
-      text.includes('send a feature request');
-    
-    if (isAskingToMake) {
-      console.log(`[Feature Request Action] ❌ BLOCKING - user is asking to make a feature request, not providing details`);
-      return false;
-    }
-    
-    // Trigger when user provides actual feature request details:
-    // - Substantial content (more than just "I want feature request")
-    // - Contains actual request content (not meta-requests about making requests)
-    const hasSubstantialContent = text.length > 20;
-    const hasActualRequestContent = 
-      text.includes('can you') ||
-      text.includes('could you') ||
-      text.includes('i would like') ||
-      text.includes('i want') ||
-      text.includes('i need') ||
-      text.includes('it should') ||
-      text.includes('it would be') ||
-      (text.length > 30 && !text.includes('feature request')); // Long message that's not about making a request
-    
-    const shouldTrigger = hasSubstantialContent && hasActualRequestContent && !isAskingToMake;
-    
-    console.log(`[Feature Request Action] hasSubstantialContent: ${hasSubstantialContent}, hasActualRequestContent: ${hasActualRequestContent}, shouldTrigger: ${shouldTrigger}`);
-    
-    return shouldTrigger;
+    // Trust the LLM to call this action appropriately
+    // The LLM has been instructed when to use this action
+    // No validation needed - just send the email when LLM decides to call it
+    const text = (message.content.text || '').trim();
+    console.log(`[Feature Request Action] Validate called with: "${text.substring(0, 50)}..." - trusting LLM decision`);
+    return text.length > 0; // Only require non-empty text
   },
 
   handler: async (
