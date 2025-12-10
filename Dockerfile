@@ -10,10 +10,9 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install dependencies using npm (match local environment)
-COPY package.json package-lock.json* tsconfig.json ./
-# Clean install to ensure overrides are applied
-# Keep package-lock.json if it exists, but ensure overrides are respected
-RUN rm -rf node_modules && npm install --include=optional
+COPY package.json package-lock.json tsconfig.json ./
+# Use npm ci for reproducible builds (respects package-lock.json and overrides)
+RUN npm ci --include=optional
 
 # Copy source
 COPY src ./src
