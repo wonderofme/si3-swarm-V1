@@ -325,7 +325,7 @@ Update match status or trigger new match
 ### Containerization
 - **Base Image**: `node:22-slim`
 - **Registry**: GitHub Container Registry (ghcr.io)
-- **Image**: `ghcr.io/wonderofme/kaia-swarm:latest`
+- **Image**: `ghcr.io/wonderofme/si3-swarm-v1:latest`
 - **Build**: Automated via GitHub Actions on push to `main`
 
 ### Akash Network Deployment

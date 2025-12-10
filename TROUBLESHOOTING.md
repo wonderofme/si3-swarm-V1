@@ -337,13 +337,13 @@ npm install
 
 4. **Image Not Found:**
    - Verify image is built and pushed to GHCR
-   - Check image path: `ghcr.io/wonderofme/kaia-swarm:latest`
+   - Check image path: `ghcr.io/wonderofme/si3-swarm-v1:latest`
    - Ensure GitHub Actions workflow completed successfully
 
 5. **"Error while sending manifest to provider" / "Something went wrong":**
    - **Most Common Cause**: Image tag doesn't exist yet (e.g., `v0.2.0` not built)
    - **Solution**: 
-     - Use `latest` tag temporarily: `ghcr.io/wonderofme/kaia-swarm:latest`
+     - Use `latest` tag temporarily: `ghcr.io/wonderofme/si3-swarm-v1:latest`
      - Or wait for GitHub Actions to build the version tag, then retry
      - Or push code to trigger build, wait for workflow to complete
    - **Other Causes**:

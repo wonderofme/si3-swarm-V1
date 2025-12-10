@@ -34,7 +34,7 @@ The workflow already uses `${{ github.repository_owner }}` which will automatica
 ## Step 4: Update Deployment Configuration
 
 Update `deploy.sdl.yaml` to use the new image path:
-- Old: `ghcr.io/wonderofme/kaia-swarm:v207`
+- Old: `ghcr.io/wonderofme/si3-swarm-v1:v207`
 - New: `ghcr.io/si3-ecosystem/agentkaia:v207`
 
 ## Step 5: Verify GitHub Actions

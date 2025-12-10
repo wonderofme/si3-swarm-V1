@@ -372,7 +372,7 @@ All onboarding messages translated:
 ### Docker
 - **Base Image**: `node:22-slim` (Debian-based)
 - **Registry**: GitHub Container Registry (ghcr.io)
-- **Image**: `ghcr.io/wonderofme/kaia-swarm:v83`
+- **Image**: `ghcr.io/wonderofme/si3-swarm-v1:v0.2.0`
 - **Build**: GitHub Actions workflow
 
 ### Akash Network Deployment
