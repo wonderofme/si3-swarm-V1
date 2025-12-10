@@ -27,5 +27,8 @@
     "@types/node": "^22.7.4",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.6.3"
+  },
+  "overrides": {
+    "zod": "^3.22.4"
   }
 }
