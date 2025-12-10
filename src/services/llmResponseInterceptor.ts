@@ -526,6 +526,36 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
       if (isFromActionHandler) {
         console.log('[LLM Response Interceptor] ✅ ALLOWING agent message - from action handler callback (should send message)');
       } else {
+        // CRITICAL: Check if we should block LLM response based on onboarding state
+        // If user just provided their name during ASK_NAME step, block to prevent duplicate greeting
+        const lastUserMessage = lastUserMessagePerRoom.get(memory.roomId);
+        if (lastUserMessage) {
+          const userText = (lastUserMessage.content.text || '').trim();
+          const cachedStep = onboardingStepCache.get(lastUserMessage.userId);
+          
+          // Block if: we're in ASK_NAME step AND user provided text that looks like a name
+          if (cachedStep === 'ASK_NAME' && userText.length > 0 && userText.length < 100) {
+            // Check if it's NOT a restart command
+            const isRestart = userText.toLowerCase().includes('restart') || 
+                            userText.toLowerCase().includes('start over') ||
+                            userText.toLowerCase().includes('begin again');
+            
+            if (!isRestart) {
+              console.log('[LLM Response Interceptor] 🚫 BLOCKING agent message - user provided name during ASK_NAME step (preventing duplicate greeting)');
+              console.log('[LLM Response Interceptor] Blocked message text:', messageText);
+              // Return empty memory to prevent sending
+              return await originalCreateMemory({
+                ...memory,
+                content: {
+                  ...memory.content,
+                  text: '', // Empty text prevents sending
+                  action: undefined
+                }
+              });
+            }
+          }
+        }
+        
         // NEW APPROACH: Allow LLM to generate onboarding messages
         // The provider now gives exact messages for LLM to use word-for-word
         // No blocking needed - LLM will use the exact messages from provider context
