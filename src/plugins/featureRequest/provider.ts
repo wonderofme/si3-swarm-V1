@@ -4,7 +4,11 @@ const FEATURE_REQUEST_PROMPT_CANT_DO = `I am not able to perform that request ye
 
 I am taking feature requests! What would you like me to do?`;
 
-const FEATURE_REQUEST_PROMPT_ASK_DETAILS = `Great! I'd love to hear your feature request. What would you like me to be able to do? Please describe the feature in detail.`;
+const FEATURE_REQUEST_PROMPT_ASK_DETAILS = `[FEATURE REQUEST PROMPT] 
+
+Great! I'd love to hear your feature request. What would you like me to be able to do? Please describe the feature in detail.
+
+[END FEATURE REQUEST PROMPT]`;
 
 export const featureRequestProvider: Provider = {
   get: async (runtime: IAgentRuntime, message: Memory, state?: State): Promise<string | null> => {
@@ -91,6 +95,12 @@ export const featureRequestProvider: Provider = {
     
     // Check if the message seems like a request the bot can't fulfill
     // (but NOT if they're explicitly asking to make a feature request - handled above)
+    // Also exclude if they're asking to add/suggest/make a feature
+    const isAskingToMakeFeature = 
+      userText.includes('add') && userText.includes('feature') ||
+      userText.includes('suggest') && userText.includes('feature') ||
+      userText.includes('make') && userText.includes('feature');
+    
     const isFeatureRequestTrigger = 
       (userText.includes('can you') ||
       userText.includes('could you') ||
@@ -98,7 +108,8 @@ export const featureRequestProvider: Provider = {
       userText.includes('i want') ||
       userText.includes('please') ||
       userText.includes('help me')) &&
-      !userText.includes('feature request'); // Don't trigger if they're asking about feature requests
+      !userText.includes('feature request') && // Don't trigger if they're asking about feature requests
+      !isAskingToMakeFeature; // Don't trigger if they're asking to make/add/suggest a feature
     
     if (isFeatureRequestTrigger) {
       // Return the feature request prompt for when bot can't do something
