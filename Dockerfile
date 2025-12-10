@@ -13,7 +13,10 @@ RUN apt-get update && apt-get install -y \
 COPY package.json package-lock.json tsconfig.json ./
 # Use npm ci for reproducible builds (respects package-lock.json and overrides)
 # Force clean install to ensure overrides are applied
-RUN rm -rf node_modules && npm ci --include=optional
+# Remove any existing node_modules to ensure fresh install with overrides
+RUN rm -rf node_modules .npm && npm ci --include=optional
+# Verify overrides are applied
+RUN npm list zod zod-to-json-schema || true
 
 # Copy source
 COPY src ./src
