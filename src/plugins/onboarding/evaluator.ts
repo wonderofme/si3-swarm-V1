@@ -49,21 +49,13 @@ export const onboardingEvaluator: Evaluator = {
       return null;
     }
 
-    // CRITICAL: During active onboarding steps, set flag to prevent LLM generation
-    // The action handler will send all messages, so LLM should not respond
-    // Exception: CONFIRMATION step allows LLM to generate summary
+    // NEW APPROACH: Allow LLM to generate onboarding messages
+    // The provider now gives exact messages for LLM to use word-for-word
+    // No blocking needed - LLM will use the exact messages from provider context
     if (state) {
       state.onboardingStep = step;
-      if (step === 'CONFIRMATION') {
-        state.skipLLMResponse = false; // Allow LLM for confirmation summary
-        console.log('[Onboarding Evaluator] CONFIRMATION step - allowing LLM for summary');
-      } else {
-        state.skipLLMResponse = true; // Block LLM during all other onboarding steps
-        console.log(`[Onboarding Evaluator] ⚠️ Step ${step} - setting skipLLMResponse=true to prevent LLM generation`);
-        console.log(`[Onboarding Evaluator] State after setting flag: skipLLMResponse=${(state as any).skipLLMResponse}`);
-      }
-    } else {
-      console.log('[Onboarding Evaluator] ⚠️ WARNING: No state object available! Cannot set skipLLMResponse flag');
+      state.skipLLMResponse = false; // Allow LLM to generate (it will use exact messages from provider)
+      console.log(`[Onboarding Evaluator] Step ${step} - allowing LLM to generate (will use exact messages from provider)`);
     }
     
     return step;

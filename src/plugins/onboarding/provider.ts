@@ -1,6 +1,7 @@
 import { Provider, IAgentRuntime, Memory, State } from '@elizaos/core';
 import { getOnboardingStep, getUserProfile } from './utils.js';
 import { getMessages, LanguageCode } from './translations.js';
+import { OnboardingStep } from './types.js';
 import { checkActionExecutedRecently, getOnboardingStepFromCache } from '../../services/llmResponseInterceptor.js';
 
 // Custom error class to signal that LLM should not generate during onboarding
@@ -37,7 +38,24 @@ const actualProviderGet = async (runtime: IAgentRuntime, message: Memory, state?
   const userLang: LanguageCode = isRestart ? 'en' : (profile.language || 'en');
   const msgs = getMessages(userLang);
 
-  const step = await getOnboardingStep(runtime, userId);
+  // CRITICAL: Check cache first for fast synchronous access, then fallback to async
+  // This ensures we get the latest state even if it was just updated
+  let step: OnboardingStep;
+  try {
+    const { getOnboardingStepFromCache } = await import('../../services/llmResponseInterceptor.js');
+    const cachedStep = getOnboardingStepFromCache(userId);
+    if (cachedStep) {
+      step = cachedStep as OnboardingStep;
+      console.log(`[Onboarding Provider] Using cached step: ${step}`);
+    } else {
+      step = await getOnboardingStep(runtime, userId);
+      console.log(`[Onboarding Provider] Using async step: ${step}`);
+    }
+  } catch (error) {
+    step = await getOnboardingStep(runtime, userId);
+    console.log(`[Onboarding Provider] Error getting cached step, using async: ${step}`);
+  }
+  
   console.log(`[Onboarding Provider] Current step: ${step}, language: ${userLang}, isRestart: ${isRestart}`);
   
   if (step === 'COMPLETED') {

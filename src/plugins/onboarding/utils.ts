@@ -48,6 +48,18 @@ export async function updateOnboardingStep(
   // CacheManager handles JSON stringification internally
   await runtime.cacheManager.set(`onboarding_${userId}`, newState as any);
   
+  // CRITICAL: Update onboarding step cache immediately
+  // This ensures the provider gives the correct message to the LLM
+  try {
+    const { updateOnboardingStepCache } = await import('../../services/llmResponseInterceptor.js');
+    if (typeof updateOnboardingStepCache === 'function') {
+      updateOnboardingStepCache(userId, step);
+      console.log(`[Onboarding Utils] Updated cache for user ${userId} to step: ${step}`);
+    }
+  } catch (error) {
+    console.error('[Onboarding Utils] Error updating cache:', error);
+  }
+  
   // Also save as a persistent memory log (so we have history)
   // Mark as agent message to prevent it from triggering LLM responses
   await runtime.messageManager.createMemory({
