@@ -30,6 +30,22 @@
   },
   "overrides": {
     "zod": "3.22.4",
-    "zod-to-json-schema": "3.23.3"
+    "zod-to-json-schema": "3.23.3",
+    "@elizaos/core": {
+      "zod": "3.22.4",
+      "zod-to-json-schema": "3.23.3"
+    },
+    "@elizaos/adapter-postgres": {
+      "zod": "3.22.4",
+      "zod-to-json-schema": "3.23.3"
+    },
+    "@elizaos/client-telegram": {
+      "zod": "3.22.4",
+      "zod-to-json-schema": "3.23.3"
+    },
+    "@elizaos/client-direct": {
+      "zod": "3.22.4",
+      "zod-to-json-schema": "3.23.3"
+    }
   }
 }
