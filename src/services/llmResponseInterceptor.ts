@@ -532,6 +532,7 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
         if (lastUserMessage) {
           const userText = (lastUserMessage.content.text || '').trim();
           const cachedStep = onboardingStepCache.get(lastUserMessage.userId);
+          const fullMessageText = (memory.content.text || '').toLowerCase();
           
           // Block if: we're in ASK_NAME step AND user provided text that looks like a name
           if (cachedStep === 'ASK_NAME' && userText.length > 0 && userText.length < 100) {
@@ -541,17 +542,28 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
                             userText.toLowerCase().includes('begin again');
             
             if (!isRestart) {
-              console.log('[LLM Response Interceptor] 🚫 BLOCKING agent message - user provided name during ASK_NAME step (preventing duplicate greeting)');
-              console.log('[LLM Response Interceptor] Blocked message text:', messageText);
-              // Return empty memory to prevent sending
-              return await originalCreateMemory({
-                ...memory,
-                content: {
-                  ...memory.content,
-                  text: '', // Empty text prevents sending
-                  action: undefined
-                }
-              });
+              // Check if the generated message is the greeting (even if provider said language question)
+              // This catches cases where LLM ignores provider instructions
+              const isGreeting = fullMessageText.includes("i'm agent kaia") || 
+                                fullMessageText.includes("what's your preferred name") ||
+                                fullMessageText.includes("let's get started") ||
+                                fullMessageText.includes("created by si<3");
+              
+              if (isGreeting) {
+                console.log('[LLM Response Interceptor] 🚫 BLOCKING agent message - user provided name during ASK_NAME step AND LLM generated greeting (preventing duplicate)');
+                console.log('[LLM Response Interceptor] Blocked message text:', memory.content.text?.substring(0, 100));
+                // Return empty memory to prevent sending
+                return await originalCreateMemory({
+                  ...memory,
+                  content: {
+                    ...memory.content,
+                    text: '', // Empty text prevents sending
+                    action: undefined
+                  }
+                });
+              } else {
+                console.log('[LLM Response Interceptor] ✅ Allowing agent message - user provided name but LLM generated correct next step message');
+              }
             }
           }
         }
