@@ -4,11 +4,11 @@ const FEATURE_REQUEST_PROMPT_CANT_DO = `I am not able to perform that request ye
 
 I am taking feature requests! What would you like me to do?`;
 
-const FEATURE_REQUEST_PROMPT_ASK_DETAILS = `[FEATURE REQUEST PROMPT] 
+const FEATURE_REQUEST_PROMPT_ASK_DETAILS = `[FEATURE REQUEST PROMPT] - Send this EXACT message word-for-word. Do not modify, paraphrase, or add anything:
 
 Great! I'd love to hear your feature request. What would you like me to be able to do? Please describe the feature in detail.
 
-[END FEATURE REQUEST PROMPT]`;
+After sending this message, wait for the user's response with their feature request details.]`;
 
 export const featureRequestProvider: Provider = {
   get: async (runtime: IAgentRuntime, message: Memory, state?: State): Promise<string | null> => {

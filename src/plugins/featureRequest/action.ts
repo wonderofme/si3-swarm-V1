@@ -131,11 +131,16 @@ export const featureRequestAction: Action = {
     
     // Safety check: Don't execute if user is just asking to make a feature request
     // This is a backup in case validation didn't catch it
-    const isJustRequesting = 
-      (userText.includes('feature request') || userText.includes('add feature') || userText.includes('suggest feature')) &&
-      (userText.includes('make') || userText.includes('add') || userText.includes('suggest') || userText.includes('request')) &&
-      (userText.includes('like') || userText.includes('want') || userText.includes('need')) &&
-      userText.length < 100; // Short messages are likely just requests, not details
+    console.log(`[Feature Request Action] Safety check - userText: "${userText}", length: ${userText.length}`);
+    
+    const hasFeaturePhrase = userText.includes('feature request') || userText.includes('add feature') || userText.includes('suggest feature') || userText.includes('add a feature');
+    const hasActionWord = userText.includes('make') || userText.includes('add') || userText.includes('suggest') || userText.includes('request');
+    const hasWantWord = userText.includes('like') || userText.includes('want') || userText.includes('need') || userText.includes('wish');
+    const isShort = userText.length < 100;
+    
+    console.log(`[Feature Request Action] Safety check - hasFeaturePhrase: ${hasFeaturePhrase}, hasActionWord: ${hasActionWord}, hasWantWord: ${hasWantWord}, isShort: ${isShort}`);
+    
+    const isJustRequesting = hasFeaturePhrase && hasActionWord && hasWantWord && isShort;
     
     if (isJustRequesting) {
       console.log('[Feature Request Action] 🚫 SAFETY BLOCK - Handler blocked: user is just asking to make a feature request');
@@ -146,6 +151,8 @@ export const featureRequestAction: Action = {
       }
       return;
     }
+    
+    console.log(`[Feature Request Action] ✅ Safety check passed, proceeding with feature request submission`);
     
     // Get user profile for name
     let userName = 'Unknown User';
