@@ -23,26 +23,55 @@ export const featureRequestAction: Action = {
     
     // Don't trigger if user is just saying they want to make a feature request
     // Only trigger when they actually provide the feature request details
-    // Check for combinations: (want/would like/i'd like/id like/like) + (make/submit/send) + "feature request"
+    
+    // Phrases indicating they want to make/request a feature
+    const hasRequestPhrase = 
+      text.includes('feature request') ||
+      text.includes('request for') ||
+      text.includes('request a') ||
+      text.includes('request new') ||
+      text.includes('suggest a feature') ||
+      text.includes('feature suggestion') ||
+      text.includes('new feature') ||
+      text.includes('add a feature') ||
+      text.includes('add feature') ||
+      text.includes('suggest feature');
+    
+    // Action words indicating they want to do something
+    const hasActionPhrase = 
+      text.includes('make') ||
+      text.includes('submit') ||
+      text.includes('send') ||
+      text.includes('request') ||
+      text.includes('suggest') ||
+      text.includes('add');
+    
+    // Desire/intent words
     const hasWantPhrase = 
       text.includes('want') || 
       text.includes('would like') || 
       text.includes('like to') ||
       text.includes('id like') ||
       text.includes('i\'d like') ||
-      (text.includes('like') && (text.includes('make') || text.includes('submit') || text.includes('send')));
-    const hasMakePhrase = text.includes('make') || text.includes('submit') || text.includes('send');
-    const hasFeatureRequest = text.includes('feature request');
+      text.includes('need') ||
+      text.includes('wish');
     
-    // If they have all three components, they're asking to make one, not providing details
-    const isJustRequestingToMake = hasFeatureRequest && hasMakePhrase && hasWantPhrase;
+    // If they mention feature-related terms AND have action/want phrases, they're asking to make one
+    const isJustRequestingToMake = 
+      hasRequestPhrase && (hasActionPhrase || hasWantPhrase) && text.length < 80;
     
-    // Also check for simpler variations
+    // Also check for direct combinations (short messages that are just requests)
     const simpleRequestVariations = 
       text.includes('make a feature request') ||
       text.includes('submit a feature request') ||
       text.includes('send a feature request') ||
-      (text.includes('feature request') && (text.includes('make') || text.includes('submit') || text.includes('send')) && text.length < 60);
+      text.includes('request for new feature') ||
+      text.includes('request a feature') ||
+      text.includes('request new feature') ||
+      text.includes('suggest a feature') ||
+      text.includes('add a feature') ||
+      (text.includes('feature request') && (text.includes('make') || text.includes('submit') || text.includes('send')) && text.length < 60) ||
+      (text.includes('feature') && (text.includes('request') || text.includes('suggest')) && text.length < 50);
     
     if (isJustRequestingToMake || simpleRequestVariations) {
       return false; // Don't trigger - they're just asking to make one, not providing details
