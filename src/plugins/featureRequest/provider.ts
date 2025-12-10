@@ -74,8 +74,12 @@ export const featureRequestProvider: Provider = {
       userText.includes('add feature') ||
       (userText.includes('feature') && (userText.includes('request') || userText.includes('suggest') || userText.includes('add')));
     
+    console.log(`[Feature Request Provider] hasRequestPhrase: ${hasRequestPhrase}, hasActionPhrase: ${hasActionPhrase}, hasWantPhrase: ${hasWantPhrase}`);
+    console.log(`[Feature Request Provider] wantsToMakeFeatureRequest: ${wantsToMakeFeatureRequest}, directVariations: ${directVariations}`);
+    
     if (wantsToMakeFeatureRequest || directVariations) {
       // User wants to make a feature request - ask for details
+      console.log(`[Feature Request Provider] ✅ Returning ASK_DETAILS prompt`);
       return FEATURE_REQUEST_PROMPT_ASK_DETAILS;
     }
     

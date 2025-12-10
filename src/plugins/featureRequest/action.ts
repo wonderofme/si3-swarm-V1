@@ -21,6 +21,8 @@ export const featureRequestAction: Action = {
   validate: async (runtime: IAgentRuntime, message: Memory): Promise<boolean> => {
     const text = (message.content.text || '').toLowerCase().trim();
     
+    console.log(`[Feature Request Action] Validate called with: "${text}"`);
+    
     // Don't trigger if user is just saying they want to make a feature request
     // Only trigger when they actually provide the feature request details
     
@@ -57,10 +59,11 @@ export const featureRequestAction: Action = {
       text.includes('wish');
     
     // If they mention feature-related terms AND have action/want phrases, they're asking to make one
+    // Remove the length restriction - if they're asking to make a feature request, block it regardless of length
     const isJustRequestingToMake = 
-      hasRequestPhrase && (hasActionPhrase || hasWantPhrase) && text.length < 80;
+      hasRequestPhrase && (hasActionPhrase || hasWantPhrase);
     
-    // Also check for direct combinations (short messages that are just requests)
+    // Also check for direct combinations (messages that are just requests, regardless of length)
     const simpleRequestVariations = 
       text.includes('make a feature request') ||
       text.includes('submit a feature request') ||
@@ -70,10 +73,14 @@ export const featureRequestAction: Action = {
       text.includes('request new feature') ||
       text.includes('suggest a feature') ||
       text.includes('add a feature') ||
-      (text.includes('feature request') && (text.includes('make') || text.includes('submit') || text.includes('send')) && text.length < 60) ||
-      (text.includes('feature') && (text.includes('request') || text.includes('suggest')) && text.length < 50);
+      text.includes('add feature') ||
+      (text.includes('feature request') && (text.includes('make') || text.includes('submit') || text.includes('send'))) ||
+      (text.includes('feature') && (text.includes('request') || text.includes('suggest') || text.includes('add')) && (text.includes('like') || text.includes('want') || text.includes('need')));
+    
+    console.log(`[Feature Request Action] isJustRequestingToMake: ${isJustRequestingToMake}, simpleRequestVariations: ${simpleRequestVariations}`);
     
     if (isJustRequestingToMake || simpleRequestVariations) {
+      console.log(`[Feature Request Action] ❌ BLOCKING - user is just asking to make a feature request, not providing details`);
       return false; // Don't trigger - they're just asking to make one, not providing details
     }
     
@@ -81,16 +88,31 @@ export const featureRequestAction: Action = {
     // - They've provided substantial details (not just "I want feature request")
     // - They're responding to the feature request prompt with actual content
     // - Must NOT be asking to make a feature request
+    // - Must NOT contain any of the "requesting to make" phrases
     const hasSubstantialContent = text.length > 20; // Substantial message with details
+    
+    // Check if this is still a request to make a feature request (even if longer)
+    const stillRequestingToMake = 
+      (text.includes('feature request') && (text.includes('make') || text.includes('submit') || text.includes('send'))) ||
+      (text.includes('add') && text.includes('feature') && (text.includes('like') || text.includes('want'))) ||
+      (text.includes('suggest') && text.includes('feature') && (text.includes('like') || text.includes('want')));
+    
+    if (stillRequestingToMake) {
+      console.log(`[Feature Request Action] ❌ BLOCKING - still requesting to make, not providing details`);
+      return false;
+    }
+    
     const isFeatureRequestResponse = 
-      (text.includes('i would like') && !text.includes('feature request')) ||
-      (text.includes('i want') && !text.includes('feature request')) ||
+      (text.includes('i would like') && !text.includes('feature request') && !text.includes('feature')) ||
+      (text.includes('i want') && !text.includes('feature request') && !text.includes('feature')) ||
       text.includes('can you') ||
       text.includes('could you') ||
       text.includes('it should') ||
       text.includes('it would be') ||
       text.includes('i need') ||
-      (text.length > 30 && !text.includes('feature request')); // Long message that's not about making a request
+      (text.length > 30 && !text.includes('feature request') && !text.includes('feature')); // Long message that's not about making a request
+    
+    console.log(`[Feature Request Action] hasSubstantialContent: ${hasSubstantialContent}, isFeatureRequestResponse: ${isFeatureRequestResponse}`);
     
     return hasSubstantialContent && isFeatureRequestResponse;
   },
