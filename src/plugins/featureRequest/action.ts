@@ -19,12 +19,38 @@ export const featureRequestAction: Action = {
   ],
   
   validate: async (runtime: IAgentRuntime, message: Memory): Promise<boolean> => {
-    // Trust the LLM to call this action appropriately
-    // The LLM has been instructed when to use this action
-    // No validation needed - just send the email when LLM decides to call it
-    const text = (message.content.text || '').trim();
-    console.log(`[Feature Request Action] Validate called with: "${text.substring(0, 50)}..." - trusting LLM decision`);
-    return text.length > 0; // Only require non-empty text
+    const text = (message.content.text || '').toLowerCase().trim();
+    
+    console.log(`[Feature Request Action] Validate called with: "${text}"`);
+    
+    // Block if user is just saying they want to make/suggest a feature request (not providing details)
+    const isJustAskingToMake = 
+      text.includes('add a feature') ||
+      text.includes('add feature') ||
+      text.includes('suggest a feature') ||
+      text.includes('make a feature request') ||
+      text.includes('i\'d like to add') ||
+      text.includes('id like to add') ||
+      (text.includes('feature') && (text.includes('want') || text.includes('like') || text.includes('suggest')) && text.length < 50);
+    
+    if (isJustAskingToMake) {
+      console.log(`[Feature Request Action] ❌ BLOCKING - user is just asking to make a feature request, not providing details`);
+      return false; // Don't trigger - they need to provide details first
+    }
+    
+    // Only trigger when user provides actual feature details
+    const hasActualDetails = 
+      text.length > 30 || // Substantial message
+      text.includes('can you') ||
+      text.includes('could you') ||
+      text.includes('i would like') ||
+      text.includes('i want') ||
+      text.includes('it should') ||
+      text.includes('it would be');
+    
+    console.log(`[Feature Request Action] hasActualDetails: ${hasActualDetails}, shouldTrigger: ${hasActualDetails && !isJustAskingToMake}`);
+    
+    return hasActualDetails && !isJustAskingToMake;
   },
 
   handler: async (
