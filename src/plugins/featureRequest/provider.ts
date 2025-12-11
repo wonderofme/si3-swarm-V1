@@ -43,8 +43,8 @@ The user wants to suggest or make a feature request. They are NOT asking you to 
 - Respond with: "Great! I'd love to hear your feature request. What would you like me to be able to do? Please describe the feature in detail."
 - DO NOT respond with "I am not able to perform that request yet..." - that's only for when they ask you to do something you can't do
 - Wait for their response with feature details
-- When they provide actual feature details, use action: SUBMIT_FEATURE_REQUEST to send it to opereayoola@gmail.com
-- After sending, acknowledge: "Thank you for your feature request! I've sent it to our team at opereayoola@gmail.com. We'll review it and work on adding it soon. 💜"
+   - When they provide actual feature details, use action: SUBMIT_FEATURE_REQUEST to send it to tech@si3.space
+   - After sending, acknowledge: "Thank you for your feature request! I've sent it to our team at tech@si3.space. We'll review it and work on adding it soon. 💜"
 
 **DO NOT use action: SUBMIT_FEATURE_REQUEST now** - they haven't provided details yet, just said they want to suggest a feature.`;
     }
@@ -63,7 +63,7 @@ You can help users submit feature requests. Here's how to handle different scena
    - If they provide actual feature details (e.g., "I would like you to be able to send emails" or "It would be great if you could track my tasks"), use action: SUBMIT_FEATURE_REQUEST immediately
    - Acknowledge after sending
 
-**Important:** Only use action: SUBMIT_FEATURE_REQUEST when the user has provided actual feature details, not when they're just saying they want to make a feature request. The action will send their message to opereayoola@gmail.com.`;
+**Important:** Only use action: SUBMIT_FEATURE_REQUEST when the user has provided actual feature details, not when they're just saying they want to make a feature request. The action will send their message to tech@si3.space.`;
   },
 };
 
