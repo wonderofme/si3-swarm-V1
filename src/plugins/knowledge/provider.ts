@@ -102,9 +102,21 @@ export const knowledgeProvider: Provider = {
       console.log(`[Knowledge Provider] Searching with agent_id: ${runtime.agentId}`);
       console.log(`[Knowledge Provider] Embedding vector length: ${embedding.length}`);
 
+      // First, check if there's any knowledge at all for this agent
+      const countQuery = `SELECT COUNT(*) as count FROM knowledge WHERE agent_id = $1::uuid`;
+      const countResult = await db.query(countQuery, [runtime.agentId]);
+      const totalCount = countResult?.rows?.[0]?.count || 0;
+      console.log(`[Knowledge Provider] Total knowledge entries for agent ${runtime.agentId}: ${totalCount}`);
+
+      if (totalCount === 0) {
+        console.log(`[Knowledge Provider] ⚠️ No knowledge entries found in database for this agent!`);
+        console.log(`[Knowledge Provider] Make sure you ran: npm run ingest-knowledge`);
+        return null;
+      }
+
       // Query knowledge table using cosine similarity
-      // Lower threshold (0.5) to get more results - cosine_distance < 0.5 means similarity > 0.5
-      // This is more lenient and should find relevant chunks
+      // Lower threshold (0.3) to get more results - very lenient
+      // Try without threshold first to see what similarities we get
       const query = `
         SELECT 
           id,
@@ -114,34 +126,49 @@ export const knowledgeProvider: Provider = {
         FROM knowledge
         WHERE agent_id = $2::uuid
           AND embedding IS NOT NULL
-          AND (1 - (embedding <=> $1::vector)) >= $3
         ORDER BY embedding <=> $1::vector
-        LIMIT $4
+        LIMIT $3
       `;
 
-      console.log(`[Knowledge Provider] Executing query with threshold: 0.5`);
+      console.log(`[Knowledge Provider] Executing query (no threshold, getting top 5)`);
       const results = await db.query(query, [
         embeddingVector,
         runtime.agentId,
-        0.5, // Lower threshold (similarity >= 0.5) - more lenient
-        5    // Get top 5 results instead of 3
+        5    // Get top 5 results
       ]);
 
       console.log(`[Knowledge Provider] Query returned ${results?.rows?.length || 0} rows`);
       
       if (!results || !results.rows || results.rows.length === 0) {
-        // Try a query without threshold to see if there's any data at all
-        const testQuery = `SELECT COUNT(*) as count FROM knowledge WHERE agent_id = $1::uuid`;
-        const testResult = await db.query(testQuery, [runtime.agentId]);
-        const count = testResult?.rows?.[0]?.count || 0;
-        console.log(`[Knowledge Provider] No relevant knowledge found. Total knowledge entries for this agent: ${count}`);
+        console.log(`[Knowledge Provider] ❌ Query returned no rows (even without threshold)`);
         return null;
       }
 
-      console.log(`[Knowledge Provider] Found ${results.rows.length} relevant knowledge chunks`);
+      // Log similarity scores
+      results.rows.forEach((row: any, idx: number) => {
+        console.log(`[Knowledge Provider] Result ${idx + 1}: similarity = ${row.similarity}`);
+      });
+
+      // Filter by threshold (0.3 - very lenient)
+      const threshold = 0.3;
+      const filteredResults = results.rows.filter((r: any) => r.similarity >= threshold);
+      console.log(`[Knowledge Provider] After threshold filter (>= ${threshold}): ${filteredResults.length} results`);
+
+      if (filteredResults.length === 0) {
+        console.log(`[Knowledge Provider] ⚠️ All results below threshold. Highest similarity: ${results.rows[0]?.similarity}`);
+        // Use the top result anyway if it's close
+        if (results.rows[0]?.similarity >= 0.2) {
+          console.log(`[Knowledge Provider] Using top result despite low similarity (${results.rows[0]?.similarity})`);
+          filteredResults.push(results.rows[0]);
+        } else {
+          return null;
+        }
+      }
+
+      console.log(`[Knowledge Provider] ✅ Found ${filteredResults.length} relevant knowledge chunks`);
 
       // Extract text from knowledge chunks
-      const knowledgeTexts = results.rows.map((r: any) => {
+      const knowledgeTexts = filteredResults.map((r: any) => {
         try {
           const content = typeof r.content === 'string' ? JSON.parse(r.content) : r.content;
           return content.text || content;
