@@ -99,9 +99,12 @@ export const knowledgeProvider: Provider = {
       // Convert embedding array to PostgreSQL vector format
       const embeddingVector = `[${embedding.join(',')}]`;
 
+      console.log(`[Knowledge Provider] Searching with agent_id: ${runtime.agentId}`);
+      console.log(`[Knowledge Provider] Embedding vector length: ${embedding.length}`);
+
       // Query knowledge table using cosine similarity
-      // Using 1 - cosine_distance for similarity (higher = more similar)
-      // match_threshold of 0.7 means cosine_distance < 0.3
+      // Lower threshold (0.5) to get more results - cosine_distance < 0.5 means similarity > 0.5
+      // This is more lenient and should find relevant chunks
       const query = `
         SELECT 
           id,
@@ -109,22 +112,29 @@ export const knowledgeProvider: Provider = {
           embedding,
           1 - (embedding <=> $1::vector) as similarity
         FROM knowledge
-        WHERE agent_id = $2
+        WHERE agent_id = $2::uuid
           AND embedding IS NOT NULL
           AND (1 - (embedding <=> $1::vector)) >= $3
         ORDER BY embedding <=> $1::vector
         LIMIT $4
       `;
 
+      console.log(`[Knowledge Provider] Executing query with threshold: 0.5`);
       const results = await db.query(query, [
         embeddingVector,
         runtime.agentId,
-        0.7, // match_threshold (similarity >= 0.7)
-        3    // match_count (top 3 results)
+        0.5, // Lower threshold (similarity >= 0.5) - more lenient
+        5    // Get top 5 results instead of 3
       ]);
 
+      console.log(`[Knowledge Provider] Query returned ${results?.rows?.length || 0} rows`);
+      
       if (!results || !results.rows || results.rows.length === 0) {
-        console.log('[Knowledge Provider] No relevant knowledge found');
+        // Try a query without threshold to see if there's any data at all
+        const testQuery = `SELECT COUNT(*) as count FROM knowledge WHERE agent_id = $1::uuid`;
+        const testResult = await db.query(testQuery, [runtime.agentId]);
+        const count = testResult?.rows?.[0]?.count || 0;
+        console.log(`[Knowledge Provider] No relevant knowledge found. Total knowledge entries for this agent: ${count}`);
         return null;
       }
 
