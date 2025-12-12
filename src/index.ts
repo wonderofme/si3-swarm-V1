@@ -18,6 +18,7 @@ import { createRouterPlugin } from './plugins/router/index.js';
 import { createOnboardingPlugin } from './plugins/onboarding/index.js';
 import { createMatchingPlugin } from './plugins/matching/index.js';
 import { createFeatureRequestPlugin } from './plugins/featureRequest/index.js';
+import { createKnowledgePlugin } from './plugins/knowledge/index.js';
 import { MemoryCacheAdapter } from './adapters/memoryCache.js';
 
 async function runMigrations(db: PostgresDatabaseAdapter) {
@@ -107,6 +108,7 @@ async function createRuntime(character: any) {
   if (character.plugins?.includes('onboarding')) plugins.push(createOnboardingPlugin());
   if (character.plugins?.includes('matching')) plugins.push(createMatchingPlugin());
   plugins.push(createFeatureRequestPlugin()); // Always include feature request plugin
+  plugins.push(createKnowledgePlugin()); // Always include knowledge plugin for SI<3> knowledge base
 
   const runtime = new AgentRuntime({
     character,
@@ -536,6 +538,18 @@ async function startAgents() {
               try {
                 const me = await bot.telegram.getMe();
                 console.log('[Telegram Client] ✅ Bot is connected and verified:', me.username);
+                
+                // Set bot profile picture if character has an image
+                if (kaiaCharacter.image && process.env.TELEGRAM_BOT_TOKEN) {
+                  try {
+                    const { setProfilePictureFromCharacter } = await import('./services/botProfilePicture.js');
+                    await setProfilePictureFromCharacter(process.env.TELEGRAM_BOT_TOKEN, kaiaCharacter.image);
+                    console.log('[Telegram Client] ✅ Bot profile picture set successfully');
+                  } catch (profileError: any) {
+                    console.warn('[Telegram Client] ⚠️ Could not set profile picture:', profileError.message);
+                    console.warn('[Telegram Client] This is non-critical - bot will continue without profile picture update');
+                  }
+                }
               } catch (error: any) {
                 console.error('[Telegram Client] ⚠️ Could not verify bot connection:', error.message);
               }

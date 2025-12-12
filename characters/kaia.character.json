@@ -1,6 +1,7 @@
 {
   "id": "d24d3f40-0000-0000-0000-000000000000",
   "name": "Kaia",
+  "image": "./assets/kaia-avatar.png",
   "modelProvider": "openai",
   "settings": {
     "model": "gpt-4o-mini"
