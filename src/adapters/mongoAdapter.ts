@@ -480,6 +480,70 @@ export class MongoAdapter implements DatabaseAdapter {
   }
 
   /**
+   * Get or create a room by ID
+   * Required by ElizaOS AgentRuntime.ensureRoomExists
+   */
+  async getRoom(roomId: string): Promise<any> {
+    try {
+      const db = await this.getDb();
+      const roomsCollection = db.collection('rooms');
+      
+      // Try to find existing room
+      let room = await roomsCollection.findOne({ id: roomId });
+      
+      if (!room) {
+        // Create new room if it doesn't exist
+        const newRoom = {
+          id: roomId,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        };
+        const result = await roomsCollection.insertOne(newRoom);
+        // Query back to get the document with _id
+        room = await roomsCollection.findOne({ _id: result.insertedId });
+        console.log(`[MongoDB Adapter] Created new room: ${roomId}`);
+      }
+      
+      return room;
+    } catch (error: any) {
+      console.error('[MongoDB Adapter] Error in getRoom:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get or create an account by ID
+   * Required by ElizaOS AgentRuntime.ensureUserExists
+   */
+  async getAccountById(accountId: string): Promise<any> {
+    try {
+      const db = await this.getDb();
+      const accountsCollection = db.collection('accounts');
+      
+      // Try to find existing account
+      let account = await accountsCollection.findOne({ id: accountId });
+      
+      if (!account) {
+        // Create new account if it doesn't exist
+        const newAccount = {
+          id: accountId,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        };
+        const result = await accountsCollection.insertOne(newAccount);
+        // Query back to get the document with _id
+        account = await accountsCollection.findOne({ _id: result.insertedId });
+        console.log(`[MongoDB Adapter] Created new account: ${accountId}`);
+      }
+      
+      return account;
+    } catch (error: any) {
+      console.error('[MongoDB Adapter] Error in getAccountById:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Test database connection
    */
   async testConnection(): Promise<void> {
