@@ -4,7 +4,6 @@ import {
   CacheManager,
   ModelProviderName
 } from '@elizaos/core';
-import { PostgresDatabaseAdapter } from '@elizaos/adapter-postgres';
 import { DirectClient } from '@elizaos/client-direct';
 import { TelegramClientInterface } from '@elizaos/client-telegram';
 import express from 'express';
@@ -20,80 +19,107 @@ import { createMatchingPlugin } from './plugins/matching/index.js';
 import { createFeatureRequestPlugin } from './plugins/featureRequest/index.js';
 import { createKnowledgePlugin } from './plugins/knowledge/index.js';
 import { MemoryCacheAdapter } from './adapters/memoryCache.js';
+import { createDatabaseAdapter, DatabaseAdapter } from './adapters/databaseAdapter.js';
 
-async function runMigrations(db: PostgresDatabaseAdapter) {
-  console.log('Running database migrations...');
+async function runMigrations(db: DatabaseAdapter) {
+  const databaseType = (process.env.DATABASE_TYPE || 'postgres').toLowerCase();
+  console.log(`Running database migrations for ${databaseType}...`);
+  
   try {
-    // 1. Create tables if they don't exist
-    await db.query(`
-      CREATE TABLE IF NOT EXISTS matches (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        match_date TIMESTAMPTZ DEFAULT NOW(),
-        status TEXT NOT NULL DEFAULT 'pending'
-      );
+    if (databaseType === 'mongodb' || databaseType === 'mongo') {
+      // MongoDB migrations - collections are created automatically, just ensure indexes exist
+      // Use query method to create indexes via CREATE INDEX statements
+      try {
+        // Create indexes for matches collection
+        await db.query(`CREATE INDEX IF NOT EXISTS idx_matches_user_id ON matches(user_id)`);
+        await db.query(`CREATE INDEX IF NOT EXISTS idx_matches_matched_user_id ON matches(matched_user_id)`);
+        await db.query(`CREATE INDEX IF NOT EXISTS idx_matches_room_id ON matches(room_id)`);
+        await db.query(`CREATE INDEX IF NOT EXISTS idx_matches_match_date ON matches(match_date)`);
 
-      CREATE TABLE IF NOT EXISTS follow_ups (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        type TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'pending',
-        response TEXT
-      );
-    `);
+        // Create indexes for follow_ups collection
+        await db.query(`CREATE INDEX IF NOT EXISTS idx_follow_ups_user_id ON follow_ups(user_id)`);
+        await db.query(`CREATE INDEX IF NOT EXISTS idx_follow_ups_scheduled_for ON follow_ups(scheduled_for)`);
+        await db.query(`CREATE INDEX IF NOT EXISTS idx_follow_ups_status_scheduled ON follow_ups(status, scheduled_for)`);
 
-    // 2. Add missing columns to 'matches' if needed (handling existing tables)
-    await db.query(`
-      DO $$ 
-      BEGIN 
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='matches' AND column_name='user_id') THEN
-          ALTER TABLE matches ADD COLUMN user_id UUID;
-        END IF;
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='matches' AND column_name='matched_user_id') THEN
-          ALTER TABLE matches ADD COLUMN matched_user_id UUID;
-        END IF;
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='matches' AND column_name='room_id') THEN
-          ALTER TABLE matches ADD COLUMN room_id UUID;
-        END IF;
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='matches' AND column_name='match_date') THEN
-          ALTER TABLE matches ADD COLUMN match_date TIMESTAMPTZ DEFAULT NOW();
-        END IF;
-      END $$;
-    `);
+        // Create indexes for knowledge collection (for vector search)
+        await db.query(`CREATE INDEX IF NOT EXISTS idx_knowledge_agent_id ON knowledge(agent_id)`);
 
-    // 3. Add missing columns to 'follow_ups' if needed
-    await db.query(`
-      DO $$ 
-      BEGIN 
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='follow_ups' AND column_name='match_id') THEN
-          ALTER TABLE follow_ups ADD COLUMN match_id UUID REFERENCES matches(id);
-        END IF;
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='follow_ups' AND column_name='user_id') THEN
-          ALTER TABLE follow_ups ADD COLUMN user_id UUID;
-        END IF;
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='follow_ups' AND column_name='scheduled_for') THEN
-          ALTER TABLE follow_ups ADD COLUMN scheduled_for TIMESTAMPTZ;
-        END IF;
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='follow_ups' AND column_name='sent_at') THEN
-          ALTER TABLE follow_ups ADD COLUMN sent_at TIMESTAMPTZ;
-        END IF;
-      END $$;
-    `);
+        console.log('[Migrations] MongoDB indexes created successfully.');
+      } catch (error: any) {
+        // Index creation errors are non-fatal in MongoDB
+        console.warn('[Migrations] Some MongoDB indexes may already exist:', error.message);
+      }
+    } else {
+      // PostgreSQL migrations (existing code)
+      // 1. Create tables if they don't exist
+      await db.query(`
+        CREATE TABLE IF NOT EXISTS matches (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          match_date TIMESTAMPTZ DEFAULT NOW(),
+          status TEXT NOT NULL DEFAULT 'pending'
+        );
 
-    // 4. Create indexes (safe to run if exists)
-    await db.query(`
-      CREATE INDEX IF NOT EXISTS idx_matches_user_id ON matches(user_id);
-      CREATE INDEX IF NOT EXISTS idx_follow_ups_scheduled_for ON follow_ups(scheduled_for) WHERE status = 'pending';
-    `);
+        CREATE TABLE IF NOT EXISTS follow_ups (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          type TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'pending',
+          response TEXT
+        );
+      `);
 
-    console.log('Migration steps executed successfully.');
+      // 2. Add missing columns to 'matches' if needed (handling existing tables)
+      await db.query(`
+        DO $$ 
+        BEGIN 
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='matches' AND column_name='user_id') THEN
+            ALTER TABLE matches ADD COLUMN user_id UUID;
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='matches' AND column_name='matched_user_id') THEN
+            ALTER TABLE matches ADD COLUMN matched_user_id UUID;
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='matches' AND column_name='room_id') THEN
+            ALTER TABLE matches ADD COLUMN room_id UUID;
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='matches' AND column_name='match_date') THEN
+            ALTER TABLE matches ADD COLUMN match_date TIMESTAMPTZ DEFAULT NOW();
+          END IF;
+        END $$;
+      `);
+
+      // 3. Add missing columns to 'follow_ups' if needed
+      await db.query(`
+        DO $$ 
+        BEGIN 
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='follow_ups' AND column_name='match_id') THEN
+            ALTER TABLE follow_ups ADD COLUMN match_id UUID REFERENCES matches(id);
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='follow_ups' AND column_name='user_id') THEN
+            ALTER TABLE follow_ups ADD COLUMN user_id UUID;
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='follow_ups' AND column_name='scheduled_for') THEN
+            ALTER TABLE follow_ups ADD COLUMN scheduled_for TIMESTAMPTZ;
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='follow_ups' AND column_name='sent_at') THEN
+            ALTER TABLE follow_ups ADD COLUMN sent_at TIMESTAMPTZ;
+          END IF;
+        END $$;
+      `);
+
+      // 4. Create indexes (safe to run if exists)
+      await db.query(`
+        CREATE INDEX IF NOT EXISTS idx_matches_user_id ON matches(user_id);
+        CREATE INDEX IF NOT EXISTS idx_follow_ups_scheduled_for ON follow_ups(scheduled_for) WHERE status = 'pending';
+      `);
+
+      console.log('[Migrations] PostgreSQL migrations executed successfully.');
+    }
   } catch (error) {
     console.error('Error running migrations:', error);
   }
 }
 
 async function createRuntime(character: any) {
-  const db = new PostgresDatabaseAdapter({
-    connectionString: process.env.DATABASE_URL as string
-  });
+  const db = createDatabaseAdapter();
   
   if (character.name === 'Kaia') {
     await runMigrations(db);
@@ -137,8 +163,10 @@ async function createRuntime(character: any) {
       errorMessage.toLowerCase().includes('testconnection') ||
       errorMessage.toLowerCase().includes('connection') ||
       errorStack.includes('PostgresDatabaseAdapter') ||
+      errorStack.includes('MongoAdapter') ||
       errorStack.includes('testConnection') ||
-      errorStack.includes('adapter-postgres');
+      errorStack.includes('adapter-postgres') ||
+      errorStack.includes('mongodb');
     
     if (isDatabaseError) {
       console.error(`⚠️ ${character.name} runtime initialization failed due to database connection issue (non-fatal, continuing)`);

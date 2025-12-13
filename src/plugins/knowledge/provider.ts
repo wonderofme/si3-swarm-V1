@@ -89,75 +89,46 @@ export const knowledgeProvider: Provider = {
       const embeddingData = await embeddingResponse.json();
       const embedding = embeddingData.data[0].embedding;
 
-      // Search knowledge base using direct SQL query with vector similarity
+      // Search knowledge base using database-specific vector search
       const db = runtime.databaseAdapter as any;
       if (!db || !db.query) {
         console.warn('[Knowledge Provider] Database adapter does not support query');
         return null;
       }
 
-      // Convert embedding array to PostgreSQL vector format
-      const embeddingVector = `[${embedding.join(',')}]`;
+      const databaseType = (process.env.DATABASE_TYPE || 'postgres').toLowerCase();
+      console.log(`[Knowledge Provider] Searching with agent_id: ${runtime.agentId} using ${databaseType}`);
 
-      console.log(`[Knowledge Provider] Searching with agent_id: ${runtime.agentId}`);
-      console.log(`[Knowledge Provider] Embedding vector length: ${embedding.length}`);
+      let results: any;
+      let filteredResults: any[] = [];
 
-      // First, check if there's any knowledge at all for this agent
-      const countQuery = `SELECT COUNT(*) as count FROM knowledge WHERE agent_id = $1::uuid`;
-      const countResult = await db.query(countQuery, [runtime.agentId]);
-      const totalCount = countResult?.rows?.[0]?.count || 0;
-      console.log(`[Knowledge Provider] Total knowledge entries for agent ${runtime.agentId}: ${totalCount}`);
-
-      if (totalCount === 0) {
-        console.log(`[Knowledge Provider] ⚠️ No knowledge entries found in database for this agent!`);
-        console.log(`[Knowledge Provider] Make sure you ran: npm run ingest-knowledge`);
-        return null;
+      if (databaseType === 'mongodb' || databaseType === 'mongo') {
+        // MongoDB Atlas Vector Search
+        results = await searchMongoDBVector(db, runtime.agentId, embedding);
+      } else {
+        // PostgreSQL pgvector
+        results = await searchPostgreSQLVector(db, runtime.agentId, embedding);
       }
 
-      // Query knowledge table using cosine similarity
-      // Lower threshold (0.3) to get more results - very lenient
-      // Try without threshold first to see what similarities we get
-      const query = `
-        SELECT 
-          id,
-          content,
-          embedding,
-          1 - (embedding <=> $1::vector) as similarity
-        FROM knowledge
-        WHERE agent_id = $2::uuid
-          AND embedding IS NOT NULL
-        ORDER BY embedding <=> $1::vector
-        LIMIT $3
-      `;
-
-      console.log(`[Knowledge Provider] Executing query (no threshold, getting top 5)`);
-      const results = await db.query(query, [
-        embeddingVector,
-        runtime.agentId,
-        5    // Get top 5 results
-      ]);
-
-      console.log(`[Knowledge Provider] Query returned ${results?.rows?.length || 0} rows`);
-      
       if (!results || !results.rows || results.rows.length === 0) {
-        console.log(`[Knowledge Provider] ❌ Query returned no rows (even without threshold)`);
+        console.log(`[Knowledge Provider] ❌ Query returned no rows`);
         return null;
       }
 
       // Log similarity scores
       results.rows.forEach((row: any, idx: number) => {
-        console.log(`[Knowledge Provider] Result ${idx + 1}: similarity = ${row.similarity}`);
+        console.log(`[Knowledge Provider] Result ${idx + 1}: similarity = ${row.similarity || 'N/A'}`);
       });
 
       // Filter by threshold (0.3 - very lenient)
       const threshold = 0.3;
-      const filteredResults = results.rows.filter((r: any) => r.similarity >= threshold);
+      filteredResults = results.rows.filter((r: any) => (r.similarity || 0) >= threshold);
       console.log(`[Knowledge Provider] After threshold filter (>= ${threshold}): ${filteredResults.length} results`);
 
       if (filteredResults.length === 0) {
-        console.log(`[Knowledge Provider] ⚠️ All results below threshold. Highest similarity: ${results.rows[0]?.similarity}`);
+        console.log(`[Knowledge Provider] ⚠️ All results below threshold. Highest similarity: ${results.rows[0]?.similarity || 'N/A'}`);
         // Use the top result anyway if it's close
-        if (results.rows[0]?.similarity >= 0.2) {
+        if ((results.rows[0]?.similarity || 0) >= 0.2) {
           console.log(`[Knowledge Provider] Using top result despite low similarity (${results.rows[0]?.similarity})`);
           filteredResults.push(results.rows[0]);
         } else {
@@ -204,4 +175,160 @@ ${knowledgeContext}
     }
   },
 };
+
+/**
+ * Search PostgreSQL knowledge base using pgvector
+ */
+async function searchPostgreSQLVector(db: any, agentId: string, embedding: number[]): Promise<any> {
+    // First, check if there's any knowledge at all for this agent
+    const countQuery = `SELECT COUNT(*) as count FROM knowledge WHERE agent_id = $1::uuid`;
+    const countResult = await db.query(countQuery, [agentId]);
+    const totalCount = countResult?.rows?.[0]?.count || 0;
+    console.log(`[Knowledge Provider] Total knowledge entries for agent ${agentId}: ${totalCount}`);
+
+    if (totalCount === 0) {
+      console.log(`[Knowledge Provider] ⚠️ No knowledge entries found in database for this agent!`);
+      console.log(`[Knowledge Provider] Make sure you ran: npm run ingest-knowledge`);
+      return { rows: [] };
+    }
+
+    // Convert embedding array to PostgreSQL vector format
+    const embeddingVector = `[${embedding.join(',')}]`;
+
+    // Query knowledge table using cosine similarity
+    const query = `
+      SELECT 
+        id,
+        content,
+        embedding,
+        1 - (embedding <=> $1::vector) as similarity
+      FROM knowledge
+      WHERE agent_id = $2::uuid
+        AND embedding IS NOT NULL
+      ORDER BY embedding <=> $1::vector
+      LIMIT $3
+    `;
+
+    console.log(`[Knowledge Provider] Executing PostgreSQL vector search query`);
+    return await db.query(query, [
+      embeddingVector,
+      agentId,
+      5    // Get top 5 results
+    ]);
+}
+
+/**
+ * Search MongoDB knowledge base using Atlas Vector Search
+ */
+async function searchMongoDBVector(db: any, agentId: string, embedding: number[]): Promise<any> {
+    try {
+      // Access MongoDB client directly for vector search
+      const mongoAdapter = db as any;
+      if (!mongoAdapter.getDb) {
+        // Fallback: use query method if getDb not available
+        return await searchMongoDBVectorFallback(db, agentId, embedding);
+      }
+
+      const database = await mongoAdapter.getDb();
+      const knowledgeCollection = database.collection('knowledge');
+
+      // First, check if there's any knowledge at all for this agent
+      const totalCount = await knowledgeCollection.countDocuments({ agentId });
+      console.log(`[Knowledge Provider] Total knowledge entries for agent ${agentId}: ${totalCount}`);
+
+      if (totalCount === 0) {
+        console.log(`[Knowledge Provider] ⚠️ No knowledge entries found in database for this agent!`);
+        console.log(`[Knowledge Provider] Make sure you ran: npm run ingest-knowledge`);
+        return { rows: [] };
+      }
+
+      // MongoDB Atlas Vector Search aggregation pipeline
+      // Note: This requires a vector search index named "knowledge_vector_index" in Atlas
+      const pipeline = [
+        {
+          $vectorSearch: {
+            index: 'knowledge_vector_index',
+            path: 'embedding',
+            queryVector: embedding,
+            numCandidates: 100,
+            limit: 5
+          }
+        },
+        {
+          $match: {
+            agentId: agentId,
+            embedding: { $exists: true, $ne: null }
+          }
+        },
+        {
+          $project: {
+            id: '$_id',
+            content: 1,
+            embedding: 1,
+            similarity: { $meta: 'vectorSearchScore' }
+          }
+        }
+      ];
+
+      console.log(`[Knowledge Provider] Executing MongoDB Atlas Vector Search`);
+      const results = await knowledgeCollection.aggregate(pipeline).toArray();
+
+      // Convert MongoDB results to PostgreSQL-like format
+      return {
+        rows: results.map((doc: any) => ({
+          id: doc.id?.toString() || doc._id?.toString(),
+          content: doc.content,
+          embedding: doc.embedding,
+          similarity: doc.similarity || 0
+        }))
+      };
+    } catch (error: any) {
+      // If vector search fails (index not configured), fall back to cosine similarity
+      if (error.message?.includes('vectorSearch') || error.message?.includes('index')) {
+        console.warn('[Knowledge Provider] MongoDB Atlas Vector Search not available, using fallback cosine similarity');
+        return await searchMongoDBVectorFallback(db, agentId, embedding);
+      }
+      throw error;
+    }
+}
+
+/**
+ * Fallback MongoDB search using cosine similarity calculation
+ */
+async function searchMongoDBVectorFallback(db: any, agentId: string, embedding: number[]): Promise<any> {
+    // Use query method to get all knowledge entries and calculate similarity in memory
+    const query = `SELECT id, content, embedding FROM knowledge WHERE agent_id = $1 AND embedding IS NOT NULL`;
+    const results = await db.query(query, [agentId]);
+
+    if (!results || !results.rows || results.rows.length === 0) {
+      return { rows: [] };
+    }
+
+    // Calculate cosine similarity for each result
+    const resultsWithSimilarity = results.rows.map((row: any) => {
+      const rowEmbedding = Array.isArray(row.embedding) ? row.embedding : 
+                          (typeof row.embedding === 'string' ? JSON.parse(row.embedding) : []);
+      
+      if (!Array.isArray(rowEmbedding) || rowEmbedding.length !== embedding.length) {
+        return { ...row, similarity: 0 };
+      }
+
+      // Calculate cosine similarity
+      const dotProduct = embedding.reduce((sum, val, idx) => sum + val * rowEmbedding[idx], 0);
+      const magnitudeA = Math.sqrt(embedding.reduce((sum, val) => sum + val * val, 0));
+      const magnitudeB = Math.sqrt(rowEmbedding.reduce((sum: number, val: number) => sum + val * val, 0));
+      const similarity = magnitudeA > 0 && magnitudeB > 0 ? dotProduct / (magnitudeA * magnitudeB) : 0;
+
+      return {
+        ...row,
+        similarity
+      };
+    });
+
+    // Sort by similarity and take top 5
+    resultsWithSimilarity.sort((a: any, b: any) => b.similarity - a.similarity);
+    const topResults = resultsWithSimilarity.slice(0, 5);
+
+    return { rows: topResults };
+}
 

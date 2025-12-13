@@ -1,5 +1,6 @@
 import { IAgentRuntime } from '@elizaos/core';
 import { v4 as uuidv4 } from 'uuid';
+import { createDatabaseAdapter } from '../adapters/databaseAdapter.js';
 
 export interface MatchRecord {
   id: string;
@@ -143,77 +144,53 @@ export async function getRecentSentFollowUp(
 }
 
 export async function getUserMatches(userId: string, limit: number = 20): Promise<MatchRecord[]> {
-  // Note: We need runtime for adapter, but this function might be called from API context
-  // For now, we assume we can get a PG client or use a singleton runtime if needed.
-  // BUT, usually we pass runtime. For the API endpoint, we might need to refactor to pass runtime or DB pool.
-  // Since this is a service, we'll assume the caller passes runtime or we use a separate DB connection if strictly needed.
-  // However, for simplicity in ElizaOS context, let's assume we are passed runtime or using a global if available.
-  // Wait, in index.ts we import this. Let's adhere to passing runtime or using a new pool if strictly standalone.
-  // For now, let's rely on the fact that `index.ts` has a db adapter.
-  // Actually, the API endpoint in index.ts imports this. It will fail if it doesn't have DB access.
-  // Let's update the signature to take runtime if possible, or use `process.env.DATABASE_URL` for a new pool.
-  
-  const pg = await import('pg');
-  const pool = new pg.default.Pool({ connectionString: process.env.DATABASE_URL });
+  // Create adapter for API context (when runtime is not available)
+  const adapter = createDatabaseAdapter();
   
   try {
-    // Try snake_case first, fallback to camelCase if needed
-    let rows;
-    try {
-      const result = await pool.query(
-        `SELECT id, user_id, matched_user_id, room_id, match_date, status 
-         FROM matches 
-         WHERE user_id = $1 
-         ORDER BY match_date DESC 
-         LIMIT $2`,
-        [userId, limit]
-      );
-      rows = result.rows;
-    } catch (e: any) {
-      // If match_date doesn't exist, try matchDate (camelCase)
-      if (e.message?.includes('match_date')) {
-        const result = await pool.query(
-          `SELECT id, user_id, matched_user_id, room_id, "matchDate", status 
-           FROM matches 
-           WHERE user_id = $1 
-           ORDER BY "matchDate" DESC 
-           LIMIT $2`,
-          [userId, limit]
-        );
-        rows = result.rows;
-      } else {
-        throw e;
-      }
-    }
+    const result = await adapter.query(
+      `SELECT id, user_id, matched_user_id, room_id, match_date, status 
+       FROM matches 
+       WHERE user_id = $1 
+       ORDER BY match_date DESC 
+       LIMIT $2`,
+      [userId, limit]
+    );
     
+    const rows = result.rows || [];
     return rows.map((row: any) => ({
-       id: row.id,
-       userId: row.user_id,
-       matchedUserId: row.matched_user_id,
-       roomId: row.room_id,
+       id: row.id || row._id?.toString(),
+       userId: row.user_id || row.userId,
+       matchedUserId: row.matched_user_id || row.matchedUserId,
+       roomId: row.room_id || row.roomId,
        matchDate: row.match_date || row.matchDate,
        status: row.status
     }));
+  } catch (error: any) {
+    console.error('[MatchTracker] Error getting user matches:', error);
+    return [];
   } finally {
-    await pool.end();
+    if (adapter.close) {
+      await adapter.close();
+    }
   }
 }
 
 export async function getOnboardingCompletionDate(userId: string): Promise<Date | null> {
     // This requires accessing the onboarding state cache/memory.
-    // We can query the cache table directly if we know the key.
-    const pg = await import('pg');
-    const pool = new pg.default.Pool({ connectionString: process.env.DATABASE_URL });
+    // We can query the cache table/collection directly if we know the key.
+    const adapter = createDatabaseAdapter();
     
     try {
         // Try to get from cache first
-        const res = await pool.query(
+        const res = await adapter.query(
             `SELECT value FROM cache WHERE key = $1`,
             [`onboarding_${userId}`]
         );
         
-        if (res.rows.length > 0) {
-            const state = JSON.parse(res.rows[0].value);
+        if (res.rows && res.rows.length > 0) {
+            const value = res.rows[0].value;
+            const state = typeof value === 'string' ? JSON.parse(value) : value;
             if (state.profile && state.profile.onboardingCompletedAt) {
                 return new Date(state.profile.onboardingCompletedAt);
             }
@@ -223,7 +200,9 @@ export async function getOnboardingCompletionDate(userId: string): Promise<Date 
         console.error("Error fetching onboarding date", e);
         return null;
     } finally {
-        await pool.end();
+        if (adapter.close) {
+            await adapter.close();
+        }
     }
 }
 

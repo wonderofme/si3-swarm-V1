@@ -21,6 +21,9 @@ function createTransporter() {
       user: smtpUser,
       pass: smtpPass,
     },
+    // Explicit TLS configuration for better compatibility with ProtonMail and other providers
+    // STARTTLS is automatically used when secure: false and port is 587
+    requireTLS: smtpPort === 587, // Require TLS for port 587 (STARTTLS)
   });
 }
 

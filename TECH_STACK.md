@@ -24,13 +24,29 @@ Agent Kaia is a multi-agent Telegram bot built on the ElizaOS framework, designe
 ## Database & Storage
 
 ### Primary Database
-- **PostgreSQL**: Production database
+- **PostgreSQL** (default): Production database
   - **Adapter**: `@elizaos/adapter-postgres` `^0.1.0`
   - **Client**: `pg` `^8.13.0`
+  - **Vector Search**: `pgvector` extension for knowledge base embeddings
   - **Tables**:
     - `cache` - ElizaOS cache (onboarding state, user profiles)
     - `matches` - Match records between users
     - `follow_ups` - Scheduled follow-up messages
+    - `knowledge` - SI<3> knowledge base with vector embeddings
+
+- **MongoDB** (optional): Alternative database support
+  - **Adapter**: Custom `MongoAdapter` implementation
+  - **Client**: `mongodb` `^6.3.0`
+  - **Vector Search**: MongoDB Atlas Vector Search (requires Atlas)
+  - **Collections**:
+    - `cache` - ElizaOS cache (onboarding state, user profiles)
+    - `matches` - Match records between users
+    - `follow_ups` - Scheduled follow-up messages
+    - `knowledge` - SI<3> knowledge base with vector embeddings
+
+**Database Selection**: Controlled via `DATABASE_TYPE` environment variable:
+- `DATABASE_TYPE=postgres` (default) - Uses PostgreSQL
+- `DATABASE_TYPE=mongodb` - Uses MongoDB
 
 ### Caching
 - **Dual-layer caching**:
