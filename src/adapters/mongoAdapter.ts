@@ -544,6 +544,36 @@ export class MongoAdapter implements DatabaseAdapter {
   }
 
   /**
+   * Get participants for an account
+   * Required by ElizaOS AgentRuntime.ensureParticipantExists
+   * Returns an array of participants (accounts) associated with the given account
+   */
+  async getParticipantsForAccount(accountId: string): Promise<any[]> {
+    try {
+      const db = await this.getDb();
+      const participantsCollection = db.collection('participants');
+      
+      // Find all participants for this account
+      // Participants typically link accounts to rooms or other accounts
+      const participants = await participantsCollection.find({ 
+        accountId: accountId 
+      }).toArray();
+      
+      // If no participants exist, return empty array (ElizaOS will create them if needed)
+      return participants || [];
+    } catch (error: any) {
+      // If collection doesn't exist yet, return empty array
+      // This is expected during initial setup
+      if (error.message?.includes('does not exist') || error.code === 26) {
+        return [];
+      }
+      console.error('[MongoDB Adapter] Error in getParticipantsForAccount:', error);
+      // Return empty array on error to allow initialization to continue
+      return [];
+    }
+  }
+
+  /**
    * Test database connection
    */
   async testConnection(): Promise<void> {
