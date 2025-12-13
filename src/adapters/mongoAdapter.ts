@@ -241,8 +241,8 @@ export class MongoAdapter implements DatabaseAdapter {
 
       // Handle special values
       if (value === 'NOW()' || value === 'CURRENT_TIMESTAMP') {
-        updateValue = new Date();
-      } else if (value.startsWith('$')) {
+        updateValue = new Date().toISOString();
+      } else if (typeof value === 'string' && value.startsWith('$')) {
         const paramIdx = parseInt(value.substring(1)) - 1;
         updateValue = params[paramIdx];
       }

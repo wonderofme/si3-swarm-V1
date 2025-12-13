@@ -3,10 +3,12 @@ import { MongoAdapter } from './mongoAdapter.js';
 
 /**
  * Database adapter interface that both PostgreSQL and MongoDB adapters must implement
+ * Note: This is a compatibility layer - ElizaOS expects IDatabaseAdapter, but we use this
+ * to support both PostgreSQL and MongoDB adapters
  */
 export interface DatabaseAdapter {
   query(sql: string, params?: any[]): Promise<any>;
-  testConnection(): Promise<void>;
+  testConnection(): Promise<void | boolean>;
   close?(): Promise<void>;
   // Add other methods that ElizaOS expects
   [key: string]: any;

@@ -140,7 +140,7 @@ async function createRuntime(character: any) {
     character,
     token: process.env.OPENAI_API_KEY as string,
     modelProvider: ModelProviderName.OPENAI,
-    databaseAdapter: db,
+    databaseAdapter: db as any, // Cast to any since we're using a compatibility layer
     cacheManager,
     plugins
   });
