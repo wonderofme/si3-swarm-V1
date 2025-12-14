@@ -65,6 +65,13 @@ try {
   console.log('[Bootstrap] Could not patch pino via require.cache');
 }
 
+// Log masked bot token suffix to verify which token is loaded (do NOT log full token)
+if (process.env.TELEGRAM_BOT_TOKEN) {
+  const t = process.env.TELEGRAM_BOT_TOKEN;
+  const suffix = t.slice(-6);
+  console.log(`[Bootstrap] Bot token suffix (masked): ****${suffix}`);
+}
+
 // Set up error suppression interceptors IMMEDIATELY
 const originalStdoutWrite = process.stdout.write.bind(process.stdout);
 const originalStderrWrite = process.stderr.write.bind(process.stderr);
