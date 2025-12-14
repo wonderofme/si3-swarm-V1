@@ -91,10 +91,10 @@ async function checkForNewMatches(
           // Notify the existing user about the new match
           const otherUserLang = otherState.profile.language || 'en';
           const notificationMessages: Record<string, string> = {
-            en: `🎉 New match alert!\n\nI found someone who might be a great connection for you:\n\n**${newUserProfile.name}** from ${newUserProfile.location || 'the community'}\nRoles: ${newUserRoles.join(', ') || 'Not specified'}\nInterests: ${newUserInterests.slice(0, 3).join(', ') || 'Not specified'}\n${newUserProfile.telegramHandle ? `Telegram: @${newUserProfile.telegramHandle}` : ''}\n\n💡 ${matchReason}\n\nSay "find me a match" for more connections! 🤝`,
-            es: `🎉 ¡Nueva conexión encontrada!\n\nEncontré a alguien que podría ser una gran conexión para ti:\n\n**${newUserProfile.name}** de ${newUserProfile.location || 'la comunidad'}\nRoles: ${newUserRoles.join(', ') || 'No especificado'}\nIntereses: ${newUserInterests.slice(0, 3).join(', ') || 'No especificado'}\n${newUserProfile.telegramHandle ? `Telegram: @${newUserProfile.telegramHandle}` : ''}\n\n💡 ${matchReason}\n\n¡Di "encuéntrame una conexión" para más! 🤝`,
-            pt: `🎉 Nova conexão encontrada!\n\nEncontrei alguém que pode ser uma ótima conexão para você:\n\n**${newUserProfile.name}** de ${newUserProfile.location || 'a comunidade'}\nFunções: ${newUserRoles.join(', ') || 'Não especificado'}\nInteresses: ${newUserInterests.slice(0, 3).join(', ') || 'Não especificado'}\n${newUserProfile.telegramHandle ? `Telegram: @${newUserProfile.telegramHandle}` : ''}\n\n💡 ${matchReason}\n\nDiga "encontre uma conexão" para mais! 🤝`,
-            fr: `🎉 Nouvelle connexion trouvée!\n\nJ'ai trouvé quelqu'un qui pourrait être une excellente connexion pour vous:\n\n**${newUserProfile.name}** de ${newUserProfile.location || 'la communauté'}\nRôles: ${newUserRoles.join(', ') || 'Non spécifié'}\nIntérêts: ${newUserInterests.slice(0, 3).join(', ') || 'Non spécifié'}\n${newUserProfile.telegramHandle ? `Telegram: @${newUserProfile.telegramHandle}` : ''}\n\n💡 ${matchReason}\n\nDites "trouve-moi une connexion" pour plus! 🤝`
+            en: `🎉 New match alert!\n\nI found someone who might be a great connection for you:\n\n${newUserProfile.name} from ${newUserProfile.location || 'the community'}\nRoles: ${newUserRoles.join(', ') || 'Not specified'}\nInterests: ${newUserInterests.slice(0, 3).join(', ') || 'Not specified'}\n${newUserProfile.telegramHandle ? `Telegram: @${newUserProfile.telegramHandle}` : ''}\n\n💡 ${matchReason}\n\nSay "find me a match" for more connections! 🤝`,
+            es: `🎉 ¡Nueva conexión encontrada!\n\nEncontré a alguien que podría ser una gran conexión para ti:\n\n${newUserProfile.name} de ${newUserProfile.location || 'la comunidad'}\nRoles: ${newUserRoles.join(', ') || 'No especificado'}\nIntereses: ${newUserInterests.slice(0, 3).join(', ') || 'No especificado'}\n${newUserProfile.telegramHandle ? `Telegram: @${newUserProfile.telegramHandle}` : ''}\n\n💡 ${matchReason}\n\n¡Di "encuéntrame una conexión" para más! 🤝`,
+            pt: `🎉 Nova conexão encontrada!\n\nEncontrei alguém que pode ser uma ótima conexão para você:\n\n${newUserProfile.name} de ${newUserProfile.location || 'a comunidade'}\nFunções: ${newUserRoles.join(', ') || 'Não especificado'}\nInteresses: ${newUserInterests.slice(0, 3).join(', ') || 'Não especificado'}\n${newUserProfile.telegramHandle ? `Telegram: @${newUserProfile.telegramHandle}` : ''}\n\n💡 ${matchReason}\n\nDiga "encontre uma conexão" para mais! 🤝`,
+            fr: `🎉 Nouvelle connexion trouvée!\n\nJ'ai trouvé quelqu'un qui pourrait être une excellente connexion pour vous:\n\n${newUserProfile.name} de ${newUserProfile.location || 'la communauté'}\nRôles: ${newUserRoles.join(', ') || 'Non spécifié'}\nIntérêts: ${newUserInterests.slice(0, 3).join(', ') || 'Non spécifié'}\n${newUserProfile.telegramHandle ? `Telegram: @${newUserProfile.telegramHandle}` : ''}\n\n💡 ${matchReason}\n\nDites "trouve-moi une connexion" pour plus! 🤝`
           };
           
           // Send notification to existing user via Telegram
@@ -839,30 +839,15 @@ async function startAgents() {
                 console.log('[Telegram Chat ID Capture] ⚠️ No chat ID found in update');
               }
               
-              // CRITICAL: Always call original handler to ensure messages are processed
-              // Wrap in try-catch to handle database errors gracefully
-              // Track if a message was sent by ElizaOS
-              let elizaSentMessage = false;
+              // DIRECT HANDLER: Skip ElizaOS and use our custom implementation
+              // ElizaOS was causing silent failures - this is simpler and more reliable
               const originalSendMessage = bot.telegram.sendMessage.bind(bot.telegram);
-              const patchedSendMessage = async (...args: any[]) => {
-                elizaSentMessage = true;
-                return originalSendMessage(...args);
-              };
-              bot.telegram.sendMessage = patchedSendMessage;
               
-              try {
-                console.log('[Telegram Chat ID Capture] Calling original handler...');
-                
-                const result = await originalHandler(update);
-                console.log('[Telegram Chat ID Capture] ✅ Original handler returned successfully');
-                console.log('[Telegram Chat ID Capture] ElizaOS sent message:', elizaSentMessage);
-                
-                // FALLBACK: If ElizaOS didn't send a message, handle onboarding directly
-                if (!elizaSentMessage && chatId && messageText) {
-                  console.log('[Telegram Chat ID Capture] ⚠️ ElizaOS did not send a message - using direct onboarding fallback');
-                  try {
-                    const openaiKey = process.env.OPENAI_API_KEY;
-                    if (openaiKey && kaiaRuntimeForOnboardingCheck) {
+              if (chatId && messageText) {
+                console.log('[Kaia Handler] 💜 Processing message directly (ElizaOS bypassed)');
+                try {
+                  const openaiKey = process.env.OPENAI_API_KEY;
+                  if (openaiKey && kaiaRuntimeForOnboardingCheck) {
                       // Use cache-only state management to avoid database issues
                       const { getMessages } = await import('./plugins/onboarding/translations.js');
                       
@@ -1099,25 +1084,25 @@ async function startAgents() {
                         const SI3_KNOWLEDGE = `
 SI<3> KNOWLEDGE BASE:
 
-**About SI<3>:**
+About SI<3>:
 SI<3> (Social Impact Cubed) is a Web3 community focused on inclusion and education. We help under-represented groups navigate and thrive in Web3 through community, education, and meaningful connections.
 
-**Programs:**
-1. **Grow3dge Accelerator**: A 10-week accelerator program with the Growth and Education 3.0 Playbook. Helps Web3 founders and builders grow their projects with mentorship, resources, and network access.
+Programs:
+1. Grow3dge Accelerator: A 10-week accelerator program with the Growth and Education 3.0 Playbook. Helps Web3 founders and builders grow their projects with mentorship, resources, and network access.
 
-2. **Si Her DAO**: A decentralized autonomous organization for women in Web3. Members participate in governance, vote on proposals, and access exclusive opportunities.
+2. Si Her DAO: A decentralized autonomous organization for women in Web3. Members participate in governance, vote on proposals, and access exclusive opportunities.
 
-3. **SI U (Social Impact University)**: Educational platform offering courses on Web3 fundamentals, smart contracts, DeFi, NFTs, DAOs, and more. Self-paced learning with community support.
+3. SI U (Social Impact University): Educational platform offering courses on Web3 fundamentals, smart contracts, DeFi, NFTs, DAOs, and more. Self-paced learning with community support.
 
-**Leadership:**
-- **Kara Howard**: Founder & CEO of SI<3>. Passionate about diversity in Web3 and social impact through technology.
+Leadership:
+- Kara Howard: Founder & CEO of SI<3>. Passionate about diversity in Web3 and social impact through technology.
 
-**Community:**
+Community:
 - 4 languages supported: English, Spanish, Portuguese, French
 - Global community across multiple continents
 - Focus on networking, education, and opportunity access
 
-**Keywords**: grow3dge, si her dao, si u, social impact university, kara howard, web3 education, diversity in web3`;
+Keywords: grow3dge, si her dao, si u, social impact university, kara howard, web3 education, diversity in web3`;
 
                         // Check if question is about SI<3> to inject knowledge
                         const si3Keywords = ['grow3dge', 'si<3>', 'si3', 'si her', 'si u', 'kara', 'social impact', 'accelerator'];
@@ -1239,7 +1224,7 @@ SI<3> (Social Impact Cubed) is a Web3 community focused on inclusion and educati
                                 }
                                 
                                 responseText = `🚀 I found a match for you!\n\n` +
-                                  `Meet **${topMatch.profile.name || 'Anonymous'}** from ${topMatch.profile.location || 'Earth'}.\n` +
+                                  `Meet ${topMatch.profile.name || 'Anonymous'} from ${topMatch.profile.location || 'Earth'}.\n` +
                                   `Roles: ${topMatch.profile.roles?.join(', ') || 'Not specified'}\n` +
                                   `Interests: ${topMatch.profile.interests?.join(', ') || 'Not specified'}\n` +
                                   (topMatch.profile.telegramHandle ? `Telegram: @${topMatch.profile.telegramHandle}\n` : '') +
@@ -1268,7 +1253,7 @@ SI<3> (Social Impact Cubed) is a Web3 community focused on inclusion and educati
                               );
                               matchCount = matchRes.rows?.length || 0;
                               if (matchCount > 0) {
-                                matchList = '\n\n**Recent Matches:**\n';
+                                matchList = '\n\nRecent Matches:\n';
                                 for (const match of matchRes.rows) {
                                   const statusEmoji = match.status === 'connected' ? '✅' : match.status === 'not_interested' ? '❌' : '⏳';
                                   const date = new Date(match.match_date).toLocaleDateString();
@@ -1279,17 +1264,17 @@ SI<3> (Social Impact Cubed) is a Web3 community focused on inclusion and educati
                           } catch (e) { /* no matches */ }
                           
                           responseText = `💜 Your Grow3dge Profile:\n\n` +
-                            `**Name:** ${p.name || 'Not set'}\n` +
-                            `**Location:** ${p.location || 'Not set'}\n` +
-                            `**Language:** ${p.language || 'en'}\n` +
-                            `**Roles:** ${p.roles?.join(', ') || 'Not set'}\n` +
-                            `**Interests:** ${p.interests?.join(', ') || 'Not set'}\n` +
-                            `**Goals:** ${p.connectionGoals?.join(', ') || 'Not set'}\n` +
-                            `**Events:** ${p.events?.join(', ') || 'None'}\n` +
-                            `**Socials:** ${p.socials?.join(', ') || 'None'}\n` +
-                            `**Telegram:** ${p.telegramHandle ? '@' + p.telegramHandle : 'Not set'}\n` +
-                            `**Notifications:** ${p.notifications || 'Not set'}\n` +
-                            `**Total Matches:** ${matchCount}` +
+                            `Name: ${p.name || 'Not set'}\n` +
+                            `Location: ${p.location || 'Not set'}\n` +
+                            `Language: ${p.language || 'en'}\n` +
+                            `Roles: ${p.roles?.join(', ') || 'Not set'}\n` +
+                            `Interests: ${p.interests?.join(', ') || 'Not set'}\n` +
+                            `Goals: ${p.connectionGoals?.join(', ') || 'Not set'}\n` +
+                            `Events: ${p.events?.join(', ') || 'None'}\n` +
+                            `Socials: ${p.socials?.join(', ') || 'None'}\n` +
+                            `Telegram: ${p.telegramHandle ? '@' + p.telegramHandle : 'Not set'}\n` +
+                            `Notifications: ${p.notifications || 'Not set'}\n` +
+                            `Total Matches: ${matchCount}` +
                             matchList +
                             `\n\n✅ Onboarding: Completed\n\nTo update any field, say "update" or "update [field name]".`;
                         } else if (isUpdateRequest) {
@@ -1525,52 +1510,16 @@ PERSONALITY:
                       console.error('[Telegram Chat ID Capture] ❌ No OpenAI API key for fallback');
                       await originalSendMessage(chatId, "I'm experiencing some issues right now. Please try again in a moment! 🔧");
                     }
-                  } catch (fallbackErr: any) {
-                    console.error('[Telegram Chat ID Capture] ❌ Fallback error:', fallbackErr?.message || fallbackErr);
+                  } catch (handlerErr: any) {
+                    console.error('[Kaia Handler] ❌ Handler error:', handlerErr?.message || handlerErr);
+                    try {
+                      await originalSendMessage(chatId, "I'm experiencing some issues right now. Please try again in a moment! 🔧");
+                    } catch (sendErr) {
+                      console.error('[Kaia Handler] Could not send error message');
+                    }
                   }
-                }
-                
-                return result;
-              } catch (error: any) {
-                console.error('[Telegram Chat ID Capture] ❌ Error in message handler:', error);
-                console.error('[Telegram Chat ID Capture] Error message:', error.message);
-                console.error('[Telegram Chat ID Capture] Error code:', error.code);
-                if (error.stack) {
-                  console.error('[Telegram Chat ID Capture] Error stack:', error.stack.substring(0, 500));
-                }
-                
-                // Check if it's a MongoDB connection error
-                const isMongoError = 
-                  error.message?.includes('MongoServerSelectionError') ||
-                  error.message?.includes('MongoNetworkError') ||
-                  error.message?.includes('ERR_SSL_TLSV1_ALERT_INTERNAL_ERROR') ||
-                  error.message?.includes('ReplicaSetNoPrimary') ||
-                  error.code === 'ETIMEDOUT' ||
-                  error.message?.includes('timeout') ||
-                  error.message?.includes('database');
-                
-                // If it's a database/MongoDB error and we have a chat ID, send a fallback response
-                if (chatId && isMongoError) {
-                  console.log('[Telegram Chat ID Capture] Database/MongoDB error detected, sending fallback response to chat:', chatId);
-                  try {
-                    await bot.telegram.sendMessage(chatId, "I'm experiencing some technical difficulties right now. Please try again in a moment! 🔧");
-                    console.log('[Telegram Chat ID Capture] ✅ Sent fallback response');
-                  } catch (sendErr: any) {
-                    console.error('[Telegram Chat ID Capture] Failed to send fallback response:', sendErr);
-                    // Don't throw - we've already logged the error
-                  }
-                }
-                
-                // CRITICAL: Don't re-throw if it's a database/MongoDB error - let the message be processed
-                // Re-throwing might prevent message processing entirely and cause cascading failures
-                if (isMongoError) {
-                  console.log('[Telegram Chat ID Capture] ⚠️ Database/MongoDB error - continuing despite error to allow message processing');
-                  return; // Return undefined to allow processing to continue
-                }
-                
-                // For other errors, log but don't throw to prevent cascading failures
-                console.error('[Telegram Chat ID Capture] ⚠️ Non-database error in handler - logging but not throwing to prevent cascading failures');
-                return; // Return undefined to allow processing to continue
+              } else {
+                console.log('[Kaia Handler] ⚠️ No message text or chat ID, skipping');
               }
             };
             console.log('[Telegram Chat ID Capture] Patched bot.handler to capture chat IDs');
