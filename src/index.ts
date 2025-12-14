@@ -797,10 +797,13 @@ async function startAgents() {
                       // Check for restart commands
                       const isRestart = lowerText.includes('restart') || lowerText.includes('start over') || lowerText.includes('begin again');
                       
+                      // Check for "next" to skip optional questions
+                      const isNext = lowerText === 'next' || lowerText === 'skip';
+                      
                       if (isRestart || state.step === 'NONE') {
                         // Start/restart onboarding - ask for language
                         await updateState('ASK_LANGUAGE', {});
-                        responseText = "What's your preferred language?\n\n1. English\n2. Español\n3. Português\n4. Français";
+                        responseText = msgs.LANGUAGE || "What's your preferred language?\n\n1. English\n2. Spanish\n3. Portuguese\n4. French\n\nReply with the number (for example: 1)";
                         console.log('[Telegram Chat ID Capture] 📋 Starting onboarding, asking for language');
                       } else if (state.step === 'ASK_LANGUAGE') {
                         // Process language selection
@@ -812,29 +815,77 @@ async function startAgents() {
                         
                         await updateState('ASK_NAME', { language: lang });
                         const newMsgs = getMessages(lang);
-                        responseText = newMsgs.GREETING || "What's your name? 💜";
+                        responseText = newMsgs.GREETING;
                         console.log('[Telegram Chat ID Capture] 📋 Language set to:', lang);
                       } else if (state.step === 'ASK_NAME') {
                         // Save name and ask for location
                         await updateState('ASK_LOCATION', { name: messageText.trim() });
-                        responseText = msgs.LOCATION || "Where are you based? 🌍";
+                        responseText = msgs.LOCATION;
                         console.log('[Telegram Chat ID Capture] 📋 Name saved:', messageText.trim());
                       } else if (state.step === 'ASK_LOCATION') {
-                        // Save location and ask for roles
-                        await updateState('ASK_ROLE', { location: messageText.trim() });
-                        responseText = msgs.ROLES || "What roles best describe you? (e.g., Developer, Designer, Founder, etc.)";
-                        console.log('[Telegram Chat ID Capture] 📋 Location saved:', messageText.trim());
+                        // Save location (or skip) and ask for roles
+                        const location = isNext ? undefined : messageText.trim();
+                        await updateState('ASK_ROLE', { location });
+                        responseText = msgs.ROLES;
+                        console.log('[Telegram Chat ID Capture] 📋 Location saved:', location || 'skipped');
                       } else if (state.step === 'ASK_ROLE') {
                         // Save roles and ask for interests
                         const roles = messageText.split(',').map((r: string) => r.trim()).filter((r: string) => r);
                         await updateState('ASK_INTERESTS', { roles });
-                        responseText = msgs.INTERESTS || "What are your interests in Web3? 🚀";
+                        responseText = msgs.INTERESTS;
                         console.log('[Telegram Chat ID Capture] 📋 Roles saved:', roles);
                       } else if (state.step === 'ASK_INTERESTS') {
-                        // Save interests and complete onboarding
+                        // Save interests and ask for connection goals
                         const interests = messageText.split(',').map((r: string) => r.trim()).filter((r: string) => r);
-                        await updateState('COMPLETED', { interests });
-                        responseText = msgs.COMPLETION || `Welcome to SI<3>, ${state.profile.name || 'friend'}! 🎉\n\nYou're all set! I can help you:\n• Find matches with /match\n• View your profile with /history\n• Answer questions about Web3\n\nHow can I help you today?`;
+                        await updateState('ASK_CONNECTION_GOALS', { interests });
+                        responseText = msgs.GOALS;
+                        console.log('[Telegram Chat ID Capture] 📋 Interests saved:', interests);
+                      } else if (state.step === 'ASK_CONNECTION_GOALS') {
+                        // Save goals and ask for events
+                        const connectionGoals = messageText.split(',').map((r: string) => r.trim()).filter((r: string) => r);
+                        await updateState('ASK_EVENTS', { connectionGoals });
+                        responseText = msgs.EVENTS;
+                        console.log('[Telegram Chat ID Capture] 📋 Goals saved:', connectionGoals);
+                      } else if (state.step === 'ASK_EVENTS') {
+                        // Save events (or skip) and ask for socials
+                        const events = isNext ? undefined : messageText.split(',').map((r: string) => r.trim()).filter((r: string) => r);
+                        await updateState('ASK_SOCIALS', { events });
+                        responseText = msgs.SOCIALS;
+                        console.log('[Telegram Chat ID Capture] 📋 Events saved:', events || 'skipped');
+                      } else if (state.step === 'ASK_SOCIALS') {
+                        // Save socials (or skip) and ask for telegram handle
+                        const socials = isNext ? undefined : messageText.split(',').map((r: string) => r.trim()).filter((r: string) => r);
+                        await updateState('ASK_TELEGRAM_HANDLE', { socials });
+                        responseText = msgs.TELEGRAM;
+                        console.log('[Telegram Chat ID Capture] 📋 Socials saved:', socials || 'skipped');
+                      } else if (state.step === 'ASK_TELEGRAM_HANDLE') {
+                        // Save telegram handle and ask for gender
+                        const telegramHandle = messageText.trim().replace('@', '');
+                        await updateState('ASK_GENDER', { telegramHandle });
+                        responseText = msgs.GENDER;
+                        console.log('[Telegram Chat ID Capture] 📋 Telegram handle saved:', telegramHandle);
+                      } else if (state.step === 'ASK_GENDER') {
+                        // Save gender (or skip) and ask for notifications
+                        let gender: string | undefined;
+                        if (!isNext) {
+                          if (lowerText.includes('1')) gender = 'She/Her';
+                          else if (lowerText.includes('2')) gender = 'He/Him';
+                          else if (lowerText.includes('3')) gender = 'They/Them';
+                          else if (lowerText.includes('4')) gender = messageText.trim();
+                          else gender = messageText.trim();
+                        }
+                        await updateState('ASK_NOTIFICATIONS', { gender });
+                        responseText = msgs.NOTIFICATIONS;
+                        console.log('[Telegram Chat ID Capture] 📋 Gender saved:', gender || 'skipped');
+                      } else if (state.step === 'ASK_NOTIFICATIONS') {
+                        // Save notifications preference and complete
+                        let notifications = 'Not sure';
+                        if (lowerText.includes('1') || lowerText.includes('yes')) notifications = 'Yes';
+                        else if (lowerText.includes('2') || lowerText.includes('no')) notifications = 'No';
+                        else if (lowerText.includes('3')) notifications = 'Check later';
+                        
+                        await updateState('COMPLETED', { notifications, onboardingCompletedAt: new Date() });
+                        responseText = msgs.COMPLETION + `\n\n🎉 You're all set, ${state.profile.name || 'friend'}!\n\nI can help you:\n• Find matches - just ask!\n• View your profile\n• Answer questions about Web3\n\nHow can I help you today?`;
                         console.log('[Telegram Chat ID Capture] 📋 Onboarding completed!');
                       } else if (state.step === 'COMPLETED') {
                         // User has completed onboarding - use OpenAI for general chat
