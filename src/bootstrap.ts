@@ -158,20 +158,37 @@ process.stdout.write = function(chunk: any, encoding?: any, callback?: any): boo
     .replace(/\[[0-9;]*m/g, '')
     .replace(/\[[0-9]+m/g, '');
   const lowerMessage = cleanMessage.toLowerCase();
-  if (lowerMessage.includes('error handling message') || lowerMessage.includes('error sending message')) {
-    // Log the full error BEFORE suppressing
-    // Use originalStderrWrite directly to avoid recursion (console.error uses process.stderr.write)
-    originalStderrWrite('[Bootstrap] 🔍 CAPTURED ERROR via stdout.write:\n');
-    originalStderrWrite('[Bootstrap] Raw chunk: ' + message + '\n');
-    originalStderrWrite('[Bootstrap] Clean message: ' + cleanMessage + '\n');
-    originalStderrWrite('[Bootstrap] ⚠️ This error will be suppressed, but details logged above\n');
+  
+  // Check if this is an error we want to suppress
+  const isTargetError = lowerMessage.includes('error handling message') || 
+                       lowerMessage.includes('error sending message');
+  
+  // Log ALL stdout writes that contain "error" to help debug (pino writes to stdout!)
+  if (lowerMessage.includes('error') && message.length > 0) {
+    originalStderrWrite('[Bootstrap] 📝 stdout.write write detected:\n');
+    originalStderrWrite('[Bootstrap] Message length: ' + message.length + '\n');
+    originalStderrWrite('[Bootstrap] First 200 chars: ' + message.substring(0, 200) + '\n');
+    originalStderrWrite('[Bootstrap] Clean (first 200): ' + cleanMessage.substring(0, 200) + '\n');
+    originalStderrWrite('[Bootstrap] Is target error: ' + isTargetError + '\n');
   }
   
-  if (shouldSuppressMessage(message)) {
+  if (isTargetError) {
+    // Log the full error BEFORE suppressing
+    // Use originalStderrWrite directly to avoid recursion (console.error uses process.stderr.write)
+    originalStderrWrite('[Bootstrap] 🔍🔍🔍 CAPTURED ERROR via stdout.write 🔍🔍🔍\n');
+    originalStderrWrite('[Bootstrap] Raw chunk: ' + JSON.stringify(message) + '\n');
+    originalStderrWrite('[Bootstrap] Clean message: ' + cleanMessage + '\n');
+    originalStderrWrite('[Bootstrap] Lower message: ' + lowerMessage + '\n');
+    originalStderrWrite('[Bootstrap] Pattern match - error handling: ' + lowerMessage.includes('error handling message') + '\n');
+    originalStderrWrite('[Bootstrap] Pattern match - error sending: ' + lowerMessage.includes('error sending message') + '\n');
+    originalStderrWrite('[Bootstrap] ⚠️ SUPPRESSING THIS ERROR\n');
+    originalStderrWrite('[Bootstrap] 🔍🔍🔍 END ERROR CAPTURE 🔍🔍🔍\n');
+    
     // Suppress this message
     if (typeof callback === 'function') callback();
     return true;
   }
+  
   return originalStdoutWrite(chunk, encoding, callback);
 };
 
@@ -219,10 +236,10 @@ process.stderr.write = function(chunk: any, encoding?: any, callback?: any): boo
 
 // Also patch fs.writeSync for file descriptor 1 (stdout) and 2 (stderr)
 // Some loggers bypass process.stdout/stderr and write directly to fd
-// Pino likely uses this to write formatted logs
+// Pino uses sonic-boom which writes to fd directly!
 const originalFsWriteSync = fs.writeSync.bind(fs);
 (fs as any).writeSync = function(fd: number, buffer: any, ...rest: any[]): number {
-  if (fd === 2) { // Only intercept stderr (fd 2)
+  if (fd === 1 || fd === 2) { // Intercept BOTH stdout (fd 1) AND stderr (fd 2)
     const message = buffer?.toString() || '';
     // ALWAYS log first if it matches our error patterns
     const cleanMessage = message
@@ -235,9 +252,9 @@ const originalFsWriteSync = fs.writeSync.bind(fs);
     const isTargetError = lowerMessage.includes('error handling message') || 
                          lowerMessage.includes('error sending message');
     
-    // Log ALL stderr writes that contain "error" to help debug
+    // Log ALL writes that contain "error" to help debug
     if (lowerMessage.includes('error') && message.length > 0) {
-      originalStderrWrite('[Bootstrap] 📝 fs.writeSync (fd=2) write detected:\n');
+      originalStderrWrite('[Bootstrap] 📝 fs.writeSync (fd=' + fd + ') write detected:\n');
       originalStderrWrite('[Bootstrap] Message length: ' + message.length + '\n');
       originalStderrWrite('[Bootstrap] First 200 chars: ' + message.substring(0, 200) + '\n');
       originalStderrWrite('[Bootstrap] Clean (first 200): ' + cleanMessage.substring(0, 200) + '\n');
@@ -261,6 +278,46 @@ const originalFsWriteSync = fs.writeSync.bind(fs);
     }
   }
   return (originalFsWriteSync as any)(fd, buffer, ...rest);
+};
+
+// Also patch fs.write (async version) - sonic-boom may use this
+const originalFsWrite = fs.write.bind(fs);
+(fs as any).write = function(fd: number, buffer: any, ...rest: any[]) {
+  if (fd === 1 || fd === 2) {
+    const message = buffer?.toString() || '';
+    const cleanMessage = message
+      .replace(/\x1b\[[0-9;]*m/g, '')
+      .replace(/\[[0-9;]*m/g, '')
+      .replace(/\[[0-9]+m/g, '');
+    const lowerMessage = cleanMessage.toLowerCase();
+    
+    const isTargetError = lowerMessage.includes('error handling message') || 
+                         lowerMessage.includes('error sending message');
+    
+    // Log ALL writes that contain "error" to help debug
+    if (lowerMessage.includes('error') && message.length > 0) {
+      originalStderrWrite('[Bootstrap] 📝 fs.write (fd=' + fd + ') write detected:\n');
+      originalStderrWrite('[Bootstrap] Message length: ' + message.length + '\n');
+      originalStderrWrite('[Bootstrap] First 200 chars: ' + message.substring(0, 200) + '\n');
+      originalStderrWrite('[Bootstrap] Clean (first 200): ' + cleanMessage.substring(0, 200) + '\n');
+      originalStderrWrite('[Bootstrap] Is target error: ' + isTargetError + '\n');
+    }
+    
+    if (isTargetError) {
+      originalStderrWrite('[Bootstrap] 🔍🔍🔍 CAPTURED ERROR via fs.write (fd=' + fd + ') 🔍🔍🔍\n');
+      originalStderrWrite('[Bootstrap] ⚠️ SUPPRESSING THIS ERROR\n');
+      
+      // Call callback with success if provided
+      const callback = rest[rest.length - 1];
+      if (typeof callback === 'function') {
+        const len = typeof buffer === 'string' ? buffer.length : (buffer?.length || 0);
+        process.nextTick(() => callback(null, len, buffer));
+        return;
+      }
+      return;
+    }
+  }
+  return (originalFsWrite as any)(fd, buffer, ...rest);
 };
 
 // Patch console.error directly
