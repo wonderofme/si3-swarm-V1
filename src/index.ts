@@ -5,6 +5,7 @@ import {
   CacheManager,
   ModelProviderName
 } from '@elizaos/core';
+import { openaiPlugin } from '@elizaos/plugin-openai';
 import { DirectClient } from '@elizaos/client-direct';
 import { TelegramClientInterface } from '@elizaos/client-telegram';
 import express from 'express';
@@ -131,6 +132,8 @@ async function createRuntime(character: any) {
   const cacheManager = new CacheManager(new MemoryCacheAdapter());
 
   const plugins = [];
+  // CRITICAL: Add OpenAI plugin first - this provides the LLM generation capability
+  plugins.push(openaiPlugin);
   if (character.plugins?.includes('router')) plugins.push(createRouterPlugin());
   if (character.plugins?.includes('onboarding')) plugins.push(createOnboardingPlugin());
   if (character.plugins?.includes('matching')) plugins.push(createMatchingPlugin());

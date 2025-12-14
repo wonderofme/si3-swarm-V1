@@ -14,6 +14,7 @@
     "@elizaos/client-direct": "^0.1.0",
     "@elizaos/client-telegram": "^0.1.0",
     "@elizaos/core": "^0.1.0",
+    "@elizaos/plugin-openai": "^0.1.0",
     "@types/nodemailer": "^7.0.4",
     "bcryptjs": "^2.4.3",
     "dotenv": "^16.4.5",
