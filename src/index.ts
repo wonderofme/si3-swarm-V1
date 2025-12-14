@@ -729,9 +729,40 @@ async function startAgents() {
               // Wrap in try-catch to handle database errors gracefully
               try {
                 console.log('[Telegram Chat ID Capture] Calling original handler...');
-                const result = await originalHandler(update);
-                console.log('[Telegram Chat ID Capture] ✅ Original handler returned successfully');
-                return result;
+                
+                // DIAGNOSTIC: Add a Promise wrapper with error capture
+                const handlerPromise = originalHandler(update);
+                
+                // Add unhandled rejection listener for this specific promise
+                let capturedError: any = null;
+                const errorCapture = (reason: any) => {
+                  if (!capturedError) {
+                    capturedError = reason;
+                    console.error('[Telegram Chat ID Capture] 🔬 CAUGHT UNHANDLED REJECTION IN HANDLER:');
+                    console.error('[Telegram Chat ID Capture] 🔬 Error type:', typeof reason);
+                    console.error('[Telegram Chat ID Capture] 🔬 Error message:', reason?.message || reason);
+                    console.error('[Telegram Chat ID Capture] 🔬 Error stack:', reason?.stack?.substring(0, 1500) || 'no stack');
+                    if (reason?.response) {
+                      console.error('[Telegram Chat ID Capture] 🔬 Error response:', JSON.stringify(reason.response).substring(0, 500));
+                    }
+                    if (reason?.cause) {
+                      console.error('[Telegram Chat ID Capture] 🔬 Error cause:', reason.cause);
+                    }
+                  }
+                };
+                
+                process.on('unhandledRejection', errorCapture);
+                
+                try {
+                  const result = await handlerPromise;
+                  console.log('[Telegram Chat ID Capture] ✅ Original handler returned successfully');
+                  if (capturedError) {
+                    console.error('[Telegram Chat ID Capture] ⚠️ Handler succeeded but caught error during execution:', capturedError?.message);
+                  }
+                  return result;
+                } finally {
+                  process.off('unhandledRejection', errorCapture);
+                }
               } catch (error: any) {
                 console.error('[Telegram Chat ID Capture] ❌ Error in message handler:', error);
                 console.error('[Telegram Chat ID Capture] Error message:', error.message);
