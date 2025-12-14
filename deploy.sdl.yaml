@@ -2,22 +2,24 @@ version: "2.0"
 
 services:
   kaia-swarm:
-    image: ghcr.io/wonderofme/kaia-swarm:v237
-          env:
-            - DATABASE_URL=${DATABASE_URL}
-            - DATABASE_TYPE=mongodb
-            - OPENAI_API_KEY=${OPENAI_API_KEY}
-            - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-            - JWT_SECRET=${JWT_SECRET}
-            - DIRECT_PORT=3000
-            - USE_OPENAI_EMBEDDING=true
-            - SMALL_OPENAI_MODEL=gpt-4o-mini
-            - MEDIUM_OPENAI_MODEL=gpt-4o-mini
-            - LARGE_OPENAI_MODEL=gpt-4o-mini
-            - SMTP_HOST=${SMTP_HOST}
-            - SMTP_PORT=${SMTP_PORT}
-            - SMTP_USER=${SMTP_USER}
-            - SMTP_PASS=${SMTP_PASS}
+    image: ghcr.io/wonderofme/kaia-swarm:v250
+    env:
+      - DATABASE_URL=${DATABASE_URL}
+      - DATABASE_TYPE=mongodb
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - JWT_SECRET=${JWT_SECRET}
+      - DIRECT_PORT=3000
+      - USE_OPENAI_EMBEDDING=true
+      - SMALL_OPENAI_MODEL=gpt-4o-mini
+      - MEDIUM_OPENAI_MODEL=gpt-4o-mini
+      - LARGE_OPENAI_MODEL=gpt-4o-mini
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASS=${SMTP_PASS}
+      # Reduce log noise from pino/ElizaOS
+      - PINO_LOG_LEVEL=warn
     expose:
       - port: 3000
         as: 80
