@@ -378,6 +378,28 @@ async function setupTelegrafInstancePatcher() {
 // Export the patcher so it can be used in llmResponseInterceptor
 export { telegrafInstancePatcher };
 
+// Intercept console.error to suppress ElizaOS message errors
+const originalConsoleError = console.error;
+console.error = (...args: any[]) => {
+  const message = args.join(' ');
+  
+  // Suppress "Error handling message" and "Error sending message" errors from ElizaOS
+  // These are often non-critical and clutter the logs
+  if (
+    message.includes('Error handling message') ||
+    message.includes('Error sending message') ||
+    (message.includes('ERROR') && message.includes('Error handling message')) ||
+    (message.includes('ERROR') && message.includes('Error sending message'))
+  ) {
+    // Log at debug level instead of error level
+    console.log('[Suppressed] ElizaOS message error (non-fatal):', message);
+    return; // Don't log as error
+  }
+  
+  // Call original console.error for all other messages
+  originalConsoleError.apply(console, args);
+};
+
 async function startAgents() {
   // CRITICAL: Setup Telegraf instance patcher BEFORE creating any runtimes or clients
   await setupTelegrafInstancePatcher();
