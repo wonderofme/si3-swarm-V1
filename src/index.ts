@@ -5,7 +5,6 @@ import {
   CacheManager,
   ModelProviderName
 } from '@elizaos/core';
-import { openaiPlugin } from '@elizaos/plugin-openai';
 import { DirectClient } from '@elizaos/client-direct';
 import { TelegramClientInterface } from '@elizaos/client-telegram';
 import express from 'express';
@@ -132,8 +131,6 @@ async function createRuntime(character: any) {
   const cacheManager = new CacheManager(new MemoryCacheAdapter());
 
   const plugins = [];
-  // CRITICAL: Add OpenAI plugin first - this provides the LLM generation capability
-  plugins.push(openaiPlugin);
   if (character.plugins?.includes('router')) plugins.push(createRouterPlugin());
   if (character.plugins?.includes('onboarding')) plugins.push(createOnboardingPlugin());
   if (character.plugins?.includes('matching')) plugins.push(createMatchingPlugin());
@@ -764,6 +761,26 @@ async function startAgents() {
                     const openaiKey = process.env.OPENAI_API_KEY;
                     if (openaiKey) {
                       console.log('[Telegram Chat ID Capture] 🤖 Calling OpenAI directly...');
+                      
+                      // Try to get onboarding state for context
+                      let onboardingContext = '';
+                      try {
+                        const userId = update.message?.from?.id?.toString() || chatId;
+                        if (kaiaRuntimeForOnboardingCheck) {
+                          const { getOnboardingState } = await import('./plugins/onboarding/utils.js');
+                          const state = await getOnboardingState(kaiaRuntimeForOnboardingCheck, userId);
+                          if (state.step !== 'NONE' && state.step !== 'COMPLETED') {
+                            onboardingContext = `\n\n[ONBOARDING STATUS: ${state.step}]\nUser profile: ${JSON.stringify(state.profile)}`;
+                          } else if (state.step === 'COMPLETED') {
+                            onboardingContext = `\n\n[ONBOARDING STATUS: COMPLETED]\nUser profile: ${JSON.stringify(state.profile)}`;
+                          }
+                        }
+                      } catch (ctxErr) {
+                        console.log('[Telegram Chat ID Capture] Could not get onboarding context:', ctxErr);
+                      }
+                      
+                      const systemPrompt = kaiaCharacter.system || `You are Kaia, the SI<3> assistant. You support English, Spanish, Portuguese, and French. Be warm, friendly, and helpful. Use emojis naturally (💜, 🚀, 🤝).`;
+                      
                       const response = await fetch('https://api.openai.com/v1/chat/completions', {
                         method: 'POST',
                         headers: {
@@ -775,14 +792,14 @@ async function startAgents() {
                           messages: [
                             {
                               role: 'system',
-                              content: `You are Kaia, a friendly AI assistant for the SI<3> Web3 community. You help with onboarding, matchmaking, and answering questions. Be warm, helpful, and use emojis naturally. Keep responses concise.`
+                              content: systemPrompt + onboardingContext
                             },
                             {
                               role: 'user',
                               content: messageText
                             }
                           ],
-                          max_tokens: 500
+                          max_tokens: 1000
                         })
                       });
                       
