@@ -803,25 +803,38 @@ async function startAgents() {
                   console.error('[Telegram Chat ID Capture] Error stack:', error.stack.substring(0, 500));
                 }
                 
-                // If it's a database error and we have a chat ID, send a fallback response
-                if (chatId && (error.code === 'ETIMEDOUT' || error.message?.includes('timeout') || error.message?.includes('database'))) {
-                  console.log('[Telegram Chat ID Capture] Database error detected, sending fallback response to chat:', chatId);
+                // Check if it's a MongoDB connection error
+                const isMongoError = 
+                  error.message?.includes('MongoServerSelectionError') ||
+                  error.message?.includes('MongoNetworkError') ||
+                  error.message?.includes('ERR_SSL_TLSV1_ALERT_INTERNAL_ERROR') ||
+                  error.message?.includes('ReplicaSetNoPrimary') ||
+                  error.code === 'ETIMEDOUT' ||
+                  error.message?.includes('timeout') ||
+                  error.message?.includes('database');
+                
+                // If it's a database/MongoDB error and we have a chat ID, send a fallback response
+                if (chatId && isMongoError) {
+                  console.log('[Telegram Chat ID Capture] Database/MongoDB error detected, sending fallback response to chat:', chatId);
                   try {
                     await bot.telegram.sendMessage(chatId, "I'm experiencing some technical difficulties right now. Please try again in a moment! 🔧");
                     console.log('[Telegram Chat ID Capture] ✅ Sent fallback response');
                   } catch (sendErr: any) {
                     console.error('[Telegram Chat ID Capture] Failed to send fallback response:', sendErr);
+                    // Don't throw - we've already logged the error
                   }
                 }
                 
-                // CRITICAL: Don't re-throw if it's a database timeout - let the message be processed
-                // Re-throwing might prevent message processing entirely
-                if (error.code === 'ETIMEDOUT' || error.message?.includes('timeout')) {
-                  console.log('[Telegram Chat ID Capture] ⚠️ Database timeout - continuing despite error to allow message processing');
+                // CRITICAL: Don't re-throw if it's a database/MongoDB error - let the message be processed
+                // Re-throwing might prevent message processing entirely and cause cascading failures
+                if (isMongoError) {
+                  console.log('[Telegram Chat ID Capture] ⚠️ Database/MongoDB error - continuing despite error to allow message processing');
                   return; // Return undefined to allow processing to continue
                 }
                 
-                throw error; // Re-throw other errors to let ElizaOS handle them
+                // For other errors, log but don't throw to prevent cascading failures
+                console.error('[Telegram Chat ID Capture] ⚠️ Non-database error in handler - logging but not throwing to prevent cascading failures');
+                return; // Return undefined to allow processing to continue
               }
             };
             console.log('[Telegram Chat ID Capture] Patched bot.handler to capture chat IDs');

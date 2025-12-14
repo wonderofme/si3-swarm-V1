@@ -103,10 +103,27 @@ async function sendDirectTelegramMessage(
       });
     }
     
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Onboarding Action] ❌ Error sending direct Telegram message:', error);
-    // Fall back to callback if direct send fails
-    throw error;
+    console.error('[Onboarding Action] Error message:', error.message);
+    console.error('[Onboarding Action] Error code:', error.code);
+    
+    // Check if it's a MongoDB/database error - don't throw, just log
+    const isMongoError = 
+      error.message?.includes('MongoServerSelectionError') ||
+      error.message?.includes('MongoNetworkError') ||
+      error.message?.includes('ERR_SSL_TLSV1_ALERT_INTERNAL_ERROR') ||
+      error.message?.includes('ReplicaSetNoPrimary') ||
+      error.message?.includes('database');
+    
+    if (isMongoError) {
+      console.log('[Onboarding Action] ⚠️ Database/MongoDB error - not throwing to prevent cascading failures');
+      return; // Don't throw, just return
+    }
+    
+    // For other errors, log but don't throw to prevent cascading failures
+    console.error('[Onboarding Action] ⚠️ Non-database error - logging but not throwing to prevent cascading failures');
+    return; // Don't throw, just return
   }
 }
 

@@ -816,8 +816,24 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
             });
           } catch (error: any) {
             console.error('[LLM Response Interceptor] ❌ Error sending agent message via Telegram API:', error.message);
+            console.error('[LLM Response Interceptor] Error code:', error.code);
             console.error('[LLM Response Interceptor] Error details:', error);
-            // Continue with normal memory creation as fallback
+            
+            // Check if it's a MongoDB/database error
+            const isMongoError = 
+              error.message?.includes('MongoServerSelectionError') ||
+              error.message?.includes('MongoNetworkError') ||
+              error.message?.includes('ERR_SSL_TLSV1_ALERT_INTERNAL_ERROR') ||
+              error.message?.includes('ReplicaSetNoPrimary') ||
+              error.message?.includes('database');
+            
+            if (isMongoError) {
+              console.log('[LLM Response Interceptor] ⚠️ Database/MongoDB error - continuing with normal memory creation as fallback');
+            } else {
+              console.log('[LLM Response Interceptor] ⚠️ Non-database error - continuing with normal memory creation as fallback');
+            }
+            
+            // Continue with normal memory creation as fallback (don't throw)
           }
         } else {
           console.log('[LLM Response Interceptor] ⚠️ No Telegram chat ID found for roomId:', memory.roomId);
