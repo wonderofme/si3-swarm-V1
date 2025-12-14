@@ -201,6 +201,26 @@ const originalFsWriteSync = fs.writeSync.bind(fs);
 // Also patch fs.write (async version) - pino/sonic-boom uses this!
 // This is the key interceptor that catches the ElizaOS errors
 const originalFsWrite = fs.write.bind(fs);
+
+// Track when we're capturing error details (pino writes in chunks)
+let capturingErrorDetails = false;
+let errorDetailBuffer: string[] = [];
+let captureTimeout: NodeJS.Timeout | null = null;
+
+function flushErrorDetails() {
+  if (errorDetailBuffer.length > 0) {
+    const fullError = errorDetailBuffer.join('');
+    const cleanError = fullError
+      .replace(/\x1b\[[0-9;]*m/g, '')
+      .replace(/\[[0-9;]*m/g, '')
+      .replace(/\[[0-9]+m/g, '');
+    originalStderrWrite('[Bootstrap] 📋 Full error details:\n' + cleanError + '\n');
+    errorDetailBuffer = [];
+  }
+  capturingErrorDetails = false;
+  captureTimeout = null;
+}
+
 (fs as any).write = function(fd: number, buffer: any, ...rest: any[]) {
   if (fd === 1 || fd === 2) {
     const message = buffer?.toString() || '';
@@ -210,21 +230,46 @@ const originalFsWrite = fs.write.bind(fs);
       .replace(/\[[0-9]+m/g, '');
     const lowerMessage = cleanMessage.toLowerCase();
     
-    const isTargetError = lowerMessage.includes('error handling message') || 
-                         lowerMessage.includes('error sending message');
+    const isTargetErrorHeader = lowerMessage.includes('error handling message') || 
+                               lowerMessage.includes('error sending message');
     
-    if (isTargetError) {
-      // Log that we're suppressing (minimal logging)
-      originalStderrWrite('[Bootstrap] ⚠️ Suppressed ElizaOS error: ' + cleanMessage.trim().substring(0, 100) + '\n');
+    if (isTargetErrorHeader) {
+      // Start capturing error details
+      capturingErrorDetails = true;
+      errorDetailBuffer = [cleanMessage];
       
-      // Find and call callback with success to prevent any downstream issues
-      // fs.write signature: fs.write(fd, buffer[, offset[, length[, position]]], callback)
-      // or: fs.write(fd, string[, position[, encoding]], callback)
+      // Set timeout to flush after 100ms (pino writes in rapid succession)
+      if (captureTimeout) clearTimeout(captureTimeout);
+      captureTimeout = setTimeout(flushErrorDetails, 100);
+      
+      // Log that we're suppressing
+      originalStderrWrite('[Bootstrap] ⚠️ Suppressed ElizaOS error header: ' + cleanMessage.trim().substring(0, 80) + '...\n');
+      
+      // Find and call callback with success
       for (let i = rest.length - 1; i >= 0; i--) {
         if (typeof rest[i] === 'function') {
           const callback = rest[i];
           const len = typeof buffer === 'string' ? buffer.length : (buffer?.length || 0);
-          // Call callback synchronously to prevent race conditions
+          callback(null, len, buffer);
+          return;
+        }
+      }
+      return;
+    }
+    
+    // If we're capturing error details, collect this write too
+    if (capturingErrorDetails) {
+      errorDetailBuffer.push(cleanMessage);
+      
+      // Reset timeout
+      if (captureTimeout) clearTimeout(captureTimeout);
+      captureTimeout = setTimeout(flushErrorDetails, 100);
+      
+      // Suppress but call callback
+      for (let i = rest.length - 1; i >= 0; i--) {
+        if (typeof rest[i] === 'function') {
+          const callback = rest[i];
+          const len = typeof buffer === 'string' ? buffer.length : (buffer?.length || 0);
           callback(null, len, buffer);
           return;
         }
