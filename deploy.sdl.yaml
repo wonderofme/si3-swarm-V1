@@ -2,7 +2,7 @@ version: "2.0"
 
 services:
   kaia-swarm:
-    image: ghcr.io/wonderofme/kaia-swarm:v255
+    image: ghcr.io/wonderofme/kaia-swarm:v256
     env:
       - DATABASE_URL=${DATABASE_URL}
       - DATABASE_TYPE=mongodb
