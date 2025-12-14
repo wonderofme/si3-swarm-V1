@@ -402,64 +402,73 @@ console.error = (...args: any[]) => {
   originalConsoleError.apply(console, args);
 };
 
-// Also intercept process.stdout.write to catch ElizaOS logger output
+// Also intercept process.stdout.write and process.stderr.write to catch ElizaOS logger output
 // Store partial chunks to handle multi-chunk messages
 let stdoutBuffer = '';
+let stderrBuffer = '';
 
-process.stdout.write = function(chunk: any, encoding?: any, callback?: any): boolean {
-  const message = chunk?.toString() || '';
+function shouldSuppressLine(line: string): boolean {
+  // Remove ANSI escape codes for matching
+  const cleanLine = line.replace(/\x1b\[[0-9;]*m/g, '');
   
-  // Accumulate chunks in buffer to handle multi-chunk messages
-  stdoutBuffer += message;
-  
-  // Only process complete lines (ending with newline) or if buffer gets too large
-  const hasNewline = stdoutBuffer.includes('\n');
-  const bufferTooLarge = stdoutBuffer.length > 10000;
+  // Check if this line should be suppressed
+  return (
+    cleanLine.includes('Error handling message') ||
+    cleanLine.includes('Error sending message') ||
+    (cleanLine.includes('ERROR') && cleanLine.includes('Error handling message')) ||
+    (cleanLine.includes('ERROR') && cleanLine.includes('Error sending message'))
+  );
+}
+
+function processBuffer(buffer: string, originalWrite: Function, encoding?: any, callback?: any): string {
+  const hasNewline = buffer.includes('\n');
+  const bufferTooLarge = buffer.length > 10000;
   
   if (hasNewline) {
     // Split into complete lines and the last incomplete line
-    const lines = stdoutBuffer.split('\n');
+    const lines = buffer.split('\n');
     const lastLine = lines[lines.length - 1];
     const completeLines = lines.slice(0, -1);
     
     // Process each complete line individually
     const linesToWrite: string[] = [];
     for (const line of completeLines) {
-      // Remove ANSI escape codes for matching
-      const cleanLine = line.replace(/\x1b\[[0-9;]*m/g, '');
-      
-      // Check if this line should be suppressed
-      const shouldSuppress = 
-        cleanLine.includes('Error handling message') ||
-        cleanLine.includes('Error sending message') ||
-        (cleanLine.includes('ERROR') && cleanLine.includes('Error handling message')) ||
-        (cleanLine.includes('ERROR') && cleanLine.includes('Error sending message'));
-      
-      if (!shouldSuppress) {
+      if (!shouldSuppressLine(line)) {
         linesToWrite.push(line);
       }
     }
     
     // Write all non-suppressed lines
     if (linesToWrite.length > 0) {
-      originalStdoutWrite(linesToWrite.join('\n') + '\n', encoding, callback);
+      originalWrite(linesToWrite.join('\n') + '\n', encoding, callback);
     }
     
-    // Keep the last incomplete line in buffer
-    stdoutBuffer = lastLine;
+    // Return the last incomplete line
+    return lastLine;
   } else if (bufferTooLarge) {
     // Buffer too large, check if we should suppress the entire buffer
-    const cleanBuffer = stdoutBuffer.replace(/\x1b\[[0-9;]*m/g, '');
-    const shouldSuppress = 
-      cleanBuffer.includes('Error handling message') ||
-      cleanBuffer.includes('Error sending message');
-    
-    if (!shouldSuppress) {
-      originalStdoutWrite(stdoutBuffer, encoding, callback);
+    if (!shouldSuppressLine(buffer)) {
+      originalWrite(buffer, encoding, callback);
     }
-    stdoutBuffer = '';
+    return '';
   }
   
+  return buffer;
+}
+
+process.stdout.write = function(chunk: any, encoding?: any, callback?: any): boolean {
+  const message = chunk?.toString() || '';
+  stdoutBuffer += message;
+  stdoutBuffer = processBuffer(stdoutBuffer, originalStdoutWrite, encoding, callback);
+  return true;
+};
+
+// Also intercept stderr since ElizaOS might log errors there
+const originalStderrWrite = process.stderr.write.bind(process.stderr);
+process.stderr.write = function(chunk: any, encoding?: any, callback?: any): boolean {
+  const message = chunk?.toString() || '';
+  stderrBuffer += message;
+  stderrBuffer = processBuffer(stderrBuffer, originalStderrWrite, encoding, callback);
   return true;
 };
 
