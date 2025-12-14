@@ -408,21 +408,31 @@ let stdoutBuffer = '';
 let stderrBuffer = '';
 
 function shouldSuppressLine(line: string): boolean {
-  // Remove ANSI escape codes for matching
-  const cleanLine = line.replace(/\x1b\[[0-9;]*m/g, '');
+  // Remove ANSI escape codes for matching (both \x1b[ and [ formats)
+  const cleanLine = line
+    .replace(/\x1b\[[0-9;]*m/g, '')  // Standard ANSI codes
+    .replace(/\[[0-9;]*m/g, '')      // Also match [31m format (when ANSI is displayed as text)
+    .replace(/\[[0-9]+m/g, '');      // Match [31m, [39m, [36m patterns
   
-  // Check if this line should be suppressed
+  // Check if this line should be suppressed (case-insensitive, check for various patterns)
+  const lowerLine = cleanLine.toLowerCase();
   return (
-    cleanLine.includes('Error handling message') ||
-    cleanLine.includes('Error sending message') ||
-    (cleanLine.includes('ERROR') && cleanLine.includes('Error handling message')) ||
-    (cleanLine.includes('ERROR') && cleanLine.includes('Error sending message'))
+    lowerLine.includes('error handling message') ||
+    lowerLine.includes('error sending message') ||
+    lowerLine.includes('❌ error handling message') ||
+    lowerLine.includes('❌ error sending message') ||
+    (lowerLine.includes('error') && lowerLine.includes('handling message')) ||
+    (lowerLine.includes('error') && lowerLine.includes('sending message'))
   );
 }
 
 function processBuffer(buffer: string, originalWrite: Function, encoding?: any, callback?: any): string {
   const hasNewline = buffer.includes('\n');
   const bufferTooLarge = buffer.length > 10000;
+  
+  // Also check if buffer contains our target patterns even without newline
+  // This handles cases where messages are written without trailing newlines
+  const shouldSuppressBuffer = shouldSuppressLine(buffer);
   
   if (hasNewline) {
     // Split into complete lines and the last incomplete line
@@ -443,11 +453,11 @@ function processBuffer(buffer: string, originalWrite: Function, encoding?: any, 
       originalWrite(linesToWrite.join('\n') + '\n', encoding, callback);
     }
     
-    // Return the last incomplete line
-    return lastLine;
-  } else if (bufferTooLarge) {
-    // Buffer too large, check if we should suppress the entire buffer
-    if (!shouldSuppressLine(buffer)) {
+    // Return the last incomplete line (check if it should be suppressed too)
+    return shouldSuppressLine(lastLine) ? '' : lastLine;
+  } else if (bufferTooLarge || shouldSuppressBuffer) {
+    // Buffer too large, or contains suppressible content
+    if (!shouldSuppressBuffer) {
       originalWrite(buffer, encoding, callback);
     }
     return '';
