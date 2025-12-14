@@ -3,6 +3,11 @@
 
 import fs from 'fs';
 
+// CRITICAL: Store original console methods BEFORE any patching happens
+// This prevents infinite recursion when logging inside interceptors
+const originalConsoleError = console.error.bind(console);
+const originalConsoleLog = console.log.bind(console);
+
 // Try to patch pino before it's used by ElizaOS
 // Pino is the logging library used by ElizaOS
 async function patchPinoLogger() {
@@ -21,15 +26,16 @@ async function patchPinoLogger() {
                               messageToCheck?.includes('Error sending message');
         
         // CRITICAL: Log full error details BEFORE suppressing
+        // Use originalConsoleError from outer scope to avoid recursion
         if (shouldSuppress) {
-          console.error('[Bootstrap] ⚠️ Intercepted pino error (will suppress after logging):');
-          console.error('[Bootstrap] Error object:', JSON.stringify(obj, null, 2));
-          console.error('[Bootstrap] Error message:', msg);
-          console.error('[Bootstrap] Rest args:', rest);
+          originalConsoleError('[Bootstrap] ⚠️ Intercepted pino error (will suppress after logging):');
+          originalConsoleError('[Bootstrap] Error object:', JSON.stringify(obj, null, 2));
+          originalConsoleError('[Bootstrap] Error message:', msg);
+          originalConsoleError('[Bootstrap] Rest args:', rest);
           if (obj && typeof obj === 'object' && obj.err) {
-            console.error('[Bootstrap] Error.err:', JSON.stringify(obj.err, null, 2));
+            originalConsoleError('[Bootstrap] Error.err:', JSON.stringify(obj.err, null, 2));
             if (obj.err.stack) {
-              console.error('[Bootstrap] Error.err.stack:', obj.err.stack);
+              originalConsoleError('[Bootstrap] Error.err.stack:', obj.err.stack);
             }
           }
           return; // Suppress after logging
@@ -67,26 +73,27 @@ try {
                                 fullMessage.includes('Error sending message');
           
           // CRITICAL: Log full error details BEFORE suppressing
+          // Use originalConsoleError from outer scope to avoid recursion
           if (shouldSuppress) {
-            console.error('[Bootstrap] 🔍🔍🔍 PINO ERROR INTERCEPTED via require.cache 🔍🔍🔍');
-            console.error('[Bootstrap] Error object:', JSON.stringify(obj, null, 2));
-            console.error('[Bootstrap] Error message:', msg);
-            console.error('[Bootstrap] Rest args:', JSON.stringify(rest, null, 2));
+            originalConsoleError('[Bootstrap] 🔍🔍🔍 PINO ERROR INTERCEPTED via require.cache 🔍🔍🔍');
+            originalConsoleError('[Bootstrap] Error object:', JSON.stringify(obj, null, 2));
+            originalConsoleError('[Bootstrap] Error message:', msg);
+            originalConsoleError('[Bootstrap] Rest args:', JSON.stringify(rest, null, 2));
             if (obj && typeof obj === 'object') {
               if (obj.err) {
-                console.error('[Bootstrap] Error.err:', JSON.stringify(obj.err, null, 2));
+                originalConsoleError('[Bootstrap] Error.err:', JSON.stringify(obj.err, null, 2));
                 if (obj.err.stack) {
-                  console.error('[Bootstrap] Error.err.stack:', obj.err.stack);
+                  originalConsoleError('[Bootstrap] Error.err.stack:', obj.err.stack);
                 }
               }
               // Check all properties for error details
               Object.keys(obj).forEach(key => {
                 if (key !== 'err' && obj[key] && typeof obj[key] === 'object') {
-                  console.error(`[Bootstrap] Error.${key}:`, JSON.stringify(obj[key], null, 2));
+                  originalConsoleError(`[Bootstrap] Error.${key}:`, JSON.stringify(obj[key], null, 2));
                 }
               });
             }
-            console.error('[Bootstrap] 🔍🔍🔍 END PINO ERROR INTERCEPT 🔍🔍🔍');
+            originalConsoleError('[Bootstrap] 🔍🔍🔍 END PINO ERROR INTERCEPT 🔍🔍🔍');
             return; // Suppress after logging
           }
           return originalError(obj, msg, ...rest);
@@ -119,6 +126,7 @@ if (process.env.TELEGRAM_BOT_TOKEN) {
 }
 
 // Set up error suppression interceptors IMMEDIATELY
+// originalConsoleError and originalConsoleLog are already defined at the top of the file
 const originalStdoutWrite = process.stdout.write.bind(process.stdout);
 const originalStderrWrite = process.stderr.write.bind(process.stderr);
 
@@ -139,14 +147,14 @@ function shouldSuppressMessage(message: string): boolean {
   );
   
   // CRITICAL: Log full error details BEFORE suppressing
-  // This helps us diagnose the root cause
+  // Use originalConsoleError to avoid recursion
   if (shouldSuppress) {
-    console.error('[Bootstrap] ⚠️ Intercepted ElizaOS error (will suppress after logging):');
-    console.error('[Bootstrap] Full message:', cleanMessage);
-    console.error('[Bootstrap] Raw message (with ANSI):', message);
+    originalConsoleError('[Bootstrap] ⚠️ Intercepted ElizaOS error (will suppress after logging):');
+    originalConsoleError('[Bootstrap] Full message:', cleanMessage);
+    originalConsoleError('[Bootstrap] Raw message (with ANSI):', message);
     // Try to extract any error object or stack trace from the message
     if (message.includes('stack') || message.includes('Error:') || message.includes('at ')) {
-      console.error('[Bootstrap] ⚠️ Message contains stack trace or error details - check above');
+      originalConsoleError('[Bootstrap] ⚠️ Message contains stack trace or error details - check above');
     }
   }
   
@@ -165,11 +173,12 @@ process.stdout.write = function(chunk: any, encoding?: any, callback?: any): boo
   const lowerMessage = cleanMessage.toLowerCase();
   if (lowerMessage.includes('error handling message') || lowerMessage.includes('error sending message')) {
     // Log the full error BEFORE suppressing
-    console.error('[Bootstrap] 🔍 CAPTURED ERROR via stdout.write:');
-    console.error('[Bootstrap] Raw chunk:', message);
-    console.error('[Bootstrap] Clean message:', cleanMessage);
+    // Use originalConsoleError to avoid recursion
+    originalConsoleError('[Bootstrap] 🔍 CAPTURED ERROR via stdout.write:');
+    originalConsoleError('[Bootstrap] Raw chunk:', message);
+    originalConsoleError('[Bootstrap] Clean message:', cleanMessage);
     // Try to get more context - check if there's a stack trace in subsequent writes
-    console.error('[Bootstrap] ⚠️ This error will be suppressed, but details logged above');
+    originalConsoleError('[Bootstrap] ⚠️ This error will be suppressed, but details logged above');
   }
   
   if (shouldSuppressMessage(message)) {
@@ -190,10 +199,11 @@ process.stderr.write = function(chunk: any, encoding?: any, callback?: any): boo
   const lowerMessage = cleanMessage.toLowerCase();
   if (lowerMessage.includes('error handling message') || lowerMessage.includes('error sending message')) {
     // Log the full error BEFORE suppressing
-    console.error('[Bootstrap] 🔍 CAPTURED ERROR via stderr.write:');
-    console.error('[Bootstrap] Raw chunk:', message);
-    console.error('[Bootstrap] Clean message:', cleanMessage);
-    console.error('[Bootstrap] ⚠️ This error will be suppressed, but details logged above');
+    // Use originalConsoleError to avoid recursion
+    originalConsoleError('[Bootstrap] 🔍 CAPTURED ERROR via stderr.write:');
+    originalConsoleError('[Bootstrap] Raw chunk:', message);
+    originalConsoleError('[Bootstrap] Clean message:', cleanMessage);
+    originalConsoleError('[Bootstrap] ⚠️ This error will be suppressed, but details logged above');
   }
   
   if (shouldSuppressMessage(message)) {
@@ -218,10 +228,11 @@ const originalFsWriteSync = fs.writeSync.bind(fs);
     const lowerMessage = cleanMessage.toLowerCase();
     if (lowerMessage.includes('error handling message') || lowerMessage.includes('error sending message')) {
       // Log the full error BEFORE suppressing
-      console.error('[Bootstrap] 🔍 CAPTURED ERROR via fs.writeSync (fd=' + fd + '):');
-      console.error('[Bootstrap] Raw buffer:', message);
-      console.error('[Bootstrap] Clean message:', cleanMessage);
-      console.error('[Bootstrap] ⚠️ This error will be suppressed, but details logged above');
+      // Use originalConsoleError to avoid recursion
+      originalConsoleError('[Bootstrap] 🔍 CAPTURED ERROR via fs.writeSync (fd=' + fd + '):');
+      originalConsoleError('[Bootstrap] Raw buffer:', message);
+      originalConsoleError('[Bootstrap] Clean message:', cleanMessage);
+      originalConsoleError('[Bootstrap] ⚠️ This error will be suppressed, but details logged above');
     }
     
     if (shouldSuppressMessage(message)) {
@@ -232,7 +243,7 @@ const originalFsWriteSync = fs.writeSync.bind(fs);
 };
 
 // Patch console.error directly
-const originalConsoleError = console.error;
+// Use originalConsoleError from top of file (already captured before any patching)
 console.error = (...args: any[]) => {
   const message = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
   if (shouldSuppressMessage(message)) {
@@ -242,7 +253,7 @@ console.error = (...args: any[]) => {
 };
 
 // Patch console.log too in case errors go there
-const originalConsoleLog = console.log;
+// Use originalConsoleLog from top of file (already captured before any patching)
 console.log = (...args: any[]) => {
   const message = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
   if (shouldSuppressMessage(message)) {
@@ -263,7 +274,7 @@ if (shouldSuppressMessage(testMessage)) {
 
 // NOW import the main module after interceptors are set up
 import('./index.js').catch((error) => {
-  console.error('[Bootstrap] Failed to load main module:', error);
+  originalConsoleError('[Bootstrap] Failed to load main module:', error);
   process.exit(1);
 });
 
