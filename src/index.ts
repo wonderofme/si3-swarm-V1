@@ -19,7 +19,7 @@ import { createOnboardingPlugin } from './plugins/onboarding/index.js';
 import { createMatchingPlugin } from './plugins/matching/index.js';
 import { createFeatureRequestPlugin } from './plugins/featureRequest/index.js';
 import { createKnowledgePlugin } from './plugins/knowledge/index.js';
-import { MemoryCacheAdapter } from './adapters/memoryCache.js';
+import { DatabaseCacheAdapter } from './adapters/dbCache.js';
 import { createDatabaseAdapter, DatabaseAdapter } from './adapters/databaseAdapter.js';
 
 // ==================== REAL-TIME MATCH NOTIFICATION (TINDER-STYLE) ====================
@@ -229,9 +229,10 @@ async function createRuntime(character: any) {
     await runMigrations(db);
   }
 
-  // Use in-memory cache adapter
+  // Use database-backed cache adapter for persistence across restarts
   const agentId = character.id || character.name;
-  const cacheManager = new CacheManager(new MemoryCacheAdapter());
+  const cacheManager = new CacheManager(new DatabaseCacheAdapter());
+  console.log(`[Runtime] Using DatabaseCacheAdapter for persistent state storage`);
 
   const plugins = [];
   if (character.plugins?.includes('router')) plugins.push(createRouterPlugin());
