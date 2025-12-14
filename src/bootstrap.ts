@@ -1,94 +1,84 @@
 // CRITICAL: This file must be the entry point to set up interceptors BEFORE any ElizaOS code runs
 // ESM imports are hoisted, so we use dynamic import() after setting up interceptors
 
+import fs from 'fs';
+
 // Set up error suppression interceptors IMMEDIATELY
 const originalStdoutWrite = process.stdout.write.bind(process.stdout);
 const originalStderrWrite = process.stderr.write.bind(process.stderr);
-let stdoutBuffer = '';
-let stderrBuffer = '';
 
-function shouldSuppressLine(line: string): boolean {
-  // Remove ANSI escape codes for matching (both \x1b[ and [ formats)
-  const cleanLine = line
+function shouldSuppressMessage(message: string): boolean {
+  // Remove ANSI escape codes for matching
+  const cleanMessage = message
     .replace(/\x1b\[[0-9;]*m/g, '')  // Standard ANSI codes
-    .replace(/\[[0-9;]*m/g, '')      // Also match [31m format (when ANSI is displayed as text)
-    .replace(/\[[0-9]+m/g, '');      // Match [31m, [39m, [36m patterns
+    .replace(/\[[0-9;]*m/g, '')      // Match [31m format
+    .replace(/\[[0-9]+m/g, '');      // Match [31m, [39m patterns
   
-  // Check if this line should be suppressed (case-insensitive, check for various patterns)
-  const lowerLine = cleanLine.toLowerCase();
+  // Check if this message should be suppressed (case-insensitive)
+  const lowerMessage = cleanMessage.toLowerCase();
+  
+  // Match the exact error patterns from ElizaOS
   return (
-    lowerLine.includes('error handling message') ||
-    lowerLine.includes('error sending message') ||
-    lowerLine.includes('❌ error handling message') ||
-    lowerLine.includes('❌ error sending message') ||
-    (lowerLine.includes('error') && lowerLine.includes('handling message')) ||
-    (lowerLine.includes('error') && lowerLine.includes('sending message'))
+    lowerMessage.includes('error handling message') ||
+    lowerMessage.includes('error sending message')
   );
 }
 
-function processBuffer(buffer: string, originalWrite: Function, encoding?: any, callback?: any): string {
-  const hasNewline = buffer.includes('\n');
-  const bufferTooLarge = buffer.length > 10000;
-  const shouldSuppressBuffer = shouldSuppressLine(buffer);
-  
-  if (hasNewline) {
-    const lines = buffer.split('\n');
-    const lastLine = lines[lines.length - 1];
-    const completeLines = lines.slice(0, -1);
-    
-    const linesToWrite: string[] = [];
-    for (const line of completeLines) {
-      if (!shouldSuppressLine(line)) {
-        linesToWrite.push(line);
-      }
-    }
-    
-    if (linesToWrite.length > 0) {
-      originalWrite(linesToWrite.join('\n') + '\n', encoding, callback);
-    }
-    
-    return shouldSuppressLine(lastLine) ? '' : lastLine;
-  } else if (bufferTooLarge || shouldSuppressBuffer) {
-    if (!shouldSuppressBuffer) {
-      originalWrite(buffer, encoding, callback);
-    }
-    return '';
-  }
-  
-  return buffer;
-}
-
-// Patch stdout
+// Simple interceptor - check each write directly
 process.stdout.write = function(chunk: any, encoding?: any, callback?: any): boolean {
   const message = chunk?.toString() || '';
-  stdoutBuffer += message;
-  stdoutBuffer = processBuffer(stdoutBuffer, originalStdoutWrite, encoding, callback);
-  return true;
+  if (shouldSuppressMessage(message)) {
+    // Suppress this message
+    if (typeof callback === 'function') callback();
+    return true;
+  }
+  return originalStdoutWrite(chunk, encoding, callback);
 };
 
-// Patch stderr
 process.stderr.write = function(chunk: any, encoding?: any, callback?: any): boolean {
   const message = chunk?.toString() || '';
-  stderrBuffer += message;
-  stderrBuffer = processBuffer(stderrBuffer, originalStderrWrite, encoding, callback);
-  return true;
+  if (shouldSuppressMessage(message)) {
+    // Suppress this message
+    if (typeof callback === 'function') callback();
+    return true;
+  }
+  return originalStderrWrite(chunk, encoding, callback);
 };
 
-// Patch console.error
+// Also patch fs.writeSync for file descriptor 1 (stdout) and 2 (stderr)
+// Some loggers bypass process.stdout/stderr and write directly to fd
+const originalFsWriteSync = fs.writeSync;
+(fs as any).writeSync = function(fd: number, ...args: any[]): number {
+  if (fd === 1 || fd === 2) {
+    const message = args[0]?.toString() || '';
+    if (shouldSuppressMessage(message)) {
+      return message.length; // Pretend we wrote it
+    }
+  }
+  return originalFsWriteSync.call(fs, fd, ...args);
+};
+
+// Patch console.error directly
 const originalConsoleError = console.error;
 console.error = (...args: any[]) => {
-  const message = args.join(' ');
-  if (
-    message.includes('Error handling message') ||
-    message.includes('Error sending message') ||
-    message.includes('❌ Error handling message')
-  ) {
+  const message = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
+  if (shouldSuppressMessage(message)) {
     return; // Suppress
   }
   originalConsoleError.apply(console, args);
 };
 
-console.log('[Bootstrap] Error interceptors installed');
+// Patch console.log too in case errors go there
+const originalConsoleLog = console.log;
+console.log = (...args: any[]) => {
+  const message = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
+  if (shouldSuppressMessage(message)) {
+    return; // Suppress
+  }
+  originalConsoleLog.apply(console, args);
+};
+
+originalConsoleLog('[Bootstrap] Error interceptors installed');
 
 // NOW import the main module after interceptors are set up
 import('./index.js').catch((error) => {
