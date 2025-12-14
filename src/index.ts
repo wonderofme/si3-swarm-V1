@@ -888,43 +888,115 @@ async function startAgents() {
                         responseText = msgs.COMPLETION + `\n\n🎉 You're all set, ${state.profile.name || 'friend'}!\n\nI can help you:\n• Find matches - just ask!\n• View your profile\n• Answer questions about Web3\n\nHow can I help you today?`;
                         console.log('[Telegram Chat ID Capture] 📋 Onboarding completed!');
                       } else if (state.step === 'COMPLETED') {
-                        // User has completed onboarding - handle all commands
+                        // User has completed onboarding - handle all commands with full features
                         console.log('[Telegram Chat ID Capture] 🤖 Processing completed user request...');
                         
-                        // Command detection
-                        const isMatchRequest = lowerText.includes('match') || lowerText.includes('connect me') || lowerText.includes('find someone') || lowerText.includes('find me');
+                        // ==================== CONVERSATION HISTORY ====================
+                        // Load and update conversation history from cache
+                        const MAX_HISTORY_MESSAGES = 10;
+                        let conversationHistory: Array<{role: string, content: string, timestamp: number}> = [];
+                        try {
+                          const historyCache = await kaiaRuntimeForOnboardingCheck.cacheManager.get(`conversation_${userId}`);
+                          if (historyCache && Array.isArray(historyCache)) {
+                            conversationHistory = historyCache;
+                          }
+                        } catch (e) { /* start fresh */ }
+                        
+                        // Add current message to history
+                        conversationHistory.push({ role: 'user', content: messageText, timestamp: Date.now() });
+                        if (conversationHistory.length > MAX_HISTORY_MESSAGES * 2) {
+                          conversationHistory = conversationHistory.slice(-MAX_HISTORY_MESSAGES * 2);
+                        }
+                        
+                        // ==================== SI<3> KNOWLEDGE BASE ====================
+                        // Inject knowledge context for SI<3> related questions
+                        const SI3_KNOWLEDGE = `
+SI<3> KNOWLEDGE BASE:
+
+**About SI<3>:**
+SI<3> (Social Impact Cubed) is a Web3 community focused on inclusion and education. We help under-represented groups navigate and thrive in Web3 through community, education, and meaningful connections.
+
+**Programs:**
+1. **Grow3dge Accelerator**: A 10-week accelerator program with the Growth and Education 3.0 Playbook. Helps Web3 founders and builders grow their projects with mentorship, resources, and network access.
+
+2. **Si Her DAO**: A decentralized autonomous organization for women in Web3. Members participate in governance, vote on proposals, and access exclusive opportunities.
+
+3. **SI U (Social Impact University)**: Educational platform offering courses on Web3 fundamentals, smart contracts, DeFi, NFTs, DAOs, and more. Self-paced learning with community support.
+
+**Leadership:**
+- **Kara Howard**: Founder & CEO of SI<3>. Passionate about diversity in Web3 and social impact through technology.
+
+**Community:**
+- 4 languages supported: English, Spanish, Portuguese, French
+- Global community across multiple continents
+- Focus on networking, education, and opportunity access
+
+**Keywords**: grow3dge, si her dao, si u, social impact university, kara howard, web3 education, diversity in web3`;
+
+                        // Check if question is about SI<3> to inject knowledge
+                        const si3Keywords = ['grow3dge', 'si<3>', 'si3', 'si her', 'si u', 'kara', 'social impact', 'accelerator'];
+                        const isSI3Question = si3Keywords.some(k => lowerText.includes(k));
+                        
+                        // ==================== COMMAND DETECTION ====================
+                        const isMatchRequest = lowerText.includes('match') || lowerText.includes('connect me') || lowerText.includes('find someone') || lowerText.includes('find me') || lowerText.includes('introduce');
                         const isHistoryRequest = lowerText.includes('history') || lowerText.includes('my profile') || lowerText.includes('my matches') || lowerText.includes('show profile');
                         const isLanguageChange = lowerText.includes('change language') || lowerText.includes('cambiar idioma') || lowerText.includes('mudar idioma') || lowerText.includes('changer de langue');
-                        const isEditRequest = lowerText.includes('edit') || lowerText.includes('update') || lowerText.includes('change my');
+                        const isEditRequest = lowerText.includes('edit profile') || lowerText.includes('update profile');
                         const isFeatureRequest = (lowerText.includes('feature') && lowerText.includes('request')) || 
-                                                 (lowerText.length > 50 && (lowerText.includes('can you') || lowerText.includes('could you') || lowerText.includes('i want') || lowerText.includes('it should')));
+                                                 (lowerText.includes('suggest') && lowerText.length > 30);
+                        const isHelpRequest = lowerText === 'help' || lowerText === '?' || lowerText.includes('what can you do');
                         
-                        if (isMatchRequest) {
-                          // MATCHING FUNCTIONALITY
+                        if (isHelpRequest) {
+                          // HELP MENU
+                          const langPhrases: Record<string, any> = {
+                            en: { title: 'Here\'s what I can help you with', match: 'Find a match', profile: 'Show my profile', lang: 'Change language', feature: 'Suggest a feature', restart: 'Restart onboarding', web3: 'Ask me anything about Web3' },
+                            es: { title: 'Esto es lo que puedo hacer por ti', match: 'Encontrar una conexión', profile: 'Mostrar mi perfil', lang: 'Cambiar idioma', feature: 'Sugerir una función', restart: 'Reiniciar', web3: 'Pregúntame sobre Web3' },
+                            pt: { title: 'Aqui está o que posso fazer por você', match: 'Encontrar uma conexão', profile: 'Mostrar meu perfil', lang: 'Mudar idioma', feature: 'Sugerir uma função', restart: 'Reiniciar', web3: 'Pergunte-me sobre Web3' },
+                            fr: { title: 'Voici ce que je peux faire pour vous', match: 'Trouver une connexion', profile: 'Afficher mon profil', lang: 'Changer de langue', feature: 'Suggérer une fonctionnalité', restart: 'Redémarrer', web3: 'Demandez-moi sur Web3' }
+                          };
+                          const phrases = langPhrases[state.profile.language || 'en'] || langPhrases.en;
+                          responseText = `💜 ${phrases.title}:\n\n` +
+                            `🤝 "${phrases.match}" - I'll connect you with someone who shares your interests\n` +
+                            `📋 "${phrases.profile}" - View your Grow3dge profile\n` +
+                            `🌍 "${phrases.lang}" - Switch to another language\n` +
+                            `💡 "${phrases.feature}" - Tell me what features you'd like\n` +
+                            `🔄 "${phrases.restart}" - Update your profile from the beginning\n\n` +
+                            `🧠 ${phrases.web3}!`;
+                        } else if (isMatchRequest) {
+                          // ==================== MATCHING WITH TRACKING ====================
                           console.log('[Telegram Chat ID Capture] 🤝 Processing match request...');
                           try {
                             const myInterests = state.profile.interests || [];
                             const myRoles = state.profile.roles || [];
                             
                             if (myInterests.length === 0 && myRoles.length === 0) {
-                              responseText = "I don't have enough info about your interests yet to match you. Try restarting onboarding with 'restart'! 💜";
+                              responseText = "I don't have enough info about your interests yet to match you. Try 'restart' to update your profile! 💜";
                             } else {
-                              // Try to find matches from cache
-                              const cacheKeys = await kaiaRuntimeForOnboardingCheck.cacheManager.get('__all_keys__');
                               let candidates: any[] = [];
+                              let matchedUserId: string | null = null;
                               
-                              // Scan cache for other completed profiles
-                              // Note: This is a simplified approach - real implementation would use database
+                              // Query database for other completed profiles
                               try {
                                 const db = kaiaRuntimeForOnboardingCheck.databaseAdapter as any;
                                 if (db && db.query) {
+                                  // Check for previous matches to avoid duplicates
+                                  let previousMatchIds: string[] = [];
+                                  try {
+                                    const prevMatches = await db.query(
+                                      `SELECT matched_user_id FROM matches WHERE user_id = $1`,
+                                      [userId]
+                                    );
+                                    previousMatchIds = (prevMatches.rows || []).map((r: any) => r.matched_user_id);
+                                  } catch (e) { /* no previous matches */ }
+                                  
                                   const res = await db.query(`SELECT key, value FROM cache WHERE key LIKE 'onboarding_%'`);
                                   for (const row of (res.rows || [])) {
                                     const otherUserId = row.key.replace('onboarding_', '');
                                     if (otherUserId === userId) continue;
+                                    if (previousMatchIds.includes(otherUserId)) continue; // Skip previous matches
                                     
                                     try {
-                                      const otherState = JSON.parse(row.value);
+                                      const otherState = typeof row.value === 'string' ? JSON.parse(row.value) : row.value;
                                       if (otherState.step !== 'COMPLETED' || !otherState.profile) continue;
                                       
                                       const otherInterests = otherState.profile.interests || [];
@@ -936,6 +1008,7 @@ async function startAgents() {
                                       
                                       if (common.length > 0) {
                                         candidates.push({
+                                          id: otherUserId,
                                           profile: otherState.profile,
                                           score: common.length,
                                           reason: `Shared interests: ${common.join(', ')}`
@@ -945,20 +1018,47 @@ async function startAgents() {
                                   }
                                 }
                               } catch (dbErr) {
-                                console.log('[Telegram Chat ID Capture] Database query failed, using simplified matching');
+                                console.log('[Telegram Chat ID Capture] Database query error:', dbErr);
                               }
                               
                               if (candidates.length === 0) {
                                 responseText = "I couldn't find any new matches right now. Check back later! 🕵️‍♀️\n\nTip: More members are joining every day!";
                               } else {
                                 const topMatch = candidates.sort((a, b) => b.score - a.score)[0];
+                                matchedUserId = topMatch.id;
+                                
+                                // ==================== RECORD MATCH IN DATABASE ====================
+                                try {
+                                  const { v4: uuidv4 } = await import('uuid');
+                                  const matchId = uuidv4();
+                                  const db = kaiaRuntimeForOnboardingCheck.databaseAdapter as any;
+                                  if (db && db.query) {
+                                    // Record the match
+                                    await db.query(
+                                      `INSERT INTO matches (id, user_id, matched_user_id, room_id, match_date, status) VALUES ($1, $2, $3, $4, NOW(), 'pending')`,
+                                      [matchId, userId, matchedUserId, chatId.toString()]
+                                    );
+                                    
+                                    // Schedule 3-day follow-up
+                                    const followUpDate = new Date();
+                                    followUpDate.setDate(followUpDate.getDate() + 3);
+                                    await db.query(
+                                      `INSERT INTO follow_ups (id, match_id, user_id, type, scheduled_for, status) VALUES ($1, $2, $3, '3_day_checkin', $4, 'pending')`,
+                                      [uuidv4(), matchId, userId, followUpDate]
+                                    );
+                                    console.log('[Match Tracker] ✅ Match recorded and follow-up scheduled');
+                                  }
+                                } catch (trackErr) {
+                                  console.log('[Match Tracker] Could not record match:', trackErr);
+                                }
+                                
                                 responseText = `🚀 I found a match for you!\n\n` +
                                   `Meet **${topMatch.profile.name || 'Anonymous'}** from ${topMatch.profile.location || 'Earth'}.\n` +
                                   `Roles: ${topMatch.profile.roles?.join(', ') || 'Not specified'}\n` +
                                   `Interests: ${topMatch.profile.interests?.join(', ') || 'Not specified'}\n` +
                                   (topMatch.profile.telegramHandle ? `Telegram: @${topMatch.profile.telegramHandle}\n` : '') +
                                   `\n💡 Why: ${topMatch.reason}\n\n` +
-                                  `Reach out and connect! 🤝`;
+                                  `I've saved this match. I'll check in with you in 3 days to see if you connected! 🤝`;
                               }
                             }
                           } catch (matchErr: any) {
@@ -966,9 +1066,32 @@ async function startAgents() {
                             responseText = "I had trouble finding matches right now. Please try again later! 💜";
                           }
                         } else if (isHistoryRequest) {
-                          // HISTORY/PROFILE FUNCTIONALITY
-                          console.log('[Telegram Chat ID Capture] 📋 Showing profile...');
+                          // ==================== PROFILE WITH MATCH HISTORY ====================
+                          console.log('[Telegram Chat ID Capture] 📋 Showing profile with match history...');
                           const p = state.profile;
+                          
+                          // Fetch match history
+                          let matchCount = 0;
+                          let matchList = '';
+                          try {
+                            const db = kaiaRuntimeForOnboardingCheck.databaseAdapter as any;
+                            if (db && db.query) {
+                              const matchRes = await db.query(
+                                `SELECT * FROM matches WHERE user_id = $1 ORDER BY match_date DESC LIMIT 5`,
+                                [userId]
+                              );
+                              matchCount = matchRes.rows?.length || 0;
+                              if (matchCount > 0) {
+                                matchList = '\n\n**Recent Matches:**\n';
+                                for (const match of matchRes.rows) {
+                                  const statusEmoji = match.status === 'connected' ? '✅' : match.status === 'not_interested' ? '❌' : '⏳';
+                                  const date = new Date(match.match_date).toLocaleDateString();
+                                  matchList += `${statusEmoji} ${date} - ${match.status}\n`;
+                                }
+                              }
+                            }
+                          } catch (e) { /* no matches */ }
+                          
                           responseText = `💜 Your Grow3dge Profile:\n\n` +
                             `**Name:** ${p.name || 'Not set'}\n` +
                             `**Location:** ${p.location || 'Not set'}\n` +
@@ -979,9 +1102,10 @@ async function startAgents() {
                             `**Events:** ${p.events?.join(', ') || 'None'}\n` +
                             `**Socials:** ${p.socials?.join(', ') || 'None'}\n` +
                             `**Telegram:** ${p.telegramHandle ? '@' + p.telegramHandle : 'Not set'}\n` +
-                            `**Notifications:** ${p.notifications || 'Not set'}\n\n` +
-                            `✅ Onboarding: Completed\n\n` +
-                            `To update your profile, say "restart" to go through onboarding again.`;
+                            `**Notifications:** ${p.notifications || 'Not set'}\n` +
+                            `**Total Matches:** ${matchCount}` +
+                            matchList +
+                            `\n\n✅ Onboarding: Completed\n\nTo update, say "restart".`;
                         } else if (isLanguageChange) {
                           // LANGUAGE CHANGE
                           console.log('[Telegram Chat ID Capture] 🌍 Language change requested...');
@@ -999,26 +1123,76 @@ async function startAgents() {
                             responseText = "Which language would you like?\n\n• English\n• Español\n• Português\n• Français\n\nJust say 'change language to [language]'";
                           }
                         } else if (isFeatureRequest) {
-                          // FEATURE REQUEST
+                          // FEATURE REQUEST - Save to database
                           console.log('[Telegram Chat ID Capture] 💡 Feature request detected...');
-                          // Log the feature request (in production, this would email or save to DB)
-                          console.log(`[Feature Request] User ${state.profile.name} (${userId}): ${messageText}`);
-                          responseText = `Thank you for your feature suggestion, ${state.profile.name}! 💜\n\n` +
-                            `I've noted your request:\n"${messageText.substring(0, 200)}${messageText.length > 200 ? '...' : ''}"\n\n` +
+                          try {
+                            const db = kaiaRuntimeForOnboardingCheck.databaseAdapter as any;
+                            if (db && db.query) {
+                              const { v4: uuidv4 } = await import('uuid');
+                              await db.query(
+                                `INSERT INTO feature_requests (id, user_id, user_name, request_text, created_at) VALUES ($1, $2, $3, $4, NOW())`,
+                                [uuidv4(), userId, state.profile.name || 'Anonymous', messageText]
+                              );
+                              console.log('[Feature Request] ✅ Saved to database');
+                            }
+                          } catch (e) {
+                            console.log('[Feature Request] Could not save to DB:', e);
+                          }
+                          responseText = `Thank you for your suggestion, ${state.profile.name}! 💜\n\n` +
+                            `I've recorded your request:\n"${messageText.substring(0, 200)}${messageText.length > 200 ? '...' : ''}"\n\n` +
                             `The SI<3> team reviews all suggestions. Your feedback helps make me better! 🚀`;
                         } else {
-                          // GENERAL CHAT with OpenAI
-                          console.log('[Telegram Chat ID Capture] 🤖 Calling OpenAI for general chat...');
-                          const systemPrompt = `You are Kaia, the SI<3> Web3 community assistant. 
-User Profile: Name: ${state.profile.name}, Location: ${state.profile.location}, Roles: ${state.profile.roles?.join(', ')}, Interests: ${state.profile.interests?.join(', ')}, Language: ${state.profile.language}.
+                          // ==================== GENERAL CHAT WITH KNOWLEDGE + HISTORY ====================
+                          console.log('[Telegram Chat ID Capture] 🤖 Calling OpenAI with knowledge + history...');
+                          
+                          // Build system prompt with knowledge injection
+                          let systemPrompt = `You are Kaia, the SI<3> Web3 community assistant. 
 
-Your capabilities:
-- Help users find matches (they can say "find me a match")
-- Show their profile (they can say "show my profile")
-- Answer Web3 questions
-- Take feature requests
+USER PROFILE:
+- Name: ${state.profile.name}
+- Location: ${state.profile.location || 'Not specified'}
+- Roles: ${state.profile.roles?.join(', ') || 'Not specified'}
+- Interests: ${state.profile.interests?.join(', ') || 'Not specified'}
+- Connection Goals: ${state.profile.connectionGoals?.join(', ') || 'Not specified'}
+- Language: ${state.profile.language || 'en'}
 
-Be warm, helpful, use emojis naturally (💜, 🚀, 🤝). Respond in ${state.profile.language === 'es' ? 'Spanish' : state.profile.language === 'pt' ? 'Portuguese' : state.profile.language === 'fr' ? 'French' : 'English'}.`;
+YOUR CAPABILITIES:
+- Find matches for users (they can say "find me a match")
+- Show profile (they can say "show my profile" or "my history")
+- Answer Web3 questions (blockchain, DeFi, DAOs, NFTs, etc.)
+- Take feature suggestions
+- Change language (they can say "change language to Spanish")
+- Provide help (they can say "help")
+
+PERSONALITY:
+- Be warm, friendly, and helpful
+- Use emojis naturally (💜, 🚀, 🤝, 🎉)
+- Be encouraging and supportive
+- Explain Web3 concepts in accessible language
+- Respond in ${state.profile.language === 'es' ? 'Spanish' : state.profile.language === 'pt' ? 'Portuguese' : state.profile.language === 'fr' ? 'French' : 'English'}`;
+
+                          // Inject SI<3> knowledge if relevant
+                          if (isSI3Question) {
+                            systemPrompt += `\n\n${SI3_KNOWLEDGE}`;
+                          }
+                          
+                          // Build messages array with conversation history
+                          const messages: Array<{role: string, content: string}> = [
+                            { role: 'system', content: systemPrompt }
+                          ];
+                          
+                          // Add recent conversation history (last 6 messages for context)
+                          const recentHistory = conversationHistory.slice(-6);
+                          for (const msg of recentHistory) {
+                            if (msg.role === 'user' || msg.role === 'assistant') {
+                              messages.push({ role: msg.role, content: msg.content });
+                            }
+                          }
+                          
+                          // Ensure the last message is the current user message
+                          if (messages[messages.length - 1]?.content !== messageText) {
+                            messages.push({ role: 'user', content: messageText });
+                          }
 
                           const response = await fetch('https://api.openai.com/v1/chat/completions', {
                             method: 'POST',
@@ -1028,21 +1202,27 @@ Be warm, helpful, use emojis naturally (💜, 🚀, 🤝). Respond in ${state.pr
                             },
                             body: JSON.stringify({
                               model: 'gpt-4o-mini',
-                              messages: [
-                                { role: 'system', content: systemPrompt },
-                                { role: 'user', content: messageText }
-                              ],
-                              max_tokens: 1000
+                              messages: messages,
+                              max_tokens: 1000,
+                              temperature: 0.7
                             })
                           });
                           
                           if (response.ok) {
                             const data = await response.json();
                             responseText = data.choices?.[0]?.message?.content || "I'm here to help! What would you like to know? 💜";
+                            
+                            // Save assistant response to history
+                            conversationHistory.push({ role: 'assistant', content: responseText, timestamp: Date.now() });
                           } else {
                             responseText = "I'm here to help! What would you like to know? 💜";
                           }
                         }
+                        
+                        // ==================== SAVE CONVERSATION HISTORY ====================
+                        try {
+                          await kaiaRuntimeForOnboardingCheck.cacheManager.set(`conversation_${userId}`, conversationHistory);
+                        } catch (e) { /* ignore cache errors */ }
                       } else {
                         // Unknown step - use OpenAI
                         console.log('[Telegram Chat ID Capture] 🤖 Unknown step, using OpenAI...');
@@ -1528,6 +1708,122 @@ Be warm, helpful, use emojis naturally (💜, 🚀, 🤝). Respond in ${state.pr
   }
 
   console.log('Kaia, MoonDAO, and SI<3> runtimes started.');
+  
+  // ==================== SCHEDULED FOLLOW-UPS SYSTEM ====================
+  // Check for due follow-ups every 5 minutes and send reminder messages
+  const FOLLOW_UP_CHECK_INTERVAL = 5 * 60 * 1000; // 5 minutes
+  
+  async function checkAndSendFollowUps() {
+    try {
+      if (!kaiaRuntimeForOnboardingCheck) {
+        console.log('[Follow-Up Scheduler] No runtime available, skipping check');
+        return;
+      }
+      
+      const db = kaiaRuntimeForOnboardingCheck.databaseAdapter as any;
+      if (!db || !db.query) {
+        console.log('[Follow-Up Scheduler] No database adapter, skipping check');
+        return;
+      }
+      
+      // Query for due follow-ups
+      const result = await db.query(
+        `SELECT f.*, m.user_id, m.matched_user_id 
+         FROM follow_ups f 
+         JOIN matches m ON f.match_id = m.id 
+         WHERE f.status = 'pending' AND f.scheduled_for <= NOW()
+         LIMIT 10`
+      );
+      
+      if (!result.rows || result.rows.length === 0) {
+        console.log('[Follow-Up Scheduler] No due follow-ups');
+        return;
+      }
+      
+      console.log(`[Follow-Up Scheduler] Found ${result.rows.length} due follow-ups`);
+      
+      // Get bot instance for sending messages
+      const telegramToken = process.env.TELEGRAM_BOT_TOKEN;
+      if (!telegramToken) {
+        console.log('[Follow-Up Scheduler] No Telegram token, cannot send follow-ups');
+        return;
+      }
+      
+      for (const followUp of result.rows) {
+        try {
+          const userId = followUp.user_id;
+          const followUpType = followUp.type;
+          
+          // Get user's profile for personalization
+          let userName = 'friend';
+          let userLang = 'en';
+          try {
+            const cached = await kaiaRuntimeForOnboardingCheck.cacheManager.get(`onboarding_${userId}`);
+            if (cached && typeof cached === 'object') {
+              const state = cached as { profile?: any };
+              userName = state.profile?.name || 'friend';
+              userLang = state.profile?.language || 'en';
+            }
+          } catch (e) { /* use defaults */ }
+          
+          // Build follow-up message based on type
+          let message = '';
+          if (followUpType === '3_day_checkin') {
+            const messages: Record<string, string> = {
+              en: `Hey ${userName}! 👋 It's been 3 days since I connected you with someone. Did you reach out to them? Let me know how it went! 💜\n\nIf you'd like another match, just say "find me a match"!`,
+              es: `¡Hola ${userName}! 👋 Han pasado 3 días desde que te conecté con alguien. ¿Te comunicaste con ellos? ¡Cuéntame cómo te fue! 💜\n\n¡Si quieres otra conexión, solo di "encuéntrame una conexión"!`,
+              pt: `Olá ${userName}! 👋 Já se passaram 3 dias desde que te conectei com alguém. Você entrou em contato? Me conta como foi! 💜\n\nSe quiser outra conexão, diga "encontre uma conexão para mim"!`,
+              fr: `Salut ${userName}! 👋 Ça fait 3 jours que je t'ai connecté avec quelqu'un. As-tu pris contact? Dis-moi comment ça s'est passé! 💜\n\nSi tu veux une autre connexion, dis "trouve-moi une connexion"!`
+            };
+            message = messages[userLang] || messages.en;
+          } else if (followUpType === '7_day_next_match') {
+            const messages: Record<string, string> = {
+              en: `Hi ${userName}! 🚀 It's been a week since your last match. Ready for a new connection? Say "find me a match" and I'll introduce you to someone new! 💜`,
+              es: `¡Hola ${userName}! 🚀 Ha pasado una semana desde tu última conexión. ¿Listo para una nueva? Di "encuéntrame una conexión" y te presentaré a alguien nuevo! 💜`,
+              pt: `Olá ${userName}! 🚀 Faz uma semana desde sua última conexão. Pronto para uma nova? Diga "encontre uma conexão" e te apresento alguém novo! 💜`,
+              fr: `Salut ${userName}! 🚀 Ça fait une semaine depuis ta dernière connexion. Prêt pour une nouvelle? Dis "trouve-moi une connexion" et je te présente quelqu'un! 💜`
+            };
+            message = messages[userLang] || messages.en;
+          }
+          
+          if (message) {
+            // Send via Telegram API directly
+            await fetch(`https://api.telegram.org/bot${telegramToken}/sendMessage`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                chat_id: userId,
+                text: message
+              })
+            });
+            
+            // Mark follow-up as sent
+            await db.query(
+              `UPDATE follow_ups SET status = 'sent', sent_at = NOW() WHERE id = $1`,
+              [followUp.id]
+            );
+            
+            console.log(`[Follow-Up Scheduler] ✅ Sent ${followUpType} to user ${userId}`);
+          }
+        } catch (sendErr) {
+          console.error('[Follow-Up Scheduler] Error sending follow-up:', sendErr);
+          // Mark as failed to avoid infinite retry
+          await db.query(
+            `UPDATE follow_ups SET status = 'failed' WHERE id = $1`,
+            [followUp.id]
+          ).catch(() => {});
+        }
+      }
+    } catch (error) {
+      console.error('[Follow-Up Scheduler] Error checking follow-ups:', error);
+    }
+  }
+  
+  // Start the follow-up scheduler
+  console.log('[Follow-Up Scheduler] 📅 Starting scheduled follow-up checker...');
+  setInterval(checkAndSendFollowUps, FOLLOW_UP_CHECK_INTERVAL);
+  // Run once on startup after a short delay
+  setTimeout(checkAndSendFollowUps, 10000);
 }
 
 // Add global error handlers to catch unhandled promise rejections
