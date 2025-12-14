@@ -608,59 +608,63 @@ async function startAgents() {
               }
               
               // CRITICAL: Verify bot is actually listening for updates
-              // Check if there's a conflict with another bot instance
+              // Avoid triggering 409 ourselves: only call getUpdates if polling is not running
               let has409Conflict = false;
-              try {
-                const updates = await bot.telegram.getUpdates({ limit: 1, timeout: 1 });
-                console.log('[Telegram Client] ✅ Successfully fetched updates from Telegram API');
-                console.log('[Telegram Client] Pending updates count:', updates.length);
-                if (updates.length > 0) {
-                  console.log('[Telegram Client] ⚠️ There are pending updates - bot should be processing them');
-                }
-              } catch (updateError: any) {
-                if (updateError.response?.error_code === 409) {
-                  has409Conflict = true;
-                  console.error('[Telegram Client] ❌ CRITICAL: 409 Conflict detected!');
-                  console.error('[Telegram Client] Another bot instance is consuming updates');
-                  console.error('[Telegram Client] Waiting 90 seconds for conflict to resolve...');
-                  
-                  // Wait 90 seconds for the conflict to resolve
-                  await new Promise(resolve => setTimeout(resolve, 90000));
-                  
-                  // Try to manually start polling if it's not running
-                  if (bot.polling && !bot.polling.isRunning) {
-                    console.log('[Telegram Client] 🔄 Attempting to manually start polling after conflict resolution...');
-                    try {
-                      // Try to start polling manually
-                      if (typeof bot.launch === 'function') {
-                        await bot.launch();
-                        console.log('[Telegram Client] ✅ Manually started polling via bot.launch()');
-                      } else if (bot.polling && typeof bot.polling.start === 'function') {
-                        await bot.polling.start();
-                        console.log('[Telegram Client] ✅ Manually started polling via bot.polling.start()');
-                      } else {
-                        console.log('[Telegram Client] ⚠️ Could not find method to manually start polling');
-                        console.log('[Telegram Client] Bot polling object:', bot.polling ? Object.keys(bot.polling) : 'null');
-                      }
-                      
-                      // Wait a moment and check again
-                      await new Promise(resolve => setTimeout(resolve, 2000));
-                      if (bot.polling?.isRunning) {
-                        console.log('[Telegram Client] ✅ Polling is now RUNNING after manual start');
-                      } else {
-                        console.error('[Telegram Client] ❌ Polling still NOT RUNNING after manual start attempt');
-                      }
-                    } catch (launchError: any) {
-                      console.error('[Telegram Client] ⚠️ Failed to manually start polling:', launchError.message);
-                      if (launchError.response?.error_code === 409) {
-                        console.error('[Telegram Client] ❌ 409 Conflict still active - another instance is still running');
-                        console.error('[Telegram Client] 💡 You must stop ALL other bot instances (local, Akash, etc.)');
+              if (!bot.polling?.isRunning) {
+                try {
+                  const updates = await bot.telegram.getUpdates({ limit: 1, timeout: 1 });
+                  console.log('[Telegram Client] ✅ Successfully fetched updates from Telegram API');
+                  console.log('[Telegram Client] Pending updates count:', updates.length);
+                  if (updates.length > 0) {
+                    console.log('[Telegram Client] ⚠️ There are pending updates - bot should be processing them');
+                  }
+                } catch (updateError: any) {
+                  if (updateError.response?.error_code === 409) {
+                    has409Conflict = true;
+                    console.error('[Telegram Client] ❌ CRITICAL: 409 Conflict detected!');
+                    console.error('[Telegram Client] Another bot instance is consuming updates');
+                    console.error('[Telegram Client] Waiting 90 seconds for conflict to resolve...');
+                    
+                    // Wait 90 seconds for the conflict to resolve
+                    await new Promise(resolve => setTimeout(resolve, 90000));
+                    
+                    // Try to manually start polling if it's not running
+                    if (bot.polling && !bot.polling.isRunning) {
+                      console.log('[Telegram Client] 🔄 Attempting to manually start polling after conflict resolution...');
+                      try {
+                        // Try to start polling manually
+                        if (typeof bot.launch === 'function') {
+                          await bot.launch();
+                          console.log('[Telegram Client] ✅ Manually started polling via bot.launch()');
+                        } else if (bot.polling && typeof bot.polling.start === 'function') {
+                          await bot.polling.start();
+                          console.log('[Telegram Client] ✅ Manually started polling via bot.polling.start()');
+                        } else {
+                          console.log('[Telegram Client] ⚠️ Could not find method to manually start polling');
+                          console.log('[Telegram Client] Bot polling object:', bot.polling ? Object.keys(bot.polling) : 'null');
+                        }
+                        
+                        // Wait a moment and check again
+                        await new Promise(resolve => setTimeout(resolve, 2000));
+                        if (bot.polling?.isRunning) {
+                          console.log('[Telegram Client] ✅ Polling is now RUNNING after manual start');
+                        } else {
+                          console.error('[Telegram Client] ❌ Polling still NOT RUNNING after manual start attempt');
+                        }
+                      } catch (launchError: any) {
+                        console.error('[Telegram Client] ⚠️ Failed to manually start polling:', launchError.message);
+                        if (launchError.response?.error_code === 409) {
+                          console.error('[Telegram Client] ❌ 409 Conflict still active - another instance is still running');
+                          console.error('[Telegram Client] 💡 You must stop ALL other bot instances (local, Akash, etc.)');
+                        }
                       }
                     }
+                  } else {
+                    console.error('[Telegram Client] ⚠️ Could not fetch updates:', updateError.message);
                   }
-                } else {
-                  console.error('[Telegram Client] ⚠️ Could not fetch updates:', updateError.message);
                 }
+              } else {
+                console.log('[Telegram Client] Polling already running; skipping getUpdates check to avoid 409 conflicts');
               }
               
               // Final check: If polling is still not running, try one more time to start it
