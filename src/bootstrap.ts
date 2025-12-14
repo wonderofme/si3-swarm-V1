@@ -17,9 +17,22 @@ async function patchPinoLogger() {
       
       logger.error = function(obj: any, msg?: string, ...rest: any[]) {
         const messageToCheck = typeof obj === 'string' ? obj : (msg || JSON.stringify(obj));
-        if (messageToCheck?.includes('Error handling message') || 
-            messageToCheck?.includes('Error sending message')) {
-          return; // Suppress
+        const shouldSuppress = messageToCheck?.includes('Error handling message') || 
+                              messageToCheck?.includes('Error sending message');
+        
+        // CRITICAL: Log full error details BEFORE suppressing
+        if (shouldSuppress) {
+          console.error('[Bootstrap] ⚠️ Intercepted pino error (will suppress after logging):');
+          console.error('[Bootstrap] Error object:', JSON.stringify(obj, null, 2));
+          console.error('[Bootstrap] Error message:', msg);
+          console.error('[Bootstrap] Rest args:', rest);
+          if (obj && typeof obj === 'object' && obj.err) {
+            console.error('[Bootstrap] Error.err:', JSON.stringify(obj.err, null, 2));
+            if (obj.err.stack) {
+              console.error('[Bootstrap] Error.err.stack:', obj.err.stack);
+            }
+          }
+          return; // Suppress after logging
         }
         return originalError(obj, msg, ...rest);
       };
@@ -45,11 +58,25 @@ try {
         const originalError = logger.error.bind(logger);
         logger.error = function(obj: any, msg?: string, ...rest: any[]) {
           const messageToCheck = typeof obj === 'string' ? obj : (msg || '');
-          if (messageToCheck?.includes?.('Error handling message') || 
-              messageToCheck?.includes?.('Error sending message') ||
-              (typeof obj === 'object' && JSON.stringify(obj)?.includes?.('Error handling message')) ||
-              (typeof obj === 'object' && JSON.stringify(obj)?.includes?.('Error sending message'))) {
-            return; // Suppress
+          const objStr = typeof obj === 'object' ? JSON.stringify(obj) : '';
+          const shouldSuppress = messageToCheck?.includes?.('Error handling message') || 
+                                messageToCheck?.includes?.('Error sending message') ||
+                                objStr?.includes?.('Error handling message') ||
+                                objStr?.includes?.('Error sending message');
+          
+          // CRITICAL: Log full error details BEFORE suppressing
+          if (shouldSuppress) {
+            console.error('[Bootstrap] ⚠️ Intercepted pino error via require.cache (will suppress after logging):');
+            console.error('[Bootstrap] Error object:', JSON.stringify(obj, null, 2));
+            console.error('[Bootstrap] Error message:', msg);
+            console.error('[Bootstrap] Rest args:', rest);
+            if (obj && typeof obj === 'object' && obj.err) {
+              console.error('[Bootstrap] Error.err:', JSON.stringify(obj.err, null, 2));
+              if (obj.err.stack) {
+                console.error('[Bootstrap] Error.err.stack:', obj.err.stack);
+              }
+            }
+            return; // Suppress after logging
           }
           return originalError(obj, msg, ...rest);
         };
@@ -87,10 +114,24 @@ function shouldSuppressMessage(message: string): boolean {
   const lowerMessage = cleanMessage.toLowerCase();
   
   // Match the exact error patterns from ElizaOS
-  return (
+  const shouldSuppress = (
     lowerMessage.includes('error handling message') ||
     lowerMessage.includes('error sending message')
   );
+  
+  // CRITICAL: Log full error details BEFORE suppressing
+  // This helps us diagnose the root cause
+  if (shouldSuppress) {
+    console.error('[Bootstrap] ⚠️ Intercepted ElizaOS error (will suppress after logging):');
+    console.error('[Bootstrap] Full message:', cleanMessage);
+    console.error('[Bootstrap] Raw message (with ANSI):', message);
+    // Try to extract any error object or stack trace from the message
+    if (message.includes('stack') || message.includes('Error:') || message.includes('at ')) {
+      console.error('[Bootstrap] ⚠️ Message contains stack trace or error details - check above');
+    }
+  }
+  
+  return shouldSuppress;
 }
 
 // Simple interceptor - check each write directly
