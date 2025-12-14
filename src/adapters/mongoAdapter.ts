@@ -602,6 +602,45 @@ export class MongoAdapter implements DatabaseAdapter {
   }
 
   /**
+   * Add a participant to a room
+   * Required by ElizaOS AgentRuntime.ensureParticipantExists
+   * Creates a participant record linking an account to a room
+   */
+  async addParticipant(roomId: string, accountId: string): Promise<void> {
+    try {
+      const db = await this.getDb();
+      const participantsCollection = db.collection('participants');
+      
+      // Check if participant already exists
+      const existing = await participantsCollection.findOne({
+        roomId: roomId,
+        accountId: accountId
+      });
+      
+      if (existing) {
+        console.log(`[MongoDB Adapter] Participant already exists: roomId=${roomId}, accountId=${accountId}`);
+        return; // Already exists, no need to create
+      }
+      
+      // Create new participant record
+      const participant = {
+        id: this.generateUUID(),
+        roomId: roomId,
+        accountId: accountId,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      
+      await participantsCollection.insertOne(participant);
+      console.log(`[MongoDB Adapter] Created participant: roomId=${roomId}, accountId=${accountId}`);
+    } catch (error: any) {
+      console.error('[MongoDB Adapter] Error in addParticipant:', error);
+      // Don't throw - allow initialization to continue
+      // The participant might already exist or collection might not be ready yet
+    }
+  }
+
+  /**
    * Test database connection
    */
   async testConnection(): Promise<void> {
