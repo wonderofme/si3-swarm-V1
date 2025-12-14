@@ -1198,26 +1198,7 @@ async function startAgents() {
   console.log('Kaia, MoonDAO, and SI<3> runtimes started.');
 }
 
-// Add global error handlers to catch unhandled promise rejections (including 409 conflicts)
-process.on('unhandledRejection', (reason: any, promise: Promise<any>) => {
-  // Check if it's a 409 Conflict error from Telegram
-  const errorMessage = reason?.message || reason?.toString() || '';
-  const errorCode = reason?.response?.error_code || reason?.code;
-  
-  if (errorCode === 409 || errorMessage.includes('409') || errorMessage.includes('Conflict') || errorMessage.includes('terminated by other getUpdates')) {
-    console.error('❌ Unhandled promise rejection: TelegramError: 409: Conflict: terminated by other getUpdates request; make sure that only one bot instance is running');
-    console.error('💡 SOLUTION: Stop all other bot instances and restart this one');
-    console.error('💡 Or wait 60 seconds and the conflict should resolve automatically');
-    console.error('⚠️ This may cause the bot to be unstable');
-    // Don't exit - let bot continue (it just won't receive messages)
-    return;
-  }
-  
-  // For other errors, log and continue
-  console.error('❌ Unhandled promise rejection:', reason);
-  console.error('⚠️ This may cause the bot to be unstable');
-});
-
+// Add global error handlers to catch unhandled promise rejections
 process.on('unhandledRejection', (reason: any, promise: Promise<any>) => {
   const errorMessage = reason?.message || reason?.toString() || 'Unknown error';
   const errorCode = reason?.code || reason?.response?.error_code || '';
@@ -1238,23 +1219,44 @@ process.on('unhandledRejection', (reason: any, promise: Promise<any>) => {
     return;
   }
   
-  // Check if it's a database connection error
-  const isDatabaseError = 
+  // Check if it's a MongoDB/database connection error
+  const isMongoError = 
+    errorMessage.includes('MongoServerSelectionError') ||
+    errorMessage.includes('MongoNetworkError') ||
+    errorMessage.includes('ERR_SSL_TLSV1_ALERT_INTERNAL_ERROR') ||
+    errorMessage.includes('ReplicaSetNoPrimary') ||
     errorCode === 'ETIMEDOUT' ||
     errorCode === 'ENETUNREACH' ||
     errorMessage.toLowerCase().includes('failed to connect') ||
     errorMessage.toLowerCase().includes('database') ||
-    errorMessage.toLowerCase().includes('testconnection');
+    errorMessage.toLowerCase().includes('testconnection') ||
+    errorMessage.toLowerCase().includes('addparticipant');
   
-  if (isDatabaseError) {
-    console.error('⚠️ Unhandled database error (non-fatal):', errorMessage);
+  if (isMongoError) {
+    console.error('⚠️ Unhandled database/MongoDB error (non-fatal):', errorMessage);
     console.error('⚠️ Bot will continue running but database features may be unavailable');
     // Don't exit - allow bot to continue
-  } else {
-    console.error('❌ Unhandled promise rejection:', reason);
-    console.error('⚠️ This may cause the bot to be unstable');
-    // Don't exit immediately - let the bot try to recover
+    return;
   }
+  
+  // Check if it's a message handling/sending error (from ElizaOS core)
+  // These are often non-critical and can be safely ignored
+  const isMessageError = 
+    errorMessage.includes('Error handling message') ||
+    errorMessage.includes('Error sending message') ||
+    errorMessage.toLowerCase().includes('message') && errorMessage.toLowerCase().includes('error');
+  
+  if (isMessageError) {
+    console.error('⚠️ Message processing error (non-fatal):', errorMessage);
+    console.error('⚠️ Bot will continue running - this error is likely from ElizaOS core library');
+    // Don't exit - allow bot to continue
+    return;
+  }
+  
+  // For other errors, log but don't exit
+  console.error('❌ Unhandled promise rejection:', reason);
+  console.error('⚠️ This may cause the bot to be unstable');
+  // Don't exit immediately - let the bot try to recover
 });
 
 process.on('uncaughtException', (error: Error) => {
