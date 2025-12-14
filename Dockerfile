@@ -43,6 +43,6 @@ ENV USE_OPENAI_EMBEDDING=true
 
 EXPOSE 3000
 
-CMD ["node", "dist/index.js"]
+CMD ["node", "dist/bootstrap.js"]
 
 
