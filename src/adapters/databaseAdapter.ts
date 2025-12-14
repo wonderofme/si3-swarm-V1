@@ -22,6 +22,9 @@ export function createDatabaseAdapter(): DatabaseAdapter {
   const databaseType = (process.env.DATABASE_TYPE || 'postgres').toLowerCase();
   const databaseUrl = process.env.DATABASE_URL;
 
+  console.log('[Database Adapter] DATABASE_TYPE:', databaseType);
+  console.log('[Database Adapter] DATABASE_URL present:', !!databaseUrl);
+
   if (!databaseUrl) {
     throw new Error('DATABASE_URL environment variable is required');
   }

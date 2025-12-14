@@ -5,7 +5,7 @@ services:
     image: ghcr.io/si3-ecosystem/kaia-swarm:bcc92ade
           env:
             - DATABASE_URL=${DATABASE_URL}
-            - DATABASE_TYPE=${DATABASE_TYPE}
+            - DATABASE_TYPE=mongodb
             - OPENAI_API_KEY=${OPENAI_API_KEY}
             - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
             - JWT_SECRET=${JWT_SECRET}
