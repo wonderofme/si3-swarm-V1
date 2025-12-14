@@ -47,15 +47,15 @@ process.stderr.write = function(chunk: any, encoding?: any, callback?: any): boo
 
 // Also patch fs.writeSync for file descriptor 1 (stdout) and 2 (stderr)
 // Some loggers bypass process.stdout/stderr and write directly to fd
-const originalFsWriteSync = fs.writeSync;
-(fs as any).writeSync = function(fd: number, ...args: any[]): number {
+const originalFsWriteSync = fs.writeSync.bind(fs);
+(fs as any).writeSync = function(fd: number, buffer: any, ...rest: any[]): number {
   if (fd === 1 || fd === 2) {
-    const message = args[0]?.toString() || '';
+    const message = buffer?.toString() || '';
     if (shouldSuppressMessage(message)) {
-      return message.length; // Pretend we wrote it
+      return typeof buffer === 'string' ? buffer.length : (buffer?.length || 0);
     }
   }
-  return originalFsWriteSync.call(fs, fd, ...args);
+  return (originalFsWriteSync as any)(fd, buffer, ...rest);
 };
 
 // Patch console.error directly
