@@ -135,8 +135,24 @@ function shouldSuppressMessage(message: string): boolean {
 }
 
 // Simple interceptor - check each write directly
+// CRITICAL: Log BEFORE checking suppression so we always see the error details
 process.stdout.write = function(chunk: any, encoding?: any, callback?: any): boolean {
   const message = chunk?.toString() || '';
+  // ALWAYS log first if it matches our error patterns (before suppression check)
+  const cleanMessage = message
+    .replace(/\x1b\[[0-9;]*m/g, '')
+    .replace(/\[[0-9;]*m/g, '')
+    .replace(/\[[0-9]+m/g, '');
+  const lowerMessage = cleanMessage.toLowerCase();
+  if (lowerMessage.includes('error handling message') || lowerMessage.includes('error sending message')) {
+    // Log the full error BEFORE suppressing
+    console.error('[Bootstrap] 🔍 CAPTURED ERROR via stdout.write:');
+    console.error('[Bootstrap] Raw chunk:', message);
+    console.error('[Bootstrap] Clean message:', cleanMessage);
+    // Try to get more context - check if there's a stack trace in subsequent writes
+    console.error('[Bootstrap] ⚠️ This error will be suppressed, but details logged above');
+  }
+  
   if (shouldSuppressMessage(message)) {
     // Suppress this message
     if (typeof callback === 'function') callback();
@@ -147,6 +163,20 @@ process.stdout.write = function(chunk: any, encoding?: any, callback?: any): boo
 
 process.stderr.write = function(chunk: any, encoding?: any, callback?: any): boolean {
   const message = chunk?.toString() || '';
+  // ALWAYS log first if it matches our error patterns (before suppression check)
+  const cleanMessage = message
+    .replace(/\x1b\[[0-9;]*m/g, '')
+    .replace(/\[[0-9;]*m/g, '')
+    .replace(/\[[0-9]+m/g, '');
+  const lowerMessage = cleanMessage.toLowerCase();
+  if (lowerMessage.includes('error handling message') || lowerMessage.includes('error sending message')) {
+    // Log the full error BEFORE suppressing
+    console.error('[Bootstrap] 🔍 CAPTURED ERROR via stderr.write:');
+    console.error('[Bootstrap] Raw chunk:', message);
+    console.error('[Bootstrap] Clean message:', cleanMessage);
+    console.error('[Bootstrap] ⚠️ This error will be suppressed, but details logged above');
+  }
+  
   if (shouldSuppressMessage(message)) {
     // Suppress this message
     if (typeof callback === 'function') callback();
@@ -161,6 +191,20 @@ const originalFsWriteSync = fs.writeSync.bind(fs);
 (fs as any).writeSync = function(fd: number, buffer: any, ...rest: any[]): number {
   if (fd === 1 || fd === 2) {
     const message = buffer?.toString() || '';
+    // ALWAYS log first if it matches our error patterns
+    const cleanMessage = message
+      .replace(/\x1b\[[0-9;]*m/g, '')
+      .replace(/\[[0-9;]*m/g, '')
+      .replace(/\[[0-9]+m/g, '');
+    const lowerMessage = cleanMessage.toLowerCase();
+    if (lowerMessage.includes('error handling message') || lowerMessage.includes('error sending message')) {
+      // Log the full error BEFORE suppressing
+      console.error('[Bootstrap] 🔍 CAPTURED ERROR via fs.writeSync (fd=' + fd + '):');
+      console.error('[Bootstrap] Raw buffer:', message);
+      console.error('[Bootstrap] Clean message:', cleanMessage);
+      console.error('[Bootstrap] ⚠️ This error will be suppressed, but details logged above');
+    }
+    
     if (shouldSuppressMessage(message)) {
       return typeof buffer === 'string' ? buffer.length : (buffer?.length || 0);
     }
