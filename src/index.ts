@@ -784,7 +784,7 @@ async function startAgents() {
                         console.log('[Telegram Chat ID Capture] 📋 Starting onboarding, asking for language');
                       } else if (state.step === 'ASK_LANGUAGE') {
                         // Process language selection
-                        let lang = 'en';
+                        let lang: 'en' | 'es' | 'pt' | 'fr' = 'en';
                         if (lowerText.includes('1') || lowerText.includes('english')) lang = 'en';
                         else if (lowerText.includes('2') || lowerText.includes('español') || lowerText.includes('spanish')) lang = 'es';
                         else if (lowerText.includes('3') || lowerText.includes('português') || lowerText.includes('portuguese')) lang = 'pt';
@@ -792,29 +792,29 @@ async function startAgents() {
                         
                         await updateOnboardingStep(kaiaRuntimeForOnboardingCheck, userId, chatId, 'ASK_NAME', { language: lang });
                         const newMsgs = getMessages(lang);
-                        responseText = newMsgs.ASK_NAME || "What's your name? 💜";
+                        responseText = newMsgs.GREETING || "What's your name? 💜";
                         console.log('[Telegram Chat ID Capture] 📋 Language set to:', lang);
                       } else if (state.step === 'ASK_NAME') {
                         // Save name and ask for location
                         await updateOnboardingStep(kaiaRuntimeForOnboardingCheck, userId, chatId, 'ASK_LOCATION', { name: messageText.trim() });
-                        responseText = msgs.ASK_LOCATION || "Where are you based? 🌍";
+                        responseText = msgs.LOCATION || "Where are you based? 🌍";
                         console.log('[Telegram Chat ID Capture] 📋 Name saved:', messageText.trim());
                       } else if (state.step === 'ASK_LOCATION') {
                         // Save location and ask for roles
-                        await updateOnboardingStep(kaiaRuntimeForOnboardingCheck, userId, chatId, 'ASK_ROLES', { location: messageText.trim() });
-                        responseText = msgs.ASK_ROLES || "What roles best describe you? (e.g., Developer, Designer, Founder, etc.)";
+                        await updateOnboardingStep(kaiaRuntimeForOnboardingCheck, userId, chatId, 'ASK_ROLE', { location: messageText.trim() });
+                        responseText = msgs.ROLES || "What roles best describe you? (e.g., Developer, Designer, Founder, etc.)";
                         console.log('[Telegram Chat ID Capture] 📋 Location saved:', messageText.trim());
-                      } else if (state.step === 'ASK_ROLES') {
+                      } else if (state.step === 'ASK_ROLE') {
                         // Save roles and ask for interests
                         const roles = messageText.split(',').map((r: string) => r.trim()).filter((r: string) => r);
                         await updateOnboardingStep(kaiaRuntimeForOnboardingCheck, userId, chatId, 'ASK_INTERESTS', { roles });
-                        responseText = msgs.ASK_INTERESTS || "What are your interests in Web3? 🚀";
+                        responseText = msgs.INTERESTS || "What are your interests in Web3? 🚀";
                         console.log('[Telegram Chat ID Capture] 📋 Roles saved:', roles);
                       } else if (state.step === 'ASK_INTERESTS') {
                         // Save interests and complete onboarding
                         const interests = messageText.split(',').map((r: string) => r.trim()).filter((r: string) => r);
                         await updateOnboardingStep(kaiaRuntimeForOnboardingCheck, userId, chatId, 'COMPLETED', { interests });
-                        responseText = msgs.ONBOARDING_COMPLETE || `Welcome to SI<3>, ${state.profile.name || 'friend'}! 🎉\n\nYou're all set! I can help you:\n• Find matches with /match\n• View your profile with /history\n• Answer questions about Web3\n\nHow can I help you today?`;
+                        responseText = msgs.COMPLETION || `Welcome to SI<3>, ${state.profile.name || 'friend'}! 🎉\n\nYou're all set! I can help you:\n• Find matches with /match\n• View your profile with /history\n• Answer questions about Web3\n\nHow can I help you today?`;
                         console.log('[Telegram Chat ID Capture] 📋 Onboarding completed!');
                       } else if (state.step === 'COMPLETED') {
                         // User has completed onboarding - use OpenAI for general chat
