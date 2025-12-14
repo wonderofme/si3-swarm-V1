@@ -738,42 +738,72 @@ async function startAgents() {
               
               // CRITICAL: Always call original handler to ensure messages are processed
               // Wrap in try-catch to handle database errors gracefully
+              // Track if a message was sent by ElizaOS
+              let elizaSentMessage = false;
+              const originalSendMessage = bot.telegram.sendMessage.bind(bot.telegram);
+              const patchedSendMessage = async (...args: any[]) => {
+                elizaSentMessage = true;
+                return originalSendMessage(...args);
+              };
+              bot.telegram.sendMessage = patchedSendMessage;
+              
               try {
                 console.log('[Telegram Chat ID Capture] Calling original handler...');
                 
-                // DIAGNOSTIC: Add a Promise wrapper with error capture
-                const handlerPromise = originalHandler(update);
+                const result = await originalHandler(update);
+                console.log('[Telegram Chat ID Capture] ✅ Original handler returned successfully');
+                console.log('[Telegram Chat ID Capture] ElizaOS sent message:', elizaSentMessage);
                 
-                // Add unhandled rejection listener for this specific promise
-                let capturedError: any = null;
-                const errorCapture = (reason: any) => {
-                  if (!capturedError) {
-                    capturedError = reason;
-                    console.error('[Telegram Chat ID Capture] 🔬 CAUGHT UNHANDLED REJECTION IN HANDLER:');
-                    console.error('[Telegram Chat ID Capture] 🔬 Error type:', typeof reason);
-                    console.error('[Telegram Chat ID Capture] 🔬 Error message:', reason?.message || reason);
-                    console.error('[Telegram Chat ID Capture] 🔬 Error stack:', reason?.stack?.substring(0, 1500) || 'no stack');
-                    if (reason?.response) {
-                      console.error('[Telegram Chat ID Capture] 🔬 Error response:', JSON.stringify(reason.response).substring(0, 500));
+                // FALLBACK: If ElizaOS didn't send a message, call OpenAI directly
+                if (!elizaSentMessage && chatId && messageText) {
+                  console.log('[Telegram Chat ID Capture] ⚠️ ElizaOS did not send a message - using direct OpenAI fallback');
+                  try {
+                    const openaiKey = process.env.OPENAI_API_KEY;
+                    if (openaiKey) {
+                      console.log('[Telegram Chat ID Capture] 🤖 Calling OpenAI directly...');
+                      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                          'Authorization': `Bearer ${openaiKey}`
+                        },
+                        body: JSON.stringify({
+                          model: 'gpt-4o-mini',
+                          messages: [
+                            {
+                              role: 'system',
+                              content: `You are Kaia, a friendly AI assistant for the SI<3> Web3 community. You help with onboarding, matchmaking, and answering questions. Be warm, helpful, and use emojis naturally. Keep responses concise.`
+                            },
+                            {
+                              role: 'user',
+                              content: messageText
+                            }
+                          ],
+                          max_tokens: 500
+                        })
+                      });
+                      
+                      if (response.ok) {
+                        const data = await response.json();
+                        const reply = data.choices?.[0]?.message?.content || "I'm having trouble processing that. Please try again!";
+                        console.log('[Telegram Chat ID Capture] 🤖 OpenAI response:', reply.substring(0, 100) + '...');
+                        await originalSendMessage(chatId, reply);
+                        console.log('[Telegram Chat ID Capture] ✅ Sent fallback response via direct OpenAI');
+                      } else {
+                        const errorText = await response.text();
+                        console.error('[Telegram Chat ID Capture] ❌ OpenAI fallback failed:', response.status, errorText);
+                        await originalSendMessage(chatId, "I'm experiencing some issues right now. Please try again in a moment! 🔧");
+                      }
+                    } else {
+                      console.error('[Telegram Chat ID Capture] ❌ No OpenAI API key for fallback');
+                      await originalSendMessage(chatId, "I'm experiencing some issues right now. Please try again in a moment! 🔧");
                     }
-                    if (reason?.cause) {
-                      console.error('[Telegram Chat ID Capture] 🔬 Error cause:', reason.cause);
-                    }
+                  } catch (fallbackErr: any) {
+                    console.error('[Telegram Chat ID Capture] ❌ Fallback error:', fallbackErr?.message || fallbackErr);
                   }
-                };
-                
-                process.on('unhandledRejection', errorCapture);
-                
-                try {
-                  const result = await handlerPromise;
-                  console.log('[Telegram Chat ID Capture] ✅ Original handler returned successfully');
-                  if (capturedError) {
-                    console.error('[Telegram Chat ID Capture] ⚠️ Handler succeeded but caught error during execution:', capturedError?.message);
-                  }
-                  return result;
-                } finally {
-                  process.off('unhandledRejection', errorCapture);
                 }
+                
+                return result;
               } catch (error: any) {
                 console.error('[Telegram Chat ID Capture] ❌ Error in message handler:', error);
                 console.error('[Telegram Chat ID Capture] Error message:', error.message);
