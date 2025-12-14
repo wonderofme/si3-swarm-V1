@@ -188,6 +188,15 @@ process.stderr.write = function(chunk: any, encoding?: any, callback?: any): boo
   const isTargetError = lowerMessage.includes('error handling message') || 
                        lowerMessage.includes('error sending message');
   
+  // Log ALL stderr writes that contain "error" to help debug
+  if (lowerMessage.includes('error') && message.length > 0) {
+    originalStderrWrite('[Bootstrap] 📝 stderr.write write detected:\n');
+    originalStderrWrite('[Bootstrap] Message length: ' + message.length + '\n');
+    originalStderrWrite('[Bootstrap] First 200 chars: ' + message.substring(0, 200) + '\n');
+    originalStderrWrite('[Bootstrap] Clean (first 200): ' + cleanMessage.substring(0, 200) + '\n');
+    originalStderrWrite('[Bootstrap] Is target error: ' + isTargetError + '\n');
+  }
+  
   if (isTargetError) {
     // Log the full error BEFORE suppressing
     // Use originalStderrWrite directly to avoid recursion (console.error uses process.stderr.write)
@@ -213,7 +222,7 @@ process.stderr.write = function(chunk: any, encoding?: any, callback?: any): boo
 // Pino likely uses this to write formatted logs
 const originalFsWriteSync = fs.writeSync.bind(fs);
 (fs as any).writeSync = function(fd: number, buffer: any, ...rest: any[]): number {
-  if (fd === 1 || fd === 2) {
+  if (fd === 2) { // Only intercept stderr (fd 2)
     const message = buffer?.toString() || '';
     // ALWAYS log first if it matches our error patterns
     const cleanMessage = message
@@ -225,6 +234,15 @@ const originalFsWriteSync = fs.writeSync.bind(fs);
     // Check if this is an error we want to suppress
     const isTargetError = lowerMessage.includes('error handling message') || 
                          lowerMessage.includes('error sending message');
+    
+    // Log ALL stderr writes that contain "error" to help debug
+    if (lowerMessage.includes('error') && message.length > 0) {
+      originalStderrWrite('[Bootstrap] 📝 fs.writeSync (fd=2) write detected:\n');
+      originalStderrWrite('[Bootstrap] Message length: ' + message.length + '\n');
+      originalStderrWrite('[Bootstrap] First 200 chars: ' + message.substring(0, 200) + '\n');
+      originalStderrWrite('[Bootstrap] Clean (first 200): ' + cleanMessage.substring(0, 200) + '\n');
+      originalStderrWrite('[Bootstrap] Is target error: ' + isTargetError + '\n');
+    }
     
     if (isTargetError) {
       // Log the full error BEFORE suppressing
