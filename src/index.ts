@@ -378,26 +378,47 @@ async function setupTelegrafInstancePatcher() {
 // Export the patcher so it can be used in llmResponseInterceptor
 export { telegrafInstancePatcher };
 
-// Intercept console.error to suppress ElizaOS message errors
+// Intercept console methods and process.stdout to suppress ElizaOS message errors
 const originalConsoleError = console.error;
+const originalConsoleWarn = console.warn;
+const originalStdoutWrite = process.stdout.write.bind(process.stdout);
+
 console.error = (...args: any[]) => {
   const message = args.join(' ');
   
   // Suppress "Error handling message" and "Error sending message" errors from ElizaOS
-  // These are often non-critical and clutter the logs
+  if (
+    message.includes('Error handling message') ||
+    message.includes('Error sending message') ||
+    message.includes('❌ Error handling message') ||
+    message.includes('Error sending message')
+  ) {
+    // Log at debug level instead of error level
+    console.log('[Suppressed] ElizaOS message error (non-fatal)');
+    return; // Don't log as error
+  }
+  
+  // Call original console.error for all other messages
+  originalConsoleError.apply(console, args);
+};
+
+// Also intercept process.stdout.write to catch ElizaOS logger output
+process.stdout.write = function(chunk: any, encoding?: any, callback?: any): boolean {
+  const message = chunk?.toString() || '';
+  
+  // Suppress "Error handling message" and "Error sending message" errors
   if (
     message.includes('Error handling message') ||
     message.includes('Error sending message') ||
     (message.includes('ERROR') && message.includes('Error handling message')) ||
     (message.includes('ERROR') && message.includes('Error sending message'))
   ) {
-    // Log at debug level instead of error level
-    console.log('[Suppressed] ElizaOS message error (non-fatal):', message);
-    return; // Don't log as error
+    // Don't write these errors to stdout
+    return true; // Return true to indicate "written" but don't actually write
   }
   
-  // Call original console.error for all other messages
-  originalConsoleError.apply(console, args);
+  // Call original stdout.write for all other messages
+  return originalStdoutWrite(chunk, encoding, callback);
 };
 
 async function startAgents() {
