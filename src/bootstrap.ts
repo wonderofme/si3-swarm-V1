@@ -3,6 +3,68 @@
 
 import fs from 'fs';
 
+// Try to patch pino before it's used by ElizaOS
+// Pino is the logging library used by ElizaOS
+async function patchPinoLogger() {
+  try {
+    const pino = await import('pino');
+    const originalPino = pino.default;
+    
+    // Create a wrapper that filters out specific error messages
+    (pino as any).default = function(...args: any[]) {
+      const logger = originalPino(...args);
+      const originalError = logger.error.bind(logger);
+      
+      logger.error = function(obj: any, msg?: string, ...rest: any[]) {
+        const messageToCheck = typeof obj === 'string' ? obj : (msg || JSON.stringify(obj));
+        if (messageToCheck?.includes('Error handling message') || 
+            messageToCheck?.includes('Error sending message')) {
+          return; // Suppress
+        }
+        return originalError(obj, msg, ...rest);
+      };
+      
+      return logger;
+    };
+    
+    console.log('[Bootstrap] Pino logger patched');
+  } catch (e) {
+    // Pino not available or couldn't be patched - that's okay
+    console.log('[Bootstrap] Could not patch pino logger (may not be installed)');
+  }
+}
+
+// Patch pino synchronously using require (for CommonJS compatibility)
+try {
+  const pinoModule = require('pino');
+  if (pinoModule) {
+    const originalPino = pinoModule;
+    const patchedPino = function(...args: any[]) {
+      const logger = originalPino(...args);
+      if (logger && logger.error) {
+        const originalError = logger.error.bind(logger);
+        logger.error = function(obj: any, msg?: string, ...rest: any[]) {
+          const messageToCheck = typeof obj === 'string' ? obj : (msg || '');
+          if (messageToCheck?.includes?.('Error handling message') || 
+              messageToCheck?.includes?.('Error sending message') ||
+              (typeof obj === 'object' && JSON.stringify(obj)?.includes?.('Error handling message')) ||
+              (typeof obj === 'object' && JSON.stringify(obj)?.includes?.('Error sending message'))) {
+            return; // Suppress
+          }
+          return originalError(obj, msg, ...rest);
+        };
+      }
+      return logger;
+    };
+    // Copy over static properties
+    Object.assign(patchedPino, originalPino);
+    require.cache[require.resolve('pino')]!.exports = patchedPino;
+    console.log('[Bootstrap] Pino logger patched via require.cache');
+  }
+} catch (e) {
+  console.log('[Bootstrap] Could not patch pino via require.cache');
+}
+
 // Set up error suppression interceptors IMMEDIATELY
 const originalStdoutWrite = process.stdout.write.bind(process.stdout);
 const originalStderrWrite = process.stderr.write.bind(process.stderr);
