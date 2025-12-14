@@ -403,22 +403,59 @@ console.error = (...args: any[]) => {
 };
 
 // Also intercept process.stdout.write to catch ElizaOS logger output
+// Store partial chunks to handle multi-chunk messages
+let stdoutBuffer = '';
+
 process.stdout.write = function(chunk: any, encoding?: any, callback?: any): boolean {
   const message = chunk?.toString() || '';
   
-  // Suppress "Error handling message" and "Error sending message" errors
-  if (
-    message.includes('Error handling message') ||
-    message.includes('Error sending message') ||
-    (message.includes('ERROR') && message.includes('Error handling message')) ||
-    (message.includes('ERROR') && message.includes('Error sending message'))
-  ) {
-    // Don't write these errors to stdout
-    return true; // Return true to indicate "written" but don't actually write
+  // Accumulate chunks in buffer to handle multi-chunk messages
+  stdoutBuffer += message;
+  
+  // Only check complete lines (ending with newline) or if buffer gets too large
+  const hasNewline = stdoutBuffer.includes('\n');
+  const bufferTooLarge = stdoutBuffer.length > 10000;
+  
+  if (hasNewline || bufferTooLarge) {
+    // Remove ANSI escape codes for matching (they look like [31m, [39m, [36m, etc.)
+    const cleanBuffer = stdoutBuffer.replace(/\x1b\[[0-9;]*m/g, '');
+    
+    // Check if this line contains the error messages we want to suppress
+    const shouldSuppress = 
+      cleanBuffer.includes('Error handling message') ||
+      cleanBuffer.includes('Error sending message') ||
+      (cleanBuffer.includes('ERROR') && cleanBuffer.includes('Error handling message')) ||
+      (cleanBuffer.includes('ERROR') && cleanBuffer.includes('Error sending message'));
+    
+    if (shouldSuppress) {
+      // Clear buffer and don't write
+      stdoutBuffer = '';
+      return true; // Return true to indicate "written" but don't actually write
+    }
+    
+    // If we have a newline, write everything up to the last newline
+    if (hasNewline) {
+      const lines = stdoutBuffer.split('\n');
+      const lastLine = lines[lines.length - 1];
+      const toWrite = lines.slice(0, -1).join('\n') + (lines.length > 1 ? '\n' : '');
+      stdoutBuffer = lastLine; // Keep the last incomplete line in buffer
+      
+      if (toWrite) {
+        originalStdoutWrite(toWrite, encoding, callback);
+      }
+    } else if (bufferTooLarge) {
+      // Buffer too large, write it all and clear
+      originalStdoutWrite(stdoutBuffer, encoding, callback);
+      stdoutBuffer = '';
+    }
   }
   
-  // Call original stdout.write for all other messages
-  return originalStdoutWrite(chunk, encoding, callback);
+  // If no newline and buffer not too large, just accumulate (don't write yet)
+  if (!hasNewline && !bufferTooLarge) {
+    return true; // Indicate "written" but we're just buffering
+  }
+  
+  return true;
 };
 
 async function startAgents() {
