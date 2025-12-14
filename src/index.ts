@@ -22,6 +22,109 @@ import { createKnowledgePlugin } from './plugins/knowledge/index.js';
 import { MemoryCacheAdapter } from './adapters/memoryCache.js';
 import { createDatabaseAdapter, DatabaseAdapter } from './adapters/databaseAdapter.js';
 
+// ==================== REAL-TIME MATCH NOTIFICATION (TINDER-STYLE) ====================
+// This function checks for matches when a new user completes onboarding and notifies both parties
+async function checkForNewMatches(
+  newUserId: string, 
+  newUserProfile: any, 
+  newUserChatId: string | number,
+  sendMessage: (chatId: string | number, text: string) => Promise<any>
+) {
+  console.log('[Real-Time Matching] 🔍 Checking for matches for new user:', newUserProfile.name);
+  
+  if (!kaiaRuntimeForOnboardingCheck) {
+    console.log('[Real-Time Matching] No runtime available');
+    return;
+  }
+  
+  const db = kaiaRuntimeForOnboardingCheck.databaseAdapter as any;
+  if (!db || !db.query) {
+    console.log('[Real-Time Matching] No database adapter');
+    return;
+  }
+  
+  const newUserInterests = newUserProfile.interests || [];
+  const newUserRoles = newUserProfile.roles || [];
+  const newUserGoals = newUserProfile.connectionGoals || [];
+  
+  if (newUserInterests.length === 0 && newUserRoles.length === 0) {
+    console.log('[Real-Time Matching] New user has no interests/roles');
+    return;
+  }
+  
+  try {
+    // Get all completed profiles
+    const res = await db.query(`SELECT key, value FROM cache WHERE key LIKE 'onboarding_%'`);
+    
+    for (const row of (res.rows || [])) {
+      const otherUserId = row.key.replace('onboarding_', '');
+      if (otherUserId === newUserId) continue;
+      
+      try {
+        const otherState = typeof row.value === 'string' ? JSON.parse(row.value) : row.value;
+        if (otherState.step !== 'COMPLETED' || !otherState.profile) continue;
+        if (otherState.profile.notifications !== 'Yes') continue; // Only notify users who opted in
+        
+        const otherInterests = otherState.profile.interests || [];
+        const otherRoles = otherState.profile.roles || [];
+        const otherGoals = otherState.profile.connectionGoals || [];
+        
+        // Find common interests
+        const commonInterests = newUserInterests.filter((i: string) => 
+          otherInterests.some((oi: string) => oi.toLowerCase().includes(i.toLowerCase()))
+        );
+        
+        // Find complementary goals (one looking for what the other offers)
+        const complementaryMatch = 
+          (newUserGoals.some((g: string) => g.toLowerCase().includes('invest')) && otherRoles.some((r: string) => r.toLowerCase().includes('founder'))) ||
+          (otherGoals.some((g: string) => g.toLowerCase().includes('invest')) && newUserRoles.some((r: string) => r.toLowerCase().includes('founder'))) ||
+          (newUserGoals.some((g: string) => g.toLowerCase().includes('growth') || g.toLowerCase().includes('marketing')) && otherRoles.some((r: string) => r.toLowerCase().includes('marketing'))) ||
+          (otherGoals.some((g: string) => g.toLowerCase().includes('growth') || g.toLowerCase().includes('marketing')) && newUserRoles.some((r: string) => r.toLowerCase().includes('marketing')));
+        
+        if (commonInterests.length >= 2 || complementaryMatch) {
+          const matchReason = commonInterests.length >= 2 
+            ? `Shared interests: ${commonInterests.slice(0, 3).join(', ')}`
+            : 'Complementary goals - potential collaboration!';
+          
+          console.log(`[Real-Time Matching] 🎉 Found match: ${newUserProfile.name} <-> ${otherState.profile.name}`);
+          
+          // Notify the existing user about the new match
+          const otherUserLang = otherState.profile.language || 'en';
+          const notificationMessages: Record<string, string> = {
+            en: `🎉 New match alert!\n\nI found someone who might be a great connection for you:\n\n**${newUserProfile.name}** from ${newUserProfile.location || 'the community'}\nRoles: ${newUserRoles.join(', ') || 'Not specified'}\nInterests: ${newUserInterests.slice(0, 3).join(', ') || 'Not specified'}\n${newUserProfile.telegramHandle ? `Telegram: @${newUserProfile.telegramHandle}` : ''}\n\n💡 ${matchReason}\n\nSay "find me a match" for more connections! 🤝`,
+            es: `🎉 ¡Nueva conexión encontrada!\n\nEncontré a alguien que podría ser una gran conexión para ti:\n\n**${newUserProfile.name}** de ${newUserProfile.location || 'la comunidad'}\nRoles: ${newUserRoles.join(', ') || 'No especificado'}\nIntereses: ${newUserInterests.slice(0, 3).join(', ') || 'No especificado'}\n${newUserProfile.telegramHandle ? `Telegram: @${newUserProfile.telegramHandle}` : ''}\n\n💡 ${matchReason}\n\n¡Di "encuéntrame una conexión" para más! 🤝`,
+            pt: `🎉 Nova conexão encontrada!\n\nEncontrei alguém que pode ser uma ótima conexão para você:\n\n**${newUserProfile.name}** de ${newUserProfile.location || 'a comunidade'}\nFunções: ${newUserRoles.join(', ') || 'Não especificado'}\nInteresses: ${newUserInterests.slice(0, 3).join(', ') || 'Não especificado'}\n${newUserProfile.telegramHandle ? `Telegram: @${newUserProfile.telegramHandle}` : ''}\n\n💡 ${matchReason}\n\nDiga "encontre uma conexão" para mais! 🤝`,
+            fr: `🎉 Nouvelle connexion trouvée!\n\nJ'ai trouvé quelqu'un qui pourrait être une excellente connexion pour vous:\n\n**${newUserProfile.name}** de ${newUserProfile.location || 'la communauté'}\nRôles: ${newUserRoles.join(', ') || 'Non spécifié'}\nIntérêts: ${newUserInterests.slice(0, 3).join(', ') || 'Non spécifié'}\n${newUserProfile.telegramHandle ? `Telegram: @${newUserProfile.telegramHandle}` : ''}\n\n💡 ${matchReason}\n\nDites "trouve-moi une connexion" pour plus! 🤝`
+          };
+          
+          // Send notification to existing user via Telegram
+          const telegramToken = process.env.TELEGRAM_BOT_TOKEN;
+          if (telegramToken) {
+            try {
+              await fetch(`https://api.telegram.org/bot${telegramToken}/sendMessage`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  chat_id: otherUserId,
+                  text: notificationMessages[otherUserLang] || notificationMessages.en
+                })
+              });
+              console.log(`[Real-Time Matching] ✅ Notified ${otherState.profile.name} about new match`);
+            } catch (notifyErr) {
+              console.log(`[Real-Time Matching] Could not notify ${otherState.profile.name}:`, notifyErr);
+            }
+          }
+        }
+      } catch (e) { /* skip invalid entries */ }
+    }
+  } catch (error) {
+    console.error('[Real-Time Matching] Error:', error);
+  }
+}
+
+// Variable to store Kaia runtime for match checking
+let kaiaRuntimeForOnboardingCheck: any = null;
+
 async function runMigrations(db: DatabaseAdapter) {
   const databaseType = (process.env.DATABASE_TYPE || 'postgres').toLowerCase();
   console.log(`Running database migrations for ${databaseType}...`);
@@ -203,7 +306,7 @@ async function createRuntime(character: any) {
 // Instead, we'll patch instances when they're created by intercepting the constructor
 // We'll store a reference to patch instances globally
 let telegrafInstancePatcher: ((instance: any) => Promise<void> | void) | null = null;
-let kaiaRuntimeForOnboardingCheck: any = null; // IAgentRuntime - using any to avoid import issues
+// kaiaRuntimeForOnboardingCheck is declared at the top of the file
 
 async function setupTelegrafInstancePatcher() {
   try {
@@ -885,8 +988,91 @@ async function startAgents() {
                         else if (lowerText.includes('3')) notifications = 'Check later';
                         
                         await updateState('COMPLETED', { notifications, onboardingCompletedAt: new Date() });
-                        responseText = msgs.COMPLETION + `\n\n🎉 You're all set, ${state.profile.name || 'friend'}!\n\nI can help you:\n• Find matches - just ask!\n• View your profile\n• Answer questions about Web3\n\nHow can I help you today?`;
+                        
+                        // Send two-part completion message
+                        responseText = msgs.COMPLETION;
+                        // Send first message
+                        await originalSendMessage(chatId, responseText);
+                        
+                        // Get COMPLETION_2 with name substitution
+                        const completion2 = (msgs as any).COMPLETION_2 || `How can I support you today, {{name}}?\n\nI can help you:\n• Find relevant Grow3dge members to connect with based on your interests and needs - just ask!\n• Build and edit your member profile\n• Answer questions about Web3 (I am just starting to build my knowledge base)`;
+                        responseText = completion2.replace('{{name}}', state.profile.name || 'friend');
+                        
                         console.log('[Telegram Chat ID Capture] 📋 Onboarding completed!');
+                        
+                        // Trigger real-time match check for new user
+                        setTimeout(async () => {
+                          try {
+                            await checkForNewMatches(userId, state.profile, chatId, originalSendMessage);
+                          } catch (e) {
+                            console.log('[Match Notification] Error checking for matches after onboarding:', e);
+                          }
+                        }, 5000);
+                      } else if (state.step === 'AWAITING_UPDATE_FIELD') {
+                        // User is choosing which field to update
+                        const fieldMap: Record<string, { step: string, prompt: string }> = {
+                          'name': { step: 'UPDATING_NAME', prompt: 'What would you like to change your name to?' },
+                          'location': { step: 'UPDATING_LOCATION', prompt: 'What is your new location (city and country)?' },
+                          'roles': { step: 'UPDATING_ROLES', prompt: msgs.ROLES },
+                          'interests': { step: 'UPDATING_INTERESTS', prompt: msgs.INTERESTS },
+                          'goals': { step: 'UPDATING_GOALS', prompt: msgs.GOALS },
+                          'events': { step: 'UPDATING_EVENTS', prompt: 'What events will you be attending? (event name, month, location)' },
+                          'socials': { step: 'UPDATING_SOCIALS', prompt: 'Share your social media links:' },
+                          'telegram': { step: 'UPDATING_TELEGRAM', prompt: 'What is your Telegram handle? (e.g., @username)' },
+                          'notifications': { step: 'UPDATING_NOTIFICATIONS', prompt: msgs.NOTIFICATIONS }
+                        };
+                        
+                        let matchedField: string | null = null;
+                        for (const field of Object.keys(fieldMap)) {
+                          if (lowerText.includes(field)) {
+                            matchedField = field;
+                            break;
+                          }
+                        }
+                        
+                        if (matchedField) {
+                          const updateInfo = fieldMap[matchedField];
+                          await updateState(updateInfo.step, {});
+                          responseText = updateInfo.prompt;
+                        } else {
+                          responseText = `I didn't recognize that field. Please choose from:\n\n• Name\n• Location\n• Roles\n• Interests\n• Goals\n• Events\n• Socials\n• Telegram\n• Notifications`;
+                        }
+                      } else if (state.step.startsWith('UPDATING_')) {
+                        // Handle update for specific field
+                        const fieldBeingUpdated = state.step.replace('UPDATING_', '').toLowerCase();
+                        let updateValue: any = messageText.trim();
+                        
+                        // Parse based on field type
+                        if (['roles', 'interests', 'goals', 'events', 'socials'].includes(fieldBeingUpdated)) {
+                          updateValue = messageText.split(',').map((s: string) => s.trim()).filter((s: string) => s);
+                        } else if (fieldBeingUpdated === 'notifications') {
+                          if (lowerText.includes('1') || lowerText.includes('yes')) updateValue = 'Yes';
+                          else if (lowerText.includes('2') || lowerText.includes('no')) updateValue = 'No';
+                          else if (lowerText.includes('3')) updateValue = 'Check later';
+                        } else if (fieldBeingUpdated === 'telegram') {
+                          updateValue = messageText.trim().replace('@', '');
+                        }
+                        
+                        // Map field names to profile keys
+                        const fieldToKey: Record<string, string> = {
+                          'name': 'name',
+                          'location': 'location',
+                          'roles': 'roles',
+                          'interests': 'interests',
+                          'goals': 'connectionGoals',
+                          'events': 'events',
+                          'socials': 'socials',
+                          'telegram': 'telegramHandle',
+                          'notifications': 'notifications'
+                        };
+                        
+                        const profileKey = fieldToKey[fieldBeingUpdated] || fieldBeingUpdated;
+                        const updateObj: any = {};
+                        updateObj[profileKey] = updateValue;
+                        
+                        await updateState('COMPLETED', updateObj);
+                        responseText = `✅ Your ${fieldBeingUpdated} has been updated!\n\nSay "my profile" to see your updated profile, or ask me anything else! 💜`;
+                        console.log(`[Telegram Chat ID Capture] ✏️ Updated ${fieldBeingUpdated} to:`, updateValue);
                       } else if (state.step === 'COMPLETED') {
                         // User has completed onboarding - handle all commands with full features
                         console.log('[Telegram Chat ID Capture] 🤖 Processing completed user request...');
@@ -941,7 +1127,7 @@ SI<3> (Social Impact Cubed) is a Web3 community focused on inclusion and educati
                         const isMatchRequest = lowerText.includes('match') || lowerText.includes('connect me') || lowerText.includes('find someone') || lowerText.includes('find me') || lowerText.includes('introduce');
                         const isHistoryRequest = lowerText.includes('history') || lowerText.includes('my profile') || lowerText.includes('my matches') || lowerText.includes('show profile');
                         const isLanguageChange = lowerText.includes('change language') || lowerText.includes('cambiar idioma') || lowerText.includes('mudar idioma') || lowerText.includes('changer de langue');
-                        const isEditRequest = lowerText.includes('edit profile') || lowerText.includes('update profile');
+                        const isUpdateRequest = lowerText === 'update' || lowerText.startsWith('update ') || lowerText.includes('edit my') || lowerText.includes('change my');
                         const isFeatureRequest = (lowerText.includes('feature') && lowerText.includes('request')) || 
                                                  (lowerText.includes('suggest') && lowerText.length > 30);
                         const isHelpRequest = lowerText === 'help' || lowerText === '?' || lowerText.includes('what can you do');
@@ -949,18 +1135,18 @@ SI<3> (Social Impact Cubed) is a Web3 community focused on inclusion and educati
                         if (isHelpRequest) {
                           // HELP MENU
                           const langPhrases: Record<string, any> = {
-                            en: { title: 'Here\'s what I can help you with', match: 'Find a match', profile: 'Show my profile', lang: 'Change language', feature: 'Suggest a feature', restart: 'Restart onboarding', web3: 'Ask me anything about Web3' },
-                            es: { title: 'Esto es lo que puedo hacer por ti', match: 'Encontrar una conexión', profile: 'Mostrar mi perfil', lang: 'Cambiar idioma', feature: 'Sugerir una función', restart: 'Reiniciar', web3: 'Pregúntame sobre Web3' },
-                            pt: { title: 'Aqui está o que posso fazer por você', match: 'Encontrar uma conexão', profile: 'Mostrar meu perfil', lang: 'Mudar idioma', feature: 'Sugerir uma função', restart: 'Reiniciar', web3: 'Pergunte-me sobre Web3' },
-                            fr: { title: 'Voici ce que je peux faire pour vous', match: 'Trouver une connexion', profile: 'Afficher mon profil', lang: 'Changer de langue', feature: 'Suggérer une fonctionnalité', restart: 'Redémarrer', web3: 'Demandez-moi sur Web3' }
+                            en: { title: 'Here\'s what I can help you with', match: 'Find a match', profile: 'Show my profile', lang: 'Change language', feature: 'Suggest a feature', update: 'Update profile', web3: 'Ask me anything about Web3' },
+                            es: { title: 'Esto es lo que puedo hacer por ti', match: 'Encontrar una conexión', profile: 'Mostrar mi perfil', lang: 'Cambiar idioma', feature: 'Sugerir una función', update: 'Actualizar perfil', web3: 'Pregúntame sobre Web3' },
+                            pt: { title: 'Aqui está o que posso fazer por você', match: 'Encontrar uma conexão', profile: 'Mostrar meu perfil', lang: 'Mudar idioma', feature: 'Sugerir uma função', update: 'Atualizar perfil', web3: 'Pergunte-me sobre Web3' },
+                            fr: { title: 'Voici ce que je peux faire pour vous', match: 'Trouver une connexion', profile: 'Afficher mon profil', lang: 'Changer de langue', feature: 'Suggérer une fonctionnalité', update: 'Mettre à jour le profil', web3: 'Demandez-moi sur Web3' }
                           };
                           const phrases = langPhrases[state.profile.language || 'en'] || langPhrases.en;
                           responseText = `💜 ${phrases.title}:\n\n` +
                             `🤝 "${phrases.match}" - I'll connect you with someone who shares your interests\n` +
                             `📋 "${phrases.profile}" - View your Grow3dge profile\n` +
+                            `✏️ "${phrases.update}" - Edit a specific field in your profile\n` +
                             `🌍 "${phrases.lang}" - Switch to another language\n` +
-                            `💡 "${phrases.feature}" - Tell me what features you'd like\n` +
-                            `🔄 "${phrases.restart}" - Update your profile from the beginning\n\n` +
+                            `💡 "${phrases.feature}" - Tell me what features you'd like\n\n` +
                             `🧠 ${phrases.web3}!`;
                         } else if (isMatchRequest) {
                           // ==================== MATCHING WITH TRACKING ====================
@@ -1105,7 +1291,44 @@ SI<3> (Social Impact Cubed) is a Web3 community focused on inclusion and educati
                             `**Notifications:** ${p.notifications || 'Not set'}\n` +
                             `**Total Matches:** ${matchCount}` +
                             matchList +
-                            `\n\n✅ Onboarding: Completed\n\nTo update, say "restart".`;
+                            `\n\n✅ Onboarding: Completed\n\nTo update any field, say "update" or "update [field name]".`;
+                        } else if (isUpdateRequest) {
+                          // ==================== PROFILE UPDATE FEATURE ====================
+                          console.log('[Telegram Chat ID Capture] ✏️ Update request...');
+                          
+                          // Check if they specified what to update
+                          const updateFields: Record<string, { step: string, prompt: string }> = {
+                            'name': { step: 'UPDATING_NAME', prompt: 'What would you like to change your name to?' },
+                            'location': { step: 'UPDATING_LOCATION', prompt: 'What is your new location (city and country)?' },
+                            'roles': { step: 'UPDATING_ROLES', prompt: msgs.ROLES },
+                            'interests': { step: 'UPDATING_INTERESTS', prompt: msgs.INTERESTS },
+                            'goals': { step: 'UPDATING_GOALS', prompt: msgs.GOALS },
+                            'events': { step: 'UPDATING_EVENTS', prompt: 'What events will you be attending? (event name, month, location)' },
+                            'socials': { step: 'UPDATING_SOCIALS', prompt: 'Share your social media links:' },
+                            'telegram': { step: 'UPDATING_TELEGRAM', prompt: 'What is your Telegram handle? (e.g., @username)' },
+                            'notifications': { step: 'UPDATING_NOTIFICATIONS', prompt: msgs.NOTIFICATIONS }
+                          };
+                          
+                          let fieldToUpdate: string | null = null;
+                          for (const [field, _] of Object.entries(updateFields)) {
+                            if (lowerText.includes(field)) {
+                              fieldToUpdate = field;
+                              break;
+                            }
+                          }
+                          
+                          if (fieldToUpdate) {
+                            // They specified a field - go directly to updating it
+                            const updateInfo = updateFields[fieldToUpdate];
+                            await updateState(updateInfo.step, {});
+                            responseText = updateInfo.prompt;
+                          } else {
+                            // They just said "update" - ask what they want to update
+                            await updateState('AWAITING_UPDATE_FIELD', {});
+                            responseText = `What would you like to update? 📝\n\n` +
+                              `• Name\n• Location\n• Roles\n• Interests\n• Goals\n• Events\n• Socials\n• Telegram\n• Notifications\n\n` +
+                              `Just type the field name (e.g., "name" or "interests").`;
+                          }
                         } else if (isLanguageChange) {
                           // LANGUAGE CHANGE
                           console.log('[Telegram Chat ID Capture] 🌍 Language change requested...');

@@ -13,6 +13,7 @@ export interface Messages {
   GENDER: string;
   NOTIFICATIONS: string;
   COMPLETION: string;
+  COMPLETION_2: string;
   SUMMARY_TITLE: string;
   SUMMARY_NAME: string;
   SUMMARY_LOCATION: string;
@@ -74,27 +75,29 @@ Reply with the number before the role (for example: 1, 4). If you have a role th
     INTERESTS: `As I am getting to know you better, can you please share what you are excited to explore in the Grow3dge program? You can select more than one topic.
 
 1. Web3 Growth Marketing
-2. Business Development & Partnerships
+2. Sales, BD & Partnerships
 3. Education 3.0
 4. AI
 5. Cybersecurity
 6. DAO's
 7. Tokenomics
 8. Fundraising
-9. Other
+9. DeepTech
 
 Reply with the number before the topic (for example: 2,3). If you have a topic that is not listed, type that as text (for example: 2,3 and DevRel)`,
     GOALS: `I'd love to help you find the right connections - what are you looking for? 🤝
 
 1. Startups to invest in
-2. Investors/grant program operators
-3. Marketing support
-4. BD & Partnerships
+2. Investors/grant programs
+3. Growth tools, strategies, and/or support
+4. Sales/BD tools, strategies and/or support
 5. Communities and/or DAO's to join
-6. Other
+6. New job opportunities
 
 Reply with the number before the connection type (for example: 3, 4). If you have a connection type that is not listed, type that as text (for example 3,4 and Cybersecurity).`,
-    EVENTS: `I could try to connect you with others attending the same events and conferences! Can you share any events that you will be attending coming up (event name, month, and location)? (optional)
+    EVENTS: `I am also able to match you with other Grow3dge members that are attending the same events and conferences.
+
+Can you share any events that you will be attending coming up (event name, month, and location)? (optional)
 
 To move on to the next question, type 'Next'`,
     SOCIALS: `Can you share your digital links and/or social media profiles so we can share those with those that you are matched with? (optional)
@@ -111,12 +114,18 @@ If you would like to share your gender data (anonymously) within our research, p
 4. Other
 
 To move on to the next question, type 'Next'`,
-    NOTIFICATIONS: `One last thing…would you be interested in receiving notifications for project and mission collaboration opportunities initiated by SI<3> and it's partners? You're also welcome to share your organization's opportunities to broadcast to potentially interested members.
+    NOTIFICATIONS: `One last thing…would you be interested in receiving notifications for project and mission collaboration opportunities initiated by SI<3> and its ecosystem partners?
 
 1. Yes!
 2. No, thanks
 3. Not sure yet, check in with me another time`,
-    COMPLETION: `Thank you so much for onboarding! To get started, I will match you with members of our network where you both may be a fit for what you are looking for.`,
+    COMPLETION: `Thank you so much for onboarding! I will now begin letting you know when there are members of our network that have aligned interests and needs with yours. 🎉`,
+    COMPLETION_2: `How can I support you today, {{name}}?
+
+I can help you:
+• Find relevant Grow3dge members to connect with based on your interests and needs - just ask!
+• Build and edit your member profile
+• Answer questions about Web3 (I am just starting to build my knowledge base)`,
     SUMMARY_TITLE: `Here's your summary. Does it look right?`,
     SUMMARY_NAME: `Name:`,
     SUMMARY_LOCATION: `Location:`,
@@ -176,27 +185,29 @@ Responde con el número antes del rol (por ejemplo: 1, 4). Si tienes un rol que 
     INTERESTS: `Mientras te conozco mejor, ¿puedes compartir qué te emociona explorar en el programa Grow3dge? Puedes seleccionar más de un tema.
 
 1. Marketing de Crecimiento Web3
-2. Desarrollo de Negocios y Asociaciones
+2. Ventas, BD y Asociaciones
 3. Educación 3.0
 4. IA
 5. Ciberseguridad
 6. DAOs
 7. Tokenomics
 8. Recaudación de Fondos
-9. Otro
+9. DeepTech
 
 Responde con el número antes del tema (por ejemplo: 2,3). Si tienes un tema que no está en la lista, escríbelo como texto (por ejemplo: 2,3 y DevRel)`,
     GOALS: `Me encantaría ayudarte a encontrar las conexiones adecuadas: ¿qué estás buscando? 🤝
 
 1. Startups en las que invertir
-2. Inversores/operadores de programas de subvenciones
-3. Apoyo de marketing
-4. BD y Asociaciones
+2. Inversores/programas de subvenciones
+3. Herramientas, estrategias y/o apoyo de crecimiento
+4. Herramientas, estrategias y/o apoyo de Ventas/BD
 5. Comunidades y/o DAOs a las que unirse
-6. Otro
+6. Nuevas oportunidades laborales
 
 Responde con el número antes del tipo de conexión (por ejemplo: 3, 4). Si tienes un tipo de conexión que no está en la lista, escríbelo como texto (por ejemplo 3,4 y Ciberseguridad).`,
-    EVENTS: `¡Podría intentar conectarte con otros que asistirán a los mismos eventos y conferencias! ¿Puedes compartir algún evento al que asistirás próximamente (nombre del evento, mes y ubicación)? (opcional)
+    EVENTS: `También puedo conectarte con otros miembros de Grow3dge que asistirán a los mismos eventos y conferencias.
+
+¿Puedes compartir algún evento al que asistirás próximamente (nombre del evento, mes y ubicación)? (opcional)
 
 Para pasar a la siguiente pregunta, escribe 'Next'`,
     SOCIALS: `¿Puedes compartir tus enlaces digitales y/o perfiles de redes sociales para que podamos compartirlos con aquellos con los que te conectemos? (opcional)
@@ -213,12 +224,18 @@ Si deseas compartir tus datos de género (de forma anónima) en nuestra investig
 4. Otro
 
 Para pasar a la siguiente pregunta, escribe 'Next'`,
-    NOTIFICATIONS: `Una última cosa... ¿estarías interesado en recibir notificaciones de oportunidades de colaboración de proyectos y misiones iniciadas por SI<3> y sus socios? También puedes compartir las oportunidades de tu organización para difundirlas a miembros potencialmente interesados.
+    NOTIFICATIONS: `Una última cosa... ¿estarías interesado en recibir notificaciones de oportunidades de colaboración de proyectos y misiones iniciadas por SI<3> y sus socios del ecosistema?
 
 1. ¡Sí!
 2. No, gracias
 3. No estoy seguro aún, contáctame en otro momento`,
-    COMPLETION: `¡Muchas gracias por completar el registro! Para comenzar, te conectaré con miembros de nuestra red donde ambos puedan ser una buena opción para lo que estás buscando.`,
+    COMPLETION: `¡Muchas gracias por completar el registro! Ahora comenzaré a avisarte cuando haya miembros de nuestra red con intereses y necesidades alineados con los tuyos. 🎉`,
+    COMPLETION_2: `¿Cómo puedo ayudarte hoy, {{name}}?
+
+Puedo ayudarte a:
+• Encontrar miembros relevantes de Grow3dge para conectar según tus intereses y necesidades - ¡solo pregunta!
+• Construir y editar tu perfil de miembro
+• Responder preguntas sobre Web3 (apenas estoy construyendo mi base de conocimientos)`,
     SUMMARY_TITLE: `Aquí está tu resumen. ¿Se ve bien?`,
     SUMMARY_NAME: `Nombre:`,
     SUMMARY_LOCATION: `Ubicación:`,
@@ -278,27 +295,29 @@ Responda com o número antes da função (por exemplo: 1, 4). Se você tem uma f
     INTERESTS: `Enquanto te conheço melhor, você pode compartilhar o que está animado para explorar no programa Grow3dge? Você pode selecionar mais de um tópico.
 
 1. Marketing de Crescimento Web3
-2. Desenvolvimento de Negócios e Parcerias
+2. Vendas, BD e Parcerias
 3. Educação 3.0
 4. IA
 5. Cibersegurança
 6. DAOs
 7. Tokenomics
 8. Captação de Recursos
-9. Outro
+9. DeepTech
 
 Responda com o número antes do tópico (por exemplo: 2,3). Se você tem um tópico que não está na lista, digite isso como texto (por exemplo: 2,3 e DevRel)`,
     GOALS: `Adoraria ajudá-lo a encontrar as conexões certas - o que você está procurando? 🤝
 
 1. Startups para investir
-2. Investidores/operadores de programas de subsídios
-3. Suporte de marketing
-4. BD e Parcerias
+2. Investidores/programas de subsídios
+3. Ferramentas, estratégias e/ou suporte de crescimento
+4. Ferramentas, estratégias e/ou suporte de Vendas/BD
 5. Comunidades e/ou DAOs para participar
-6. Outro
+6. Novas oportunidades de emprego
 
 Responda com o número antes do tipo de conexão (por exemplo: 3, 4). Se você tem um tipo de conexão que não está na lista, digite isso como texto (por exemplo 3,4 e Cibersegurança).`,
-    EVENTS: `Eu poderia tentar conectá-lo com outros que estão participando dos mesmos eventos e conferências! Você pode compartilhar algum evento que participará em breve (nome do evento, mês e localização)? (opcional)
+    EVENTS: `Também posso conectá-lo com outros membros do Grow3dge que participarão dos mesmos eventos e conferências.
+
+Você pode compartilhar algum evento que participará em breve (nome do evento, mês e localização)? (opcional)
 
 Para passar para a próxima pergunta, digite 'Next'`,
     SOCIALS: `Você pode compartilhar seus links digitais e/ou perfis de redes sociais para que possamos compartilhá-los com aqueles com quem você for conectado? (opcional)
@@ -315,12 +334,18 @@ Se você gostaria de compartilhar seus dados de gênero (anonimamente) em nossa 
 4. Outro
 
 Para passar para a próxima pergunta, digite 'Next'`,
-    NOTIFICATIONS: `Uma última coisa... você estaria interessado em receber notificações de oportunidades de colaboração de projetos e missões iniciadas pela SI<3> e seus parceiros? Você também pode compartilhar as oportunidades da sua organização para transmitir a membros potencialmente interessados.
+    NOTIFICATIONS: `Uma última coisa... você estaria interessado em receber notificações de oportunidades de colaboração de projetos e missões iniciadas pela SI<3> e seus parceiros do ecossistema?
 
 1. Sim!
 2. Não, obrigado
 3. Ainda não tenho certeza, entre em contato comigo em outro momento`,
-    COMPLETION: `Muito obrigado por se registrar! Para começar, vou conectá-lo com membros de nossa rede onde ambos podem ser uma boa opção para o que você está procurando.`,
+    COMPLETION: `Muito obrigado por se registrar! Agora vou começar a avisá-lo quando houver membros de nossa rede com interesses e necessidades alinhados com os seus. 🎉`,
+    COMPLETION_2: `Como posso ajudá-lo hoje, {{name}}?
+
+Posso ajudá-lo a:
+• Encontrar membros relevantes do Grow3dge para conectar com base em seus interesses e necessidades - é só perguntar!
+• Construir e editar seu perfil de membro
+• Responder perguntas sobre Web3 (estou apenas começando a construir minha base de conhecimento)`,
     SUMMARY_TITLE: `Aqui está o seu resumo. Parece correto?`,
     SUMMARY_NAME: `Nome:`,
     SUMMARY_LOCATION: `Localização:`,
@@ -380,27 +405,29 @@ Répondez avec le numéro avant le rôle (par exemple: 1, 4). Si vous avez un r�
     INTERESTS: `Alors que je vous connais mieux, pouvez-vous partager ce qui vous passionne d'explorer dans le programme Grow3dge? Vous pouvez sélectionner plus d'un sujet.
 
 1. Marketing de Croissance Web3
-2. Développement Commercial et Partenariats
+2. Ventes, BD et Partenariats
 3. Éducation 3.0
 4. IA
 5. Cybersécurité
 6. DAOs
 7. Tokenomics
 8. Collecte de Fonds
-9. Autre
+9. DeepTech
 
 Répondez avec le numéro avant le sujet (par exemple: 2,3). Si vous avez un sujet qui n'est pas dans la liste, tapez-le en texte (par exemple: 2,3 et DevRel)`,
     GOALS: `J'aimerais vous aider à trouver les bonnes connexions - que recherchez-vous? 🤝
 
 1. Startups dans lesquelles investir
-2. Investisseurs/opérateurs de programmes de subventions
-3. Support marketing
-4. BD et Partenariats
+2. Investisseurs/programmes de subventions
+3. Outils, stratégies et/ou support de croissance
+4. Outils, stratégies et/ou support Ventes/BD
 5. Communautés et/ou DAOs à rejoindre
-6. Autre
+6. Nouvelles opportunités d'emploi
 
 Répondez avec le numéro avant le type de connexion (par exemple: 3, 4). Si vous avez un type de connexion qui n'est pas dans la liste, tapez-le en texte (par exemple 3,4 et Cybersécurité).`,
-    EVENTS: `Je pourrais essayer de vous connecter avec d'autres qui assistent aux mêmes événements et conférences! Pouvez-vous partager des événements auxquels vous assisterez prochainement (nom de l'événement, mois et lieu)? (optionnel)
+    EVENTS: `Je peux également vous connecter avec d'autres membres de Grow3dge qui assistent aux mêmes événements et conférences.
+
+Pouvez-vous partager des événements auxquels vous assisterez prochainement (nom de l'événement, mois et lieu)? (optionnel)
 
 Pour passer à la question suivante, tapez 'Next'`,
     SOCIALS: `Pouvez-vous partager vos liens numériques et/ou profils de réseaux sociaux afin que nous puissions les partager avec ceux avec qui vous êtes mis en relation? (optionnel)
@@ -417,12 +444,18 @@ Si vous souhaitez partager vos données de genre (anonymement) dans notre recher
 4. Autre
 
 Pour passer à la question suivante, tapez 'Next'`,
-    NOTIFICATIONS: `Une dernière chose... seriez-vous intéressé à recevoir des notifications pour les opportunités de collaboration de projets et de missions initiées par SI<3> et ses partenaires? Vous êtes également invité à partager les opportunités de votre organisation pour les diffuser aux membres potentiellement intéressés.
+    NOTIFICATIONS: `Une dernière chose... seriez-vous intéressé à recevoir des notifications pour les opportunités de collaboration de projets et de missions initiées par SI<3> et ses partenaires de l'écosystème?
 
 1. Oui!
 2. Non, merci
 3. Pas encore sûr, contactez-moi à un autre moment`,
-    COMPLETION: `Merci beaucoup pour votre inscription! Pour commencer, je vais vous mettre en relation avec des membres de notre réseau où vous pourriez tous deux être un bon match pour ce que vous recherchez.`,
+    COMPLETION: `Merci beaucoup pour votre inscription! Je vais maintenant commencer à vous informer lorsqu'il y a des membres de notre réseau avec des intérêts et des besoins alignés avec les vôtres. 🎉`,
+    COMPLETION_2: `Comment puis-je vous aider aujourd'hui, {{name}}?
+
+Je peux vous aider à:
+• Trouver des membres Grow3dge pertinents à connecter selon vos intérêts et besoins - il suffit de demander!
+• Construire et modifier votre profil de membre
+• Répondre aux questions sur Web3 (je commence juste à construire ma base de connaissances)`,
     SUMMARY_TITLE: `Voici votre résumé. Cela semble correct?`,
     SUMMARY_NAME: `Nom:`,
     SUMMARY_LOCATION: `Localisation:`,
