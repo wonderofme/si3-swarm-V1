@@ -801,33 +801,32 @@ async function startAgents() {
             console.log('[Telegram Chat ID Capture] ⚠️ bot.on not found');
           }
           
-          // Also patch handleError to catch database errors and send fallback responses
+          // Patch handleError to log full details and send fallback responses
           if (bot && bot.handleError) {
-            console.log('[Telegram Chat ID Capture] Found bot.handleError, patching to send fallback responses on database errors...');
+            console.log('[Telegram Chat ID Capture] Found bot.handleError, patching to log full stack and send fallback responses...');
             const originalHandleError = bot.handleError.bind(bot);
             bot.handleError = async function(error: any, ctx: any) {
-              console.error('[Telegram Chat ID Capture] Error in bot.handleError:', error);
+              const msg = error?.message || error?.toString?.() || 'unknown error';
+              console.error('[Telegram Chat ID Capture] Error in bot.handleError:', msg);
+              if (error?.code) console.error('[Telegram Chat ID Capture] Error code:', error.code);
+              if (error?.stack) console.error('[Telegram Chat ID Capture] Error stack:', error.stack.substring(0, 2000));
+              try {
+                const serialized = JSON.stringify(error, Object.getOwnPropertyNames(error));
+                console.error('[Telegram Chat ID Capture] Error serialized:', serialized.substring(0, 2000));
+              } catch {}
               
-              // Check if it's a database timeout error
-              const isDatabaseError = error.code === 'ETIMEDOUT' || 
-                                     error.message?.includes('timeout') || 
-                                     error.message?.includes('database') ||
-                                     error.message?.includes('getAccountById') ||
-                                     error.message?.includes('getRoom') ||
-                                     error.message?.includes('Circuit breaker');
-              
-              if (isDatabaseError && ctx && ctx.chat) {
-                const chatId = ctx.chat.id;
-                console.log('[Telegram Chat ID Capture] Database error detected in handleError, sending fallback response to chat:', chatId);
-                try {
-                  await bot.telegram.sendMessage(chatId, "I'm experiencing some technical difficulties with the database. Please try again in a moment! 🔧");
-                  console.log('[Telegram Chat ID Capture] ✅ Sent fallback response');
-                } catch (sendError: any) {
-                  console.error('[Telegram Chat ID Capture] Failed to send fallback response:', sendError);
+              // If we have chat id, try to send a friendly fallback message
+              try {
+                const chatId = ctx?.chat?.id || ctx?.message?.chat?.id;
+                if (chatId) {
+                  await bot.telegram.sendMessage(chatId, "I'm experiencing some technical difficulties right now. Please try again in a moment! 🔧");
+                  console.log('[Telegram Chat ID Capture] ✅ Sent fallback response from handleError');
                 }
+              } catch (sendErr: any) {
+                console.error('[Telegram Chat ID Capture] Failed to send fallback response from handleError:', sendErr?.message || sendErr);
               }
               
-              // Call original error handler
+              // Call original handler
               return originalHandleError(error, ctx);
             };
             console.log('[Telegram Chat ID Capture] Patched bot.handleError');
