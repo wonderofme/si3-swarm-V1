@@ -113,6 +113,16 @@ if (process.env.TELEGRAM_BOT_TOKEN) {
   console.log(`[Bootstrap] Bot token suffix (masked): ****${suffix}`);
 }
 
+// Check for OpenAI API key
+if (process.env.OPENAI_API_KEY) {
+  const k = process.env.OPENAI_API_KEY;
+  const prefix = k.substring(0, 7);
+  const suffix = k.slice(-4);
+  console.log(`[Bootstrap] OpenAI API key: ${prefix}...${suffix} (${k.length} chars)`);
+} else {
+  console.error(`[Bootstrap] ⚠️ OPENAI_API_KEY is NOT SET - LLM calls will fail!`);
+}
+
 // Set up error suppression interceptors IMMEDIATELY
 // originalConsoleError, originalConsoleLog, originalStdoutWrite, and originalStderrWrite 
 // are already defined at the top of the file
