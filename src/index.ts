@@ -412,47 +412,52 @@ process.stdout.write = function(chunk: any, encoding?: any, callback?: any): boo
   // Accumulate chunks in buffer to handle multi-chunk messages
   stdoutBuffer += message;
   
-  // Only check complete lines (ending with newline) or if buffer gets too large
+  // Only process complete lines (ending with newline) or if buffer gets too large
   const hasNewline = stdoutBuffer.includes('\n');
   const bufferTooLarge = stdoutBuffer.length > 10000;
   
-  if (hasNewline || bufferTooLarge) {
-    // Remove ANSI escape codes for matching (they look like [31m, [39m, [36m, etc.)
-    const cleanBuffer = stdoutBuffer.replace(/\x1b\[[0-9;]*m/g, '');
+  if (hasNewline) {
+    // Split into complete lines and the last incomplete line
+    const lines = stdoutBuffer.split('\n');
+    const lastLine = lines[lines.length - 1];
+    const completeLines = lines.slice(0, -1);
     
-    // Check if this line contains the error messages we want to suppress
+    // Process each complete line individually
+    const linesToWrite: string[] = [];
+    for (const line of completeLines) {
+      // Remove ANSI escape codes for matching
+      const cleanLine = line.replace(/\x1b\[[0-9;]*m/g, '');
+      
+      // Check if this line should be suppressed
+      const shouldSuppress = 
+        cleanLine.includes('Error handling message') ||
+        cleanLine.includes('Error sending message') ||
+        (cleanLine.includes('ERROR') && cleanLine.includes('Error handling message')) ||
+        (cleanLine.includes('ERROR') && cleanLine.includes('Error sending message'));
+      
+      if (!shouldSuppress) {
+        linesToWrite.push(line);
+      }
+    }
+    
+    // Write all non-suppressed lines
+    if (linesToWrite.length > 0) {
+      originalStdoutWrite(linesToWrite.join('\n') + '\n', encoding, callback);
+    }
+    
+    // Keep the last incomplete line in buffer
+    stdoutBuffer = lastLine;
+  } else if (bufferTooLarge) {
+    // Buffer too large, check if we should suppress the entire buffer
+    const cleanBuffer = stdoutBuffer.replace(/\x1b\[[0-9;]*m/g, '');
     const shouldSuppress = 
       cleanBuffer.includes('Error handling message') ||
-      cleanBuffer.includes('Error sending message') ||
-      (cleanBuffer.includes('ERROR') && cleanBuffer.includes('Error handling message')) ||
-      (cleanBuffer.includes('ERROR') && cleanBuffer.includes('Error sending message'));
+      cleanBuffer.includes('Error sending message');
     
-    if (shouldSuppress) {
-      // Clear buffer and don't write
-      stdoutBuffer = '';
-      return true; // Return true to indicate "written" but don't actually write
-    }
-    
-    // If we have a newline, write everything up to the last newline
-    if (hasNewline) {
-      const lines = stdoutBuffer.split('\n');
-      const lastLine = lines[lines.length - 1];
-      const toWrite = lines.slice(0, -1).join('\n') + (lines.length > 1 ? '\n' : '');
-      stdoutBuffer = lastLine; // Keep the last incomplete line in buffer
-      
-      if (toWrite) {
-        originalStdoutWrite(toWrite, encoding, callback);
-      }
-    } else if (bufferTooLarge) {
-      // Buffer too large, write it all and clear
+    if (!shouldSuppress) {
       originalStdoutWrite(stdoutBuffer, encoding, callback);
-      stdoutBuffer = '';
     }
-  }
-  
-  // If no newline and buffer not too large, just accumulate (don't write yet)
-  if (!hasNewline && !bufferTooLarge) {
-    return true; // Indicate "written" but we're just buffering
+    stdoutBuffer = '';
   }
   
   return true;
