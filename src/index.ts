@@ -729,6 +729,21 @@ async function startAgents() {
               // Wrap in try-catch to handle database errors gracefully
               try {
                 console.log('[Telegram Chat ID Capture] Calling original handler...');
+                
+                // DIAGNOSTIC: Try sending a test message directly BEFORE ElizaOS processing
+                // This will verify if Telegram API is working
+                if (chatId && messageText) {
+                  console.log('[Telegram Chat ID Capture] 🔬 DIAGNOSTIC: Attempting direct Telegram send...');
+                  try {
+                    await bot.telegram.sendMessage(chatId, `✅ I received your message: "${messageText.substring(0, 50)}..." - Processing now...`);
+                    console.log('[Telegram Chat ID Capture] 🔬 DIAGNOSTIC: ✅ Direct Telegram send SUCCEEDED');
+                  } catch (sendTestErr: any) {
+                    console.error('[Telegram Chat ID Capture] 🔬 DIAGNOSTIC: ❌ Direct Telegram send FAILED:', sendTestErr?.message || sendTestErr);
+                    console.error('[Telegram Chat ID Capture] 🔬 DIAGNOSTIC: Error code:', sendTestErr?.code);
+                    console.error('[Telegram Chat ID Capture] 🔬 DIAGNOSTIC: Error description:', sendTestErr?.description);
+                  }
+                }
+                
                 const result = await originalHandler(update);
                 console.log('[Telegram Chat ID Capture] ✅ Original handler returned successfully');
                 return result;
