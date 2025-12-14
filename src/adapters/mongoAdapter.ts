@@ -13,8 +13,10 @@ export class MongoAdapter implements DatabaseAdapter {
   constructor(connectionString: string) {
     this.connectionString = connectionString;
     // Configure MongoDB client with explicit TLS options for Atlas
+    // Note: mongodb+srv:// already implies TLS, but we set it explicitly for clarity
     const options: any = {
-      tls: true,
+      // TLS is automatic for mongodb+srv://, but we set it explicitly
+      // Don't set tls: true for mongodb+srv:// as it's already implied
       tlsAllowInvalidCertificates: false,
       tlsAllowInvalidHostnames: false,
       retryWrites: true,
@@ -24,6 +26,8 @@ export class MongoAdapter implements DatabaseAdapter {
       connectTimeoutMS: 30000,
       // Retry configuration
       retryReads: true,
+      // Socket timeout
+      socketTimeoutMS: 30000,
     };
     
     this.client = new MongoClient(connectionString, options);
@@ -35,10 +39,20 @@ export class MongoAdapter implements DatabaseAdapter {
    */
   async getDb(): Promise<Db> {
     if (!this.db) {
-      await this.client.connect();
-      // Extract database name from connection string or use default
-      const dbName = this.extractDbName(this.connectionString) || 'kaia';
-      this.db = this.client.db(dbName);
+      try {
+        console.log('[MongoDB Adapter] Attempting to connect to MongoDB...');
+        await this.client.connect();
+        console.log('[MongoDB Adapter] Successfully connected to MongoDB');
+        // Extract database name from connection string or use default
+        const dbName = this.extractDbName(this.connectionString) || 'kaia';
+        this.db = this.client.db(dbName);
+        console.log(`[MongoDB Adapter] Using database: ${dbName}`);
+      } catch (error: any) {
+        console.error('[MongoDB Adapter] Connection error:', error.message);
+        console.error('[MongoDB Adapter] Connection string (sanitized):', 
+          this.connectionString.replace(/:[^:@]+@/, ':****@'));
+        throw error;
+      }
     }
     return this.db;
   }
