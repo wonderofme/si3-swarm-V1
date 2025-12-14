@@ -49,33 +49,44 @@ async function patchPinoLogger() {
 
 // Patch pino synchronously using require (for CommonJS compatibility)
 try {
+  const pinoPath = require.resolve('pino');
   const pinoModule = require('pino');
-  if (pinoModule) {
-    const originalPino = pinoModule;
+  if (pinoModule && pinoModule.default) {
+    const originalPino = pinoModule.default;
     const patchedPino = function(...args: any[]) {
       const logger = originalPino(...args);
       if (logger && logger.error) {
         const originalError = logger.error.bind(logger);
         logger.error = function(obj: any, msg?: string, ...rest: any[]) {
+          // CRITICAL: Always check and log FIRST before calling original
           const messageToCheck = typeof obj === 'string' ? obj : (msg || '');
           const objStr = typeof obj === 'object' ? JSON.stringify(obj) : '';
-          const shouldSuppress = messageToCheck?.includes?.('Error handling message') || 
-                                messageToCheck?.includes?.('Error sending message') ||
-                                objStr?.includes?.('Error handling message') ||
-                                objStr?.includes?.('Error sending message');
+          const fullMessage = messageToCheck + ' ' + objStr;
+          
+          const shouldSuppress = fullMessage.includes('Error handling message') || 
+                                fullMessage.includes('Error sending message');
           
           // CRITICAL: Log full error details BEFORE suppressing
           if (shouldSuppress) {
-            console.error('[Bootstrap] ⚠️ Intercepted pino error via require.cache (will suppress after logging):');
+            console.error('[Bootstrap] 🔍🔍🔍 PINO ERROR INTERCEPTED via require.cache 🔍🔍🔍');
             console.error('[Bootstrap] Error object:', JSON.stringify(obj, null, 2));
             console.error('[Bootstrap] Error message:', msg);
-            console.error('[Bootstrap] Rest args:', rest);
-            if (obj && typeof obj === 'object' && obj.err) {
-              console.error('[Bootstrap] Error.err:', JSON.stringify(obj.err, null, 2));
-              if (obj.err.stack) {
-                console.error('[Bootstrap] Error.err.stack:', obj.err.stack);
+            console.error('[Bootstrap] Rest args:', JSON.stringify(rest, null, 2));
+            if (obj && typeof obj === 'object') {
+              if (obj.err) {
+                console.error('[Bootstrap] Error.err:', JSON.stringify(obj.err, null, 2));
+                if (obj.err.stack) {
+                  console.error('[Bootstrap] Error.err.stack:', obj.err.stack);
+                }
               }
+              // Check all properties for error details
+              Object.keys(obj).forEach(key => {
+                if (key !== 'err' && obj[key] && typeof obj[key] === 'object') {
+                  console.error(`[Bootstrap] Error.${key}:`, JSON.stringify(obj[key], null, 2));
+                }
+              });
             }
+            console.error('[Bootstrap] 🔍🔍🔍 END PINO ERROR INTERCEPT 🔍🔍🔍');
             return; // Suppress after logging
           }
           return originalError(obj, msg, ...rest);
@@ -85,11 +96,19 @@ try {
     };
     // Copy over static properties
     Object.assign(patchedPino, originalPino);
-    require.cache[require.resolve('pino')]!.exports = patchedPino;
-    console.log('[Bootstrap] Pino logger patched via require.cache');
+    patchedPino.default = patchedPino;
+    // Try multiple ways to patch
+    if (require.cache[pinoPath]) {
+      require.cache[pinoPath]!.exports = patchedPino;
+      require.cache[pinoPath]!.exports.default = patchedPino;
+    }
+    pinoModule.default = patchedPino;
+    console.log('[Bootstrap] ✅ Pino logger patched via require.cache');
+  } else {
+    console.log('[Bootstrap] ⚠️ Pino module found but default export not available');
   }
-} catch (e) {
-  console.log('[Bootstrap] Could not patch pino via require.cache');
+} catch (e: any) {
+  console.log('[Bootstrap] Could not patch pino via require.cache:', e?.message || e);
 }
 
 // Log masked bot token suffix to verify which token is loaded (do NOT log full token)
@@ -233,6 +252,14 @@ console.log = (...args: any[]) => {
 };
 
 originalConsoleLog('[Bootstrap] Error interceptors installed');
+originalConsoleLog('[Bootstrap] Testing interceptor - if you see this, interceptors are working');
+// Test that our interceptors are working
+const testMessage = '[2025-12-14 08:54:15] [31mERROR[39m: [36m❌ Error handling message:[39m';
+if (shouldSuppressMessage(testMessage)) {
+  originalConsoleLog('[Bootstrap] ✅ Interceptor test PASSED - error pattern detection working');
+} else {
+  originalConsoleLog('[Bootstrap] ⚠️ Interceptor test FAILED - error pattern detection not working');
+}
 
 // NOW import the main module after interceptors are set up
 import('./index.js').catch((error) => {
