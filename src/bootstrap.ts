@@ -210,6 +210,7 @@ process.stderr.write = function(chunk: any, encoding?: any, callback?: any): boo
 
 // Also patch fs.writeSync for file descriptor 1 (stdout) and 2 (stderr)
 // Some loggers bypass process.stdout/stderr and write directly to fd
+// Pino likely uses this to write formatted logs
 const originalFsWriteSync = fs.writeSync.bind(fs);
 (fs as any).writeSync = function(fd: number, buffer: any, ...rest: any[]): number {
   if (fd === 1 || fd === 2) {
@@ -220,16 +221,24 @@ const originalFsWriteSync = fs.writeSync.bind(fs);
       .replace(/\[[0-9;]*m/g, '')
       .replace(/\[[0-9]+m/g, '');
     const lowerMessage = cleanMessage.toLowerCase();
-    if (lowerMessage.includes('error handling message') || lowerMessage.includes('error sending message')) {
-      // Log the full error BEFORE suppressing
-      // Use originalStderrWrite directly to avoid recursion (console.error uses process.stderr.write)
-      originalStderrWrite('[Bootstrap] 🔍 CAPTURED ERROR via fs.writeSync (fd=' + fd + '):\n');
-      originalStderrWrite('[Bootstrap] Raw buffer: ' + message + '\n');
-      originalStderrWrite('[Bootstrap] Clean message: ' + cleanMessage + '\n');
-      originalStderrWrite('[Bootstrap] ⚠️ This error will be suppressed, but details logged above\n');
-    }
     
-    if (shouldSuppressMessage(message)) {
+    // Check if this is an error we want to suppress
+    const isTargetError = lowerMessage.includes('error handling message') || 
+                         lowerMessage.includes('error sending message');
+    
+    if (isTargetError) {
+      // Log the full error BEFORE suppressing
+      // Use originalStderrWrite directly to avoid recursion
+      originalStderrWrite('[Bootstrap] 🔍🔍🔍 CAPTURED ERROR via fs.writeSync (fd=' + fd + ') 🔍🔍🔍\n');
+      originalStderrWrite('[Bootstrap] Raw buffer: ' + JSON.stringify(message) + '\n');
+      originalStderrWrite('[Bootstrap] Clean message: ' + cleanMessage + '\n');
+      originalStderrWrite('[Bootstrap] Lower message: ' + lowerMessage + '\n');
+      originalStderrWrite('[Bootstrap] Pattern match - error handling: ' + lowerMessage.includes('error handling message') + '\n');
+      originalStderrWrite('[Bootstrap] Pattern match - error sending: ' + lowerMessage.includes('error sending message') + '\n');
+      originalStderrWrite('[Bootstrap] ⚠️ SUPPRESSING THIS ERROR\n');
+      originalStderrWrite('[Bootstrap] 🔍🔍🔍 END ERROR CAPTURE 🔍🔍🔍\n');
+      
+      // Suppress by returning the length (successful write) but not actually writing
       return typeof buffer === 'string' ? buffer.length : (buffer?.length || 0);
     }
   }
