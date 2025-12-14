@@ -113,12 +113,43 @@ if (process.env.TELEGRAM_BOT_TOKEN) {
   console.log(`[Bootstrap] Bot token suffix (masked): ****${suffix}`);
 }
 
-// Check for OpenAI API key
+// Check for OpenAI API key and test it
 if (process.env.OPENAI_API_KEY) {
   const k = process.env.OPENAI_API_KEY;
   const prefix = k.substring(0, 7);
   const suffix = k.slice(-4);
   console.log(`[Bootstrap] OpenAI API key: ${prefix}...${suffix} (${k.length} chars)`);
+  
+  // Test OpenAI API key with a simple completion request
+  (async () => {
+    try {
+      console.log('[Bootstrap] 🔬 Testing OpenAI API key...');
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${k}`
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          messages: [{ role: 'user', content: 'Say "API key works" in 3 words or less' }],
+          max_tokens: 10
+        })
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        const reply = data.choices?.[0]?.message?.content || 'No response';
+        console.log(`[Bootstrap] ✅ OpenAI API key is VALID! Test response: "${reply}"`);
+      } else {
+        const errorData = await response.text();
+        console.error(`[Bootstrap] ❌ OpenAI API key test FAILED! Status: ${response.status}`);
+        console.error(`[Bootstrap] ❌ Error: ${errorData}`);
+      }
+    } catch (err: any) {
+      console.error(`[Bootstrap] ❌ OpenAI API test error: ${err.message}`);
+    }
+  })();
 } else {
   console.error(`[Bootstrap] ⚠️ OPENAI_API_KEY is NOT SET - LLM calls will fail!`);
 }
