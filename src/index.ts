@@ -754,33 +754,141 @@ async function startAgents() {
                 console.log('[Telegram Chat ID Capture] ✅ Original handler returned successfully');
                 console.log('[Telegram Chat ID Capture] ElizaOS sent message:', elizaSentMessage);
                 
-                // FALLBACK: If ElizaOS didn't send a message, call OpenAI directly
+                // FALLBACK: If ElizaOS didn't send a message, handle onboarding directly
                 if (!elizaSentMessage && chatId && messageText) {
-                  console.log('[Telegram Chat ID Capture] ⚠️ ElizaOS did not send a message - using direct OpenAI fallback');
+                  console.log('[Telegram Chat ID Capture] ⚠️ ElizaOS did not send a message - using direct onboarding fallback');
                   try {
                     const openaiKey = process.env.OPENAI_API_KEY;
-                    if (openaiKey) {
-                      console.log('[Telegram Chat ID Capture] 🤖 Calling OpenAI directly...');
+                    if (openaiKey && kaiaRuntimeForOnboardingCheck) {
+                      // Import onboarding utilities
+                      const { getOnboardingState, updateOnboardingStep } = await import('./plugins/onboarding/utils.js');
+                      const { getMessages } = await import('./plugins/onboarding/translations.js');
                       
-                      // Try to get onboarding state for context
-                      let onboardingContext = '';
-                      try {
-                        const userId = update.message?.from?.id?.toString() || chatId;
-                        if (kaiaRuntimeForOnboardingCheck) {
-                          const { getOnboardingState } = await import('./plugins/onboarding/utils.js');
-                          const state = await getOnboardingState(kaiaRuntimeForOnboardingCheck, userId);
-                          if (state.step !== 'NONE' && state.step !== 'COMPLETED') {
-                            onboardingContext = `\n\n[ONBOARDING STATUS: ${state.step}]\nUser profile: ${JSON.stringify(state.profile)}`;
-                          } else if (state.step === 'COMPLETED') {
-                            onboardingContext = `\n\n[ONBOARDING STATUS: COMPLETED]\nUser profile: ${JSON.stringify(state.profile)}`;
-                          }
+                      const userId = update.message?.from?.id?.toString() || chatId;
+                      const state = await getOnboardingState(kaiaRuntimeForOnboardingCheck, userId);
+                      
+                      console.log('[Telegram Chat ID Capture] 📋 Onboarding state:', state.step, JSON.stringify(state.profile));
+                      
+                      // Handle onboarding flow directly
+                      let responseText = '';
+                      const lowerText = messageText.toLowerCase().trim();
+                      const msgs = getMessages(state.profile.language || 'en');
+                      
+                      // Check for restart commands
+                      const isRestart = lowerText.includes('restart') || lowerText.includes('start over') || lowerText.includes('begin again');
+                      
+                      if (isRestart || state.step === 'NONE') {
+                        // Start/restart onboarding - ask for language
+                        await updateOnboardingStep(kaiaRuntimeForOnboardingCheck, userId, chatId, 'ASK_LANGUAGE', {});
+                        responseText = "What's your preferred language?\n\n1. English\n2. Español\n3. Português\n4. Français";
+                        console.log('[Telegram Chat ID Capture] 📋 Starting onboarding, asking for language');
+                      } else if (state.step === 'ASK_LANGUAGE') {
+                        // Process language selection
+                        let lang = 'en';
+                        if (lowerText.includes('1') || lowerText.includes('english')) lang = 'en';
+                        else if (lowerText.includes('2') || lowerText.includes('español') || lowerText.includes('spanish')) lang = 'es';
+                        else if (lowerText.includes('3') || lowerText.includes('português') || lowerText.includes('portuguese')) lang = 'pt';
+                        else if (lowerText.includes('4') || lowerText.includes('français') || lowerText.includes('french')) lang = 'fr';
+                        
+                        await updateOnboardingStep(kaiaRuntimeForOnboardingCheck, userId, chatId, 'ASK_NAME', { language: lang });
+                        const newMsgs = getMessages(lang);
+                        responseText = newMsgs.ASK_NAME || "What's your name? 💜";
+                        console.log('[Telegram Chat ID Capture] 📋 Language set to:', lang);
+                      } else if (state.step === 'ASK_NAME') {
+                        // Save name and ask for location
+                        await updateOnboardingStep(kaiaRuntimeForOnboardingCheck, userId, chatId, 'ASK_LOCATION', { name: messageText.trim() });
+                        responseText = msgs.ASK_LOCATION || "Where are you based? 🌍";
+                        console.log('[Telegram Chat ID Capture] 📋 Name saved:', messageText.trim());
+                      } else if (state.step === 'ASK_LOCATION') {
+                        // Save location and ask for roles
+                        await updateOnboardingStep(kaiaRuntimeForOnboardingCheck, userId, chatId, 'ASK_ROLES', { location: messageText.trim() });
+                        responseText = msgs.ASK_ROLES || "What roles best describe you? (e.g., Developer, Designer, Founder, etc.)";
+                        console.log('[Telegram Chat ID Capture] 📋 Location saved:', messageText.trim());
+                      } else if (state.step === 'ASK_ROLES') {
+                        // Save roles and ask for interests
+                        const roles = messageText.split(',').map((r: string) => r.trim()).filter((r: string) => r);
+                        await updateOnboardingStep(kaiaRuntimeForOnboardingCheck, userId, chatId, 'ASK_INTERESTS', { roles });
+                        responseText = msgs.ASK_INTERESTS || "What are your interests in Web3? 🚀";
+                        console.log('[Telegram Chat ID Capture] 📋 Roles saved:', roles);
+                      } else if (state.step === 'ASK_INTERESTS') {
+                        // Save interests and complete onboarding
+                        const interests = messageText.split(',').map((r: string) => r.trim()).filter((r: string) => r);
+                        await updateOnboardingStep(kaiaRuntimeForOnboardingCheck, userId, chatId, 'COMPLETED', { interests });
+                        responseText = msgs.ONBOARDING_COMPLETE || `Welcome to SI<3>, ${state.profile.name || 'friend'}! 🎉\n\nYou're all set! I can help you:\n• Find matches with /match\n• View your profile with /history\n• Answer questions about Web3\n\nHow can I help you today?`;
+                        console.log('[Telegram Chat ID Capture] 📋 Onboarding completed!');
+                      } else if (state.step === 'COMPLETED') {
+                        // User has completed onboarding - use OpenAI for general chat
+                        console.log('[Telegram Chat ID Capture] 🤖 Calling OpenAI for general chat...');
+                        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+                          method: 'POST',
+                          headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${openaiKey}`
+                          },
+                          body: JSON.stringify({
+                            model: 'gpt-4o-mini',
+                            messages: [
+                              {
+                                role: 'system',
+                                content: `You are Kaia, the SI<3> assistant. The user has completed onboarding. Their profile: Name: ${state.profile.name}, Location: ${state.profile.location}, Language: ${state.profile.language}. Be warm, helpful, and use emojis naturally. Answer questions about Web3, help with matchmaking requests, etc.`
+                              },
+                              {
+                                role: 'user',
+                                content: messageText
+                              }
+                            ],
+                            max_tokens: 1000
+                          })
+                        });
+                        
+                        if (response.ok) {
+                          const data = await response.json();
+                          responseText = data.choices?.[0]?.message?.content || "I'm here to help! What would you like to know? 💜";
+                        } else {
+                          responseText = "I'm here to help! What would you like to know? 💜";
                         }
-                      } catch (ctxErr) {
-                        console.log('[Telegram Chat ID Capture] Could not get onboarding context:', ctxErr);
+                      } else {
+                        // Unknown step - use OpenAI
+                        console.log('[Telegram Chat ID Capture] 🤖 Unknown step, using OpenAI...');
+                        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+                          method: 'POST',
+                          headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${openaiKey}`
+                          },
+                          body: JSON.stringify({
+                            model: 'gpt-4o-mini',
+                            messages: [
+                              {
+                                role: 'system',
+                                content: `You are Kaia, the SI<3> assistant. Be warm, friendly, and helpful. Use emojis naturally (💜, 🚀, 🤝).`
+                              },
+                              {
+                                role: 'user',
+                                content: messageText
+                              }
+                            ],
+                            max_tokens: 1000
+                          })
+                        });
+                        
+                        if (response.ok) {
+                          const data = await response.json();
+                          responseText = data.choices?.[0]?.message?.content || "How can I help you? 💜";
+                        } else {
+                          responseText = "How can I help you? 💜";
+                        }
                       }
                       
-                      const systemPrompt = kaiaCharacter.system || `You are Kaia, the SI<3> assistant. You support English, Spanish, Portuguese, and French. Be warm, friendly, and helpful. Use emojis naturally (💜, 🚀, 🤝).`;
-                      
+                      // Send the response
+                      if (responseText) {
+                        console.log('[Telegram Chat ID Capture] 📤 Sending response:', responseText.substring(0, 100) + '...');
+                        await originalSendMessage(chatId, responseText);
+                        console.log('[Telegram Chat ID Capture] ✅ Sent fallback response');
+                      }
+                    } else if (openaiKey) {
+                      // No runtime available - just use basic OpenAI
+                      console.log('[Telegram Chat ID Capture] 🤖 No runtime, using basic OpenAI...');
                       const response = await fetch('https://api.openai.com/v1/chat/completions', {
                         method: 'POST',
                         headers: {
@@ -792,7 +900,7 @@ async function startAgents() {
                           messages: [
                             {
                               role: 'system',
-                              content: systemPrompt + onboardingContext
+                              content: `You are Kaia, the SI<3> assistant. Be warm, friendly, and helpful. Use emojis naturally (💜, 🚀, 🤝).`
                             },
                             {
                               role: 'user',
