@@ -12,7 +12,21 @@ export class MongoAdapter implements DatabaseAdapter {
 
   constructor(connectionString: string) {
     this.connectionString = connectionString;
-    this.client = new MongoClient(connectionString);
+    // Configure MongoDB client with explicit TLS options for Atlas
+    const options: any = {
+      tls: true,
+      tlsAllowInvalidCertificates: false,
+      tlsAllowInvalidHostnames: false,
+      retryWrites: true,
+      w: 'majority',
+      // Increase connection timeout for Atlas
+      serverSelectionTimeoutMS: 30000,
+      connectTimeoutMS: 30000,
+      // Retry configuration
+      retryReads: true,
+    };
+    
+    this.client = new MongoClient(connectionString, options);
   }
 
   /**
