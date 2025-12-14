@@ -10,6 +10,50 @@ const originalConsoleLog = console.log.bind(console);
 const originalStdoutWrite = process.stdout.write.bind(process.stdout);
 const originalStderrWrite = process.stderr.write.bind(process.stderr);
 
+// Helper function to patch a pino logger instance
+function patchPinoLoggerInstance(logger: any) {
+  if (!logger || !logger.error) return logger;
+  
+  const originalError = logger.error.bind(logger);
+  logger.error = function(obj: any, msg?: string, ...rest: any[]) {
+    // Check all possible message formats that pino might use
+    const messageToCheck = typeof obj === 'string' ? obj : (msg || '');
+    const objStr = typeof obj === 'object' && obj !== null ? JSON.stringify(obj) : '';
+    const fullMessage = (messageToCheck + ' ' + objStr).toLowerCase();
+    
+    const shouldSuppress = fullMessage.includes('error handling message') || 
+                          fullMessage.includes('error sending message');
+    
+    // CRITICAL: Log full error details BEFORE suppressing
+    // Use originalStderrWrite directly to avoid recursion (console.error uses process.stderr.write)
+    if (shouldSuppress) {
+      originalStderrWrite('[Bootstrap] 🔍 PINO ERROR INTERCEPTED (instance patch):\n');
+      originalStderrWrite('[Bootstrap] Error object: ' + JSON.stringify(obj, null, 2) + '\n');
+      originalStderrWrite('[Bootstrap] Error message: ' + (msg || '') + '\n');
+      originalStderrWrite('[Bootstrap] Rest args: ' + JSON.stringify(rest, null, 2) + '\n');
+      if (obj && typeof obj === 'object' && obj !== null) {
+        if (obj.err) {
+          originalStderrWrite('[Bootstrap] Error.err: ' + JSON.stringify(obj.err, null, 2) + '\n');
+          if (obj.err.stack) {
+            originalStderrWrite('[Bootstrap] Error.err.stack: ' + obj.err.stack + '\n');
+          }
+        }
+        // Check all properties for error details
+        Object.keys(obj).forEach(key => {
+          if (key !== 'err' && obj[key] && typeof obj[key] === 'object') {
+            originalStderrWrite(`[Bootstrap] Error.${key}: ` + JSON.stringify(obj[key], null, 2) + '\n');
+          }
+        });
+      }
+      originalStderrWrite('[Bootstrap] 🔍 END PINO ERROR INTERCEPT\n');
+      return; // Suppress after logging
+    }
+    return originalError(obj, msg, ...rest);
+  };
+  
+  return logger;
+}
+
 // Try to patch pino before it's used by ElizaOS
 // Pino is the logging library used by ElizaOS
 async function patchPinoLogger() {
@@ -20,40 +64,20 @@ async function patchPinoLogger() {
     // Create a wrapper that filters out specific error messages
     (pino as any).default = function(...args: any[]) {
       const logger = originalPino(...args);
-      const originalError = logger.error.bind(logger);
-      
-      logger.error = function(obj: any, msg?: string, ...rest: any[]) {
-        const messageToCheck = typeof obj === 'string' ? obj : (msg || JSON.stringify(obj));
-        const shouldSuppress = messageToCheck?.includes('Error handling message') || 
-                              messageToCheck?.includes('Error sending message');
-        
-        // CRITICAL: Log full error details BEFORE suppressing
-        // Use originalStderrWrite directly to avoid recursion (console.error uses process.stderr.write)
-        if (shouldSuppress) {
-          originalStderrWrite('[Bootstrap] ⚠️ Intercepted pino error (will suppress after logging):\n');
-          originalStderrWrite('[Bootstrap] Error object: ' + JSON.stringify(obj, null, 2) + '\n');
-          originalStderrWrite('[Bootstrap] Error message: ' + (msg || '') + '\n');
-          originalStderrWrite('[Bootstrap] Rest args: ' + JSON.stringify(rest, null, 2) + '\n');
-          if (obj && typeof obj === 'object' && obj.err) {
-            originalStderrWrite('[Bootstrap] Error.err: ' + JSON.stringify(obj.err, null, 2) + '\n');
-            if (obj.err.stack) {
-              originalStderrWrite('[Bootstrap] Error.err.stack: ' + obj.err.stack + '\n');
-            }
-          }
-          return; // Suppress after logging
-        }
-        return originalError(obj, msg, ...rest);
-      };
-      
-      return logger;
+      return patchPinoLoggerInstance(logger);
     };
     
-    console.log('[Bootstrap] Pino logger patched');
+    originalConsoleLog('[Bootstrap] Pino logger patched (async)');
   } catch (e) {
     // Pino not available or couldn't be patched - that's okay
-    console.log('[Bootstrap] Could not patch pino logger (may not be installed)');
+    originalConsoleLog('[Bootstrap] Could not patch pino logger (may not be installed)');
   }
 }
+
+// Call the async pino patching function
+patchPinoLogger().catch(() => {
+  // Ignore errors - pino might not be available
+});
 
 // Patch pino synchronously using require (for CommonJS compatibility)
 try {
@@ -63,45 +87,7 @@ try {
     const originalPino = pinoModule.default;
     const patchedPino = function(...args: any[]) {
       const logger = originalPino(...args);
-      if (logger && logger.error) {
-        const originalError = logger.error.bind(logger);
-        logger.error = function(obj: any, msg?: string, ...rest: any[]) {
-          // CRITICAL: Always check and log FIRST before calling original
-          const messageToCheck = typeof obj === 'string' ? obj : (msg || '');
-          const objStr = typeof obj === 'object' ? JSON.stringify(obj) : '';
-          const fullMessage = messageToCheck + ' ' + objStr;
-          
-          const shouldSuppress = fullMessage.includes('Error handling message') || 
-                                fullMessage.includes('Error sending message');
-          
-          // CRITICAL: Log full error details BEFORE suppressing
-          // Use originalStderrWrite directly to avoid recursion (console.error uses process.stderr.write)
-          if (shouldSuppress) {
-            originalStderrWrite('[Bootstrap] 🔍🔍🔍 PINO ERROR INTERCEPTED via require.cache 🔍🔍🔍\n');
-            originalStderrWrite('[Bootstrap] Error object: ' + JSON.stringify(obj, null, 2) + '\n');
-            originalStderrWrite('[Bootstrap] Error message: ' + (msg || '') + '\n');
-            originalStderrWrite('[Bootstrap] Rest args: ' + JSON.stringify(rest, null, 2) + '\n');
-            if (obj && typeof obj === 'object') {
-              if (obj.err) {
-                originalStderrWrite('[Bootstrap] Error.err: ' + JSON.stringify(obj.err, null, 2) + '\n');
-                if (obj.err.stack) {
-                  originalStderrWrite('[Bootstrap] Error.err.stack: ' + obj.err.stack + '\n');
-                }
-              }
-              // Check all properties for error details
-              Object.keys(obj).forEach(key => {
-                if (key !== 'err' && obj[key] && typeof obj[key] === 'object') {
-                  originalStderrWrite(`[Bootstrap] Error.${key}: ` + JSON.stringify(obj[key], null, 2) + '\n');
-                }
-              });
-            }
-            originalStderrWrite('[Bootstrap] 🔍🔍🔍 END PINO ERROR INTERCEPT 🔍🔍🔍\n');
-            return; // Suppress after logging
-          }
-          return originalError(obj, msg, ...rest);
-        };
-      }
-      return logger;
+      return patchPinoLoggerInstance(logger);
     };
     // Copy over static properties
     Object.assign(patchedPino, originalPino);
@@ -112,12 +98,12 @@ try {
       require.cache[pinoPath]!.exports.default = patchedPino;
     }
     pinoModule.default = patchedPino;
-    console.log('[Bootstrap] ✅ Pino logger patched via require.cache');
+    originalConsoleLog('[Bootstrap] ✅ Pino logger patched via require.cache');
   } else {
-    console.log('[Bootstrap] ⚠️ Pino module found but default export not available');
+    originalConsoleLog('[Bootstrap] ⚠️ Pino module found but default export not available');
   }
 } catch (e: any) {
-  console.log('[Bootstrap] Could not patch pino via require.cache:', e?.message || e);
+  originalConsoleLog('[Bootstrap] Could not patch pino via require.cache: ' + (e?.message || e));
 }
 
 // Log masked bot token suffix to verify which token is loaded (do NOT log full token)
