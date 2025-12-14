@@ -1,3 +1,83 @@
+// CRITICAL: Set up error suppression interceptors BEFORE any imports
+// This ensures we catch all ElizaOS logger output from the start
+const originalStdoutWrite = process.stdout.write.bind(process.stdout);
+const originalStderrWrite = process.stderr.write.bind(process.stderr);
+let stdoutBuffer = '';
+let stderrBuffer = '';
+
+function shouldSuppressLine(line: string): boolean {
+  // Remove ANSI escape codes for matching (both \x1b[ and [ formats)
+  const cleanLine = line
+    .replace(/\x1b\[[0-9;]*m/g, '')  // Standard ANSI codes
+    .replace(/\[[0-9;]*m/g, '')      // Also match [31m format (when ANSI is displayed as text)
+    .replace(/\[[0-9]+m/g, '');      // Match [31m, [39m, [36m patterns
+  
+  // Check if this line should be suppressed (case-insensitive, check for various patterns)
+  const lowerLine = cleanLine.toLowerCase();
+  return (
+    lowerLine.includes('error handling message') ||
+    lowerLine.includes('error sending message') ||
+    lowerLine.includes('❌ error handling message') ||
+    lowerLine.includes('❌ error sending message') ||
+    (lowerLine.includes('error') && lowerLine.includes('handling message')) ||
+    (lowerLine.includes('error') && lowerLine.includes('sending message'))
+  );
+}
+
+function processBuffer(buffer: string, originalWrite: Function, encoding?: any, callback?: any): string {
+  const hasNewline = buffer.includes('\n');
+  const bufferTooLarge = buffer.length > 10000;
+  
+  // Also check if buffer contains our target patterns even without newline
+  // This handles cases where messages are written without trailing newlines
+  const shouldSuppressBuffer = shouldSuppressLine(buffer);
+  
+  if (hasNewline) {
+    // Split into complete lines and the last incomplete line
+    const lines = buffer.split('\n');
+    const lastLine = lines[lines.length - 1];
+    const completeLines = lines.slice(0, -1);
+    
+    // Process each complete line individually
+    const linesToWrite: string[] = [];
+    for (const line of completeLines) {
+      if (!shouldSuppressLine(line)) {
+        linesToWrite.push(line);
+      }
+    }
+    
+    // Write all non-suppressed lines
+    if (linesToWrite.length > 0) {
+      originalWrite(linesToWrite.join('\n') + '\n', encoding, callback);
+    }
+    
+    // Return the last incomplete line (check if it should be suppressed too)
+    return shouldSuppressLine(lastLine) ? '' : lastLine;
+  } else if (bufferTooLarge || shouldSuppressBuffer) {
+    // Buffer too large, or contains suppressible content
+    if (!shouldSuppressBuffer) {
+      originalWrite(buffer, encoding, callback);
+    }
+    return '';
+  }
+  
+  return buffer;
+}
+
+process.stdout.write = function(chunk: any, encoding?: any, callback?: any): boolean {
+  const message = chunk?.toString() || '';
+  stdoutBuffer += message;
+  stdoutBuffer = processBuffer(stdoutBuffer, originalStdoutWrite, encoding, callback);
+  return true;
+};
+
+process.stderr.write = function(chunk: any, encoding?: any, callback?: any): boolean {
+  const message = chunk?.toString() || '';
+  stderrBuffer += message;
+  stderrBuffer = processBuffer(stderrBuffer, originalStderrWrite, encoding, callback);
+  return true;
+};
+
 import 'dotenv/config';
 import {
   AgentRuntime,
@@ -378,11 +458,8 @@ async function setupTelegrafInstancePatcher() {
 // Export the patcher so it can be used in llmResponseInterceptor
 export { telegrafInstancePatcher };
 
-// Intercept console methods and process.stdout to suppress ElizaOS message errors
+// Intercept console.error as well (in addition to stdout/stderr)
 const originalConsoleError = console.error;
-const originalConsoleWarn = console.warn;
-const originalStdoutWrite = process.stdout.write.bind(process.stdout);
-
 console.error = (...args: any[]) => {
   const message = args.join(' ');
   
@@ -400,86 +477,6 @@ console.error = (...args: any[]) => {
   
   // Call original console.error for all other messages
   originalConsoleError.apply(console, args);
-};
-
-// Also intercept process.stdout.write and process.stderr.write to catch ElizaOS logger output
-// Store partial chunks to handle multi-chunk messages
-let stdoutBuffer = '';
-let stderrBuffer = '';
-
-function shouldSuppressLine(line: string): boolean {
-  // Remove ANSI escape codes for matching (both \x1b[ and [ formats)
-  const cleanLine = line
-    .replace(/\x1b\[[0-9;]*m/g, '')  // Standard ANSI codes
-    .replace(/\[[0-9;]*m/g, '')      // Also match [31m format (when ANSI is displayed as text)
-    .replace(/\[[0-9]+m/g, '');      // Match [31m, [39m, [36m patterns
-  
-  // Check if this line should be suppressed (case-insensitive, check for various patterns)
-  const lowerLine = cleanLine.toLowerCase();
-  return (
-    lowerLine.includes('error handling message') ||
-    lowerLine.includes('error sending message') ||
-    lowerLine.includes('❌ error handling message') ||
-    lowerLine.includes('❌ error sending message') ||
-    (lowerLine.includes('error') && lowerLine.includes('handling message')) ||
-    (lowerLine.includes('error') && lowerLine.includes('sending message'))
-  );
-}
-
-function processBuffer(buffer: string, originalWrite: Function, encoding?: any, callback?: any): string {
-  const hasNewline = buffer.includes('\n');
-  const bufferTooLarge = buffer.length > 10000;
-  
-  // Also check if buffer contains our target patterns even without newline
-  // This handles cases where messages are written without trailing newlines
-  const shouldSuppressBuffer = shouldSuppressLine(buffer);
-  
-  if (hasNewline) {
-    // Split into complete lines and the last incomplete line
-    const lines = buffer.split('\n');
-    const lastLine = lines[lines.length - 1];
-    const completeLines = lines.slice(0, -1);
-    
-    // Process each complete line individually
-    const linesToWrite: string[] = [];
-    for (const line of completeLines) {
-      if (!shouldSuppressLine(line)) {
-        linesToWrite.push(line);
-      }
-    }
-    
-    // Write all non-suppressed lines
-    if (linesToWrite.length > 0) {
-      originalWrite(linesToWrite.join('\n') + '\n', encoding, callback);
-    }
-    
-    // Return the last incomplete line (check if it should be suppressed too)
-    return shouldSuppressLine(lastLine) ? '' : lastLine;
-  } else if (bufferTooLarge || shouldSuppressBuffer) {
-    // Buffer too large, or contains suppressible content
-    if (!shouldSuppressBuffer) {
-      originalWrite(buffer, encoding, callback);
-    }
-    return '';
-  }
-  
-  return buffer;
-}
-
-process.stdout.write = function(chunk: any, encoding?: any, callback?: any): boolean {
-  const message = chunk?.toString() || '';
-  stdoutBuffer += message;
-  stdoutBuffer = processBuffer(stdoutBuffer, originalStdoutWrite, encoding, callback);
-  return true;
-};
-
-// Also intercept stderr since ElizaOS might log errors there
-const originalStderrWrite = process.stderr.write.bind(process.stderr);
-process.stderr.write = function(chunk: any, encoding?: any, callback?: any): boolean {
-  const message = chunk?.toString() || '';
-  stderrBuffer += message;
-  stderrBuffer = processBuffer(stderrBuffer, originalStderrWrite, encoding, callback);
-  return true;
 };
 
 async function startAgents() {
