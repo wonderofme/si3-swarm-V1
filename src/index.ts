@@ -137,8 +137,19 @@ async function createRuntime(character: any) {
   plugins.push(createFeatureRequestPlugin()); // Always include feature request plugin
   plugins.push(createKnowledgePlugin()); // Always include knowledge plugin for SI<3> knowledge base
 
+  // Merge character settings with secrets from environment
+  const characterWithSecrets = {
+    ...character,
+    settings: {
+      ...character.settings,
+      secrets: {
+        OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+      }
+    }
+  };
+  
   const runtime = new AgentRuntime({
-    character,
+    character: characterWithSecrets,
     token: process.env.OPENAI_API_KEY as string,
     modelProvider: ModelProviderName.OPENAI,
     databaseAdapter: db as any, // Cast to any since we're using a compatibility layer
