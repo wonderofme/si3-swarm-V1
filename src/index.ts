@@ -545,9 +545,87 @@ async function startAgents() {
   const directPort = Number(process.env.DIRECT_PORT || 3000);
   directClient.start(directPort);
 
-  // History API
+  // REST API (History + Chat)
   const app = express();
+  
+  // CORS middleware - Allow cross-origin requests for web integration
+  const corsOrigins = (process.env.CORS_ORIGINS || '*').split(',').map(o => o.trim());
+  app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    if (corsOrigins.includes('*') || (origin && corsOrigins.includes(origin))) {
+      res.header('Access-Control-Allow-Origin', origin || '*');
+    }
+    res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-Key');
+    res.header('Access-Control-Allow-Credentials', 'true');
+    
+    if (req.method === 'OPTIONS') {
+      return res.sendStatus(200);
+    }
+    next();
+  });
+  
   app.use(express.json());
+  
+  // Web Chat API - POST /api/chat
+  // Allows web applications to interact with Kaia
+  app.post('/api/chat', async (req, res) => {
+    try {
+      const { processWebChatMessage, validateApiKey } = await import('./services/webChatApi.js');
+      
+      // Get API key from header or body
+      const apiKey = req.headers['x-api-key'] as string || req.headers['authorization']?.replace('Bearer ', '') || req.body.apiKey;
+      const webApiKey = process.env.WEB_API_KEY;
+      
+      // Validate API key if one is configured
+      if (webApiKey && webApiKey !== 'disabled') {
+        if (!apiKey || !validateApiKey(apiKey)) {
+          return res.status(401).json({
+            success: false,
+            error: 'Invalid or missing API key. Provide via X-API-Key header or Authorization: Bearer <key>'
+          });
+        }
+      }
+      
+      const { userId, message } = req.body;
+      
+      if (!userId || !message) {
+        return res.status(400).json({
+          success: false,
+          error: 'Missing required fields: userId and message'
+        });
+      }
+      
+      // Process the chat message
+      const result = await processWebChatMessage(kaiaRuntime, userId, message);
+      
+      if (result.success) {
+        res.json(result);
+      } else {
+        res.status(500).json(result);
+      }
+    } catch (error: any) {
+      console.error('[API] Chat error:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message || 'Internal server error'
+      });
+    }
+  });
+  
+  // Health check endpoint
+  app.get('/api/health', (req, res) => {
+    res.json({
+      status: 'ok',
+      service: 'kaia-bot',
+      timestamp: new Date().toISOString(),
+      endpoints: {
+        chat: 'POST /api/chat',
+        history: 'GET /api/history/:userId',
+        health: 'GET /api/health'
+      }
+    });
+  });
   
   app.get('/api/history/:userId', async (req, res) => {
     try {
@@ -607,7 +685,11 @@ async function startAgents() {
   });
   
   app.listen(directPort + 1, () => {
-      console.log(`[API] History endpoint available at http://localhost:${directPort + 1}/api/history/:userId`);
+      console.log(`[API] REST API available at http://localhost:${directPort + 1}`);
+      console.log(`[API] Endpoints:`);
+      console.log(`[API]   POST /api/chat - Web chat interface`);
+      console.log(`[API]   GET /api/history/:userId - User profile & matches`);
+      console.log(`[API]   GET /api/health - Health check`);
   });
 
   // Telegram Client

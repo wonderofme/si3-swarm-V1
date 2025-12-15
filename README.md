@@ -11,6 +11,7 @@ A Telegram bot that helps users in the SI<3> Web3 community connect through inte
 - 📊 **Match History**: Track and view all your matches
 - ✏️ **Profile Management**: Edit profile fields without re-onboarding
 - 💬 **Real-time Match Notifications**: Get notified when new compatible members join
+- 🌐 **Web Chat API**: REST API for web integration (POST /api/chat)
 
 ## Prerequisites
 

@@ -2,7 +2,8 @@ version: "2.0"
 
 services:
   kaia-swarm:
-    image: ghcr.io/wonderofme/kaia-swarm:v259
+    # Update version after each GitHub push (github.run_number in workflow)
+    image: ghcr.io/wonderofme/kaia-swarm:v288
     env:
       - DATABASE_URL=${DATABASE_URL}
       - DATABASE_TYPE=mongodb
@@ -18,11 +19,20 @@ services:
       - SMTP_PORT=${SMTP_PORT}
       - SMTP_USER=${SMTP_USER}
       - SMTP_PASS=${SMTP_PASS}
+      # Web API configuration (optional)
+      - WEB_API_KEY=${WEB_API_KEY}
+      - CORS_ORIGINS=${CORS_ORIGINS}
       # Reduce log noise from pino/ElizaOS
       - PINO_LOG_LEVEL=warn
     expose:
+      # DirectClient port (internal)
       - port: 3000
         as: 80
+        to:
+          - global: true
+      # REST API port (Web Chat, History, Health)
+      - port: 3001
+        as: 3001
         to:
           - global: true
 

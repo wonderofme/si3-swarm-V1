@@ -14,6 +14,7 @@ This document lists all the commands and capabilities that Agent Kaia can respon
 6. [Feature Request Commands](#feature-request-commands)
 7. [General Conversation](#general-conversation)
 8. [Onboarding Questions](#onboarding-questions)
+9. [REST API (Web Integration)](#rest-api-web-integration)
 
 ---
 
@@ -365,6 +366,73 @@ If something doesn't work:
 | Edit profile | `Edit [field name]` |
 | Suggest feature | `I want to suggest a feature` |
 | Restart | `Restart` or `Start over` |
+
+---
+
+## REST API (Web Integration)
+
+Kaia also provides a REST API for web integration. This allows websites and applications to interact with Kaia programmatically.
+
+### Base URL
+- Default: `http://localhost:3001` (or your deployed API URL)
+
+### Authentication
+- If `WEB_API_KEY` is configured, include it in requests:
+  - Header: `X-API-Key: your-api-key`
+  - Or: `Authorization: Bearer your-api-key`
+
+### POST /api/chat
+Chat with Kaia (same functionality as Telegram).
+
+**Request:**
+```json
+{
+  "userId": "unique-user-id",
+  "message": "Hello, I want to find a match"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "response": "Great! Let me help you find a match...",
+  "userId": "unique-user-id",
+  "profile": {
+    "name": "User Name",
+    "interests": ["Web3", "DeFi"],
+    ...
+  },
+  "onboardingStatus": "COMPLETED"
+}
+```
+
+### GET /api/history/:userId
+Get user profile and match history.
+
+**Response:**
+```json
+{
+  "userId": "unique-user-id",
+  "profile": { ... },
+  "matches": [ ... ],
+  "onboardingStatus": "COMPLETED",
+  "totalMatches": 5
+}
+```
+
+### GET /api/health
+Health check endpoint.
+
+**Response:**
+```json
+{
+  "status": "ok",
+  "service": "kaia-bot",
+  "timestamp": "2024-12-15T...",
+  "endpoints": { ... }
+}
+```
 
 ---
 

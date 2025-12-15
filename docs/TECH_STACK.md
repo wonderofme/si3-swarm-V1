@@ -85,10 +85,17 @@ The bot supports both MongoDB and PostgreSQL:
 
 ### REST API
 - **Framework**: Express `^4.21.0`
-- **Port**: 3000 (configurable via `DIRECT_PORT`)
-- **Client**: `@elizaos/client-direct` `^0.1.0`
+- **Port**: 3001 (DIRECT_PORT + 1)
+- **Client**: `@elizaos/client-direct` `^0.1.0` (port 3000)
+- **CORS**: Configurable via `CORS_ORIGINS` environment variable
+- **Authentication**: Optional API key via `WEB_API_KEY` environment variable
 - **Endpoints**:
-  - `/api/history/:userId` - User match history
+  - `POST /api/chat` - Web chat interface (same functionality as Telegram)
+    - Request: `{ "userId": "string", "message": "string" }`
+    - Response: `{ "success": true, "response": "string", "profile": {...}, "onboardingStatus": "string" }`
+    - Auth: `X-API-Key` header or `Authorization: Bearer <key>`
+  - `GET /api/history/:userId` - User profile & match history
+  - `GET /api/health` - Health check endpoint
 
 ---
 
@@ -189,7 +196,7 @@ src/
 - `JWT_SECRET` - JWT signing secret
 
 ### Optional
-- `DIRECT_PORT` - REST API port (default: 3000)
+- `DIRECT_PORT` - DirectClient port (default: 3000). REST API runs on DIRECT_PORT + 1
 - `SMALL_OPENAI_MODEL` - OpenAI model for small tasks (default: `gpt-4o-mini`)
 - `MEDIUM_OPENAI_MODEL` - OpenAI model for medium tasks (default: `gpt-4o-mini`)
 - `LARGE_OPENAI_MODEL` - OpenAI model for large tasks (default: `gpt-4o-mini`)
@@ -197,6 +204,8 @@ src/
 - `SMTP_PORT` - SMTP server port
 - `SMTP_USER` - SMTP username
 - `SMTP_PASS` - SMTP password
+- `WEB_API_KEY` - API key for web chat endpoint (set to `disabled` to allow public access)
+- `CORS_ORIGINS` - Comma-separated list of allowed origins (default: `*`)
 
 ---
 
