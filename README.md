@@ -1,25 +1,21 @@
-# Agent Kaia - SI<3> Community Bot
+# Agent Kaia - SI<3> Community Matchmaker Bot
 
-A multi-agent Telegram bot built on ElizaOS that helps users in the SI<3> Web3 community connect through intelligent matchmaking, onboarding, and automated follow-ups.
+A Telegram bot that helps users in the SI<3> Web3 community connect through intelligent matchmaking, onboarding, and automated follow-ups.
 
 ## Features
 
 - 🌍 **Multilingual Support**: English, Spanish, Portuguese, French
-- 👤 **User Onboarding**: 13-step onboarding flow with profile collection
+- 👤 **User Onboarding**: 11-step onboarding flow with profile collection
 - 🔗 **Intelligent Matching**: Interest-based user matching algorithm
 - 📅 **Automated Follow-Ups**: 3-day check-ins and 7-day next match prompts
 - 📊 **Match History**: Track and view all your matches
 - ✏️ **Profile Management**: Edit profile fields without re-onboarding
-- 🤖 **Multi-Agent System**: Kaia (primary), MoonDAO, SI<3> (sub-agents)
-
-## Architecture
-
-See [ARCHITECTURE.md](./ARCHITECTURE.md) for detailed system architecture, component layers, and data flow.
+- 💬 **Real-time Match Notifications**: Get notified when new compatible members join
 
 ## Prerequisites
 
 - Node.js 22+
-- PostgreSQL database
+- MongoDB or PostgreSQL database
 - OpenAI API key
 - Telegram Bot Token
 
@@ -47,7 +43,8 @@ cp .env.example .env
 ```
 
 Required environment variables:
-- `DATABASE_URL`: PostgreSQL connection string
+- `DATABASE_URL`: MongoDB or PostgreSQL connection string
+- `DATABASE_TYPE`: `mongodb` or `postgres` (default: `postgres`)
 - `OPENAI_API_KEY`: Your OpenAI API key
 - `TELEGRAM_BOT_TOKEN`: Your Telegram bot token
 - `JWT_SECRET`: Secret for JWT tokens (any random string)
@@ -55,7 +52,7 @@ Required environment variables:
 
 ### 4. Set Up Database
 
-Ensure PostgreSQL is running and accessible. The application will automatically run migrations on first startup.
+Ensure your database (MongoDB or PostgreSQL) is running and accessible. The application will automatically run migrations on first startup.
 
 ### 5. Build and Run
 
@@ -76,18 +73,14 @@ npm start
 src/
 ├── index.ts                    # Main entry point
 ├── adapters/
-│   └── dbCache.ts             # PostgreSQL cache adapter
+│   ├── databaseAdapter.ts     # Database adapter factory
+│   ├── mongoAdapter.ts        # MongoDB adapter
+│   └── dbCache.ts             # Persistent cache adapter
 ├── plugins/
 │   ├── onboarding/           # Onboarding flow plugin
-│   ├── matching/             # Matching algorithm plugin
-│   └── router/               # Router plugin (stubbed)
-└── services/
-    ├── followUpScheduler.ts   # Background follow-up scheduler
-    ├── llmResponseInterceptor.ts  # LLM response blocking
-    └── telegramMessageInterceptor.ts  # Message deduplication
+│   └── matching/             # Matching algorithm plugin
+└── bootstrap.ts               # Error interception setup
 ```
-
-See [ARCHITECTURE.md](./ARCHITECTURE.md) for complete file structure.
 
 ## Development
 
@@ -96,7 +89,6 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) for complete file structure.
 - `npm run build`: Compile TypeScript to JavaScript
 - `npm start`: Run the compiled application
 - `npm run dev`: Run in development mode with hot reload
-- `npm run ingest-knowledge`: Ingest knowledge base (if applicable)
 
 ### Code Style
 
@@ -115,14 +107,11 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) for complete file structure.
 
 2. **Database connection errors**
    - Verify `DATABASE_URL` is correct
-   - Ensure PostgreSQL is running and accessible
+   - Ensure database is running and accessible
+   - Check `DATABASE_TYPE` matches your database (mongodb or postgres)
    - Check network connectivity
 
-3. **Duplicate messages during onboarding**
-   - See [DUPLICATE_MESSAGE_PROBLEM.md](./DUPLICATE_MESSAGE_PROBLEM.md) for details
-   - This is a known issue with partial mitigation
-
-4. **Build errors**
+3. **Build errors**
    - Ensure Node.js 22+ is installed
    - Run `npm install` to ensure all dependencies are installed
    - Check that TypeScript is properly configured
@@ -149,6 +138,7 @@ Run the container:
 ```bash
 docker run -d \
   -e DATABASE_URL="your-database-url" \
+  -e DATABASE_TYPE="mongodb" \
   -e OPENAI_API_KEY="your-api-key" \
   -e TELEGRAM_BOT_TOKEN="your-bot-token" \
   -e JWT_SECRET="your-jwt-secret" \
@@ -159,20 +149,18 @@ docker run -d \
 
 See `deploy.sdl.yaml` for Akash deployment configuration. The image is automatically built and pushed to GitHub Container Registry on push to `main` branch.
 
-**Important**: The GHCR package must be set to **public** for Akash to pull it. Go to package settings → Change visibility → Public. See [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) for details.
+**Image tags:**
+- `ghcr.io/wonderofme/kaia-swarm:latest` - Always points to latest version
+- `ghcr.io/wonderofme/kaia-swarm:v286` - Specific version tag
+- `ghcr.io/wonderofme/kaia-swarm:<commit-sha>` - Commit-specific tag
+
+**Important**: The GHCR package must be set to **public** for Akash to pull it. Go to package settings → Change visibility → Public. Alternatively, use Docker Hub (see [DOCKER_HUB_SETUP.md](./DOCKER_HUB_SETUP.md)).
 
 ## Documentation
 
-- [ARCHITECTURE.md](./ARCHITECTURE.md) - System architecture and design
-- [PROJECT_STATE.md](./PROJECT_STATE.md) - Complete project state documentation
-- [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) - Troubleshooting guide for common issues
-- [DUPLICATE_MESSAGE_PROBLEM.md](./DUPLICATE_MESSAGE_PROBLEM.md) - Duplicate message issue explanation
-- [MIGRATION_GUIDE.md](./MIGRATION_GUIDE.md) - Repository migration guide
-
-### Detailed Issue Documentation
-
-For detailed historical documentation about known issues and attempted fixes, see:
-- [docs/known-issues/](./docs/known-issues/) - Detailed issue analysis and attempted solutions
+- [TECH_STACK.md](./TECH_STACK.md) - Complete technology stack documentation
+- [docs/KAIAS_COMMANDS.md](./docs/KAIAS_COMMANDS.md) - Complete command reference for users
+- [DOCKER_HUB_SETUP.md](./DOCKER_HUB_SETUP.md) - Docker Hub deployment setup
 
 ## Contributing
 
@@ -188,5 +176,4 @@ Private - SI<3> Ecosystem
 
 ## Support
 
-For issues and questions, please open an issue on GitHub or contact the SI<3> team.
-
+For issues and questions, please open an issue on GitHub or contact the SI<3> team at tech@si3.space.

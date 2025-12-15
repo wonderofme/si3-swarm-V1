@@ -2,7 +2,7 @@
 
 ## Overview
 
-Agent Kaia is a multi-agent Telegram bot built on the ElizaOS framework, designed to help users in the SI<3> Web3 community connect through intelligent matchmaking. This document outlines the complete technology stack used in the project.
+Agent Kaia is a Telegram bot designed to help users in the SI<3> Web3 community connect through intelligent matchmaking. This document outlines the complete technology stack used in the project.
 
 ---
 
@@ -15,43 +15,43 @@ Agent Kaia is a multi-agent Telegram bot built on the ElizaOS framework, designe
 - **Target**: ES2022
 
 ### Framework
-- **ElizaOS**: `^0.1.0` - Multi-agent AI framework
-  - Core framework for agent runtime, message handling, and plugin architecture
+- **ElizaOS**: `^0.1.0` - Multi-agent AI framework (used for runtime infrastructure)
   - Provides: AgentRuntime, Actions, Evaluators, Providers, MessageManager
+  - Note: Message handling is done via direct Telegram integration for reliability
 
 ---
 
 ## Database & Storage
 
-### Primary Database
-- **PostgreSQL** (default): Production database
-  - **Adapter**: `@elizaos/adapter-postgres` `^0.1.0`
-  - **Client**: `pg` `^8.13.0`
-  - **Vector Search**: `pgvector` extension for knowledge base embeddings
-  - **Tables**:
-    - `cache` - ElizaOS cache (onboarding state, user profiles)
-    - `matches` - Match records between users
-    - `follow_ups` - Scheduled follow-up messages
-    - `knowledge` - SI<3> knowledge base with vector embeddings
+### Database Support
+The bot supports both MongoDB and PostgreSQL:
 
-- **MongoDB** (optional): Alternative database support
-  - **Adapter**: Custom `MongoAdapter` implementation
-  - **Client**: `mongodb` `^6.3.0`
-  - **Vector Search**: MongoDB Atlas Vector Search (requires Atlas)
-  - **Collections**:
-    - `cache` - ElizaOS cache (onboarding state, user profiles)
-    - `matches` - Match records between users
-    - `follow_ups` - Scheduled follow-up messages
-    - `knowledge` - SI<3> knowledge base with vector embeddings
+**MongoDB** (recommended):
+- **Adapter**: Custom `MongoAdapter` implementation
+- **Client**: `mongodb` `^6.3.0`
+- **Collections**:
+  - `cache` - Persistent cache (onboarding state, user profiles)
+  - `matches` - Match records between users
+  - `follow_ups` - Scheduled follow-up messages
+  - `profiles` - User profile data
+
+**PostgreSQL** (alternative):
+- **Adapter**: `@elizaos/adapter-postgres` `^0.1.0`
+- **Client**: `pg` `^8.13.0`
+- **Tables**:
+  - `cache` - Persistent cache (onboarding state, user profiles)
+  - `matches` - Match records between users
+  - `follow_ups` - Scheduled follow-up messages
 
 **Database Selection**: Controlled via `DATABASE_TYPE` environment variable:
-- `DATABASE_TYPE=postgres` (default) - Uses PostgreSQL
-- `DATABASE_TYPE=mongodb` - Uses MongoDB
+- `DATABASE_TYPE=mongodb` (recommended) - Uses MongoDB
+- `DATABASE_TYPE=postgres` - Uses PostgreSQL
 
 ### Caching
-- **Dual-layer caching**:
-  - PostgreSQL-backed persistent cache
-  - In-memory synchronous cache for fast onboarding step checks
+- **Persistent Cache**: Database-backed cache adapter (`DatabaseCacheAdapter`)
+  - Stores onboarding state and user profiles in database
+  - Survives container restarts and redeployments
+  - Ensures user data persistence
 
 ---
 
@@ -60,16 +60,15 @@ Agent Kaia is a multi-agent Telegram bot built on the ElizaOS framework, designe
 ### LLM Provider
 - **OpenAI API**
   - **Model**: GPT-4o-mini
-  - **Embeddings**: OpenAI embeddings (via `USE_OPENAI_EMBEDDING=true`)
   - **Models Used**:
     - Small: `gpt-4o-mini`
     - Medium: `gpt-4o-mini`
     - Large: `gpt-4o-mini`
 
-### AI Framework Components
-- **Evaluators**: Intent detection and routing
-- **Providers**: Context injection for LLM
-- **Actions**: Executable behaviors (onboarding, matching, etc.)
+### AI Integration
+- Direct OpenAI API integration for chat completions
+- Conversation history management (last 20 messages)
+- Context-aware responses based on user profile
 
 ---
 
@@ -82,6 +81,7 @@ Agent Kaia is a multi-agent Telegram bot built on the ElizaOS framework, designe
   - Message polling
   - Bot API integration
   - Error handling and retry logic
+  - Direct message handling for reliability
 
 ### REST API
 - **Framework**: Express `^4.21.0`
@@ -90,11 +90,6 @@ Agent Kaia is a multi-agent Telegram bot built on the ElizaOS framework, designe
 - **Endpoints**:
   - `/api/history/:userId` - User match history
 
-### Email Service
-- **Library**: `nodemailer` `^7.0.11`
-- **Purpose**: Feature request email notifications
-- **SMTP Support**: Gmail, Outlook, Yahoo, and other SMTP providers
-
 ---
 
 ## Security & Authentication
@@ -102,17 +97,6 @@ Agent Kaia is a multi-agent Telegram bot built on the ElizaOS framework, designe
 ### Authentication
 - **JWT**: `jsonwebtoken` `^9.0.2`
 - **Secret**: Configurable via `JWT_SECRET` environment variable
-
-### Password Hashing
-- **Library**: `bcryptjs` `^2.4.3`
-- **Purpose**: User authentication (future use)
-
----
-
-## Image Processing
-
-- **Library**: `sharp` `^0.34.5`
-- **Purpose**: Image processing and optimization
 
 ---
 
@@ -131,7 +115,6 @@ Agent Kaia is a multi-agent Telegram bot built on the ElizaOS framework, designe
   - `@types/node`: `^22.7.4`
   - `@types/express`: `^4.17.21`
   - `@types/jsonwebtoken`: `^9.0.6`
-  - `@types/nodemailer`: `^7.0.4`
 
 ### Environment Management
 - **dotenv**: `^16.4.5` - Environment variable management
@@ -144,7 +127,7 @@ Agent Kaia is a multi-agent Telegram bot built on the ElizaOS framework, designe
 - **Base Image**: `node:22-slim`
 - **Build Strategy**: Multi-stage build
 - **Registry**: GitHub Container Registry (GHCR)
-- **Image**: `ghcr.io/wonderofme/kaia-swarm:v237`
+- **Image**: `ghcr.io/wonderofme/kaia-swarm:v286`
 - **Build Dependencies**: Python3, make, g++ (for native modules)
 
 ### Deployment Platform
@@ -162,7 +145,7 @@ Agent Kaia is a multi-agent Telegram bot built on the ElizaOS framework, designe
 - **Trigger**: Push to `main` branch
 - **Process**:
   1. Build Docker image
-  2. Push to GHCR with tags: `latest` and commit SHA
+  2. Push to GHCR with tags: `v286`, `latest`, and commit SHA
 
 ---
 
@@ -183,17 +166,15 @@ Agent Kaia is a multi-agent Telegram bot built on the ElizaOS framework, designe
 ```
 src/
 ├── index.ts                    # Main entry point
+├── bootstrap.ts                # Error interception setup
 ├── adapters/                   # Database adapters
+│   ├── databaseAdapter.ts     # Database adapter factory
+│   ├── mongoAdapter.ts        # MongoDB adapter
+│   └── dbCache.ts             # Persistent cache adapter
 ├── plugins/                    # ElizaOS plugins
 │   ├── onboarding/            # Onboarding flow
-│   ├── matching/              # Matchmaking logic
-│   └── router/                # Message routing
-├── services/                   # Background services
-└── ...
-
-characters/                     # Agent character definitions
-database/                      # Database migrations
-.github/workflows/             # CI/CD pipelines
+│   └── matching/              # Matchmaking logic
+└── services/                   # Background services
 ```
 
 ---
@@ -201,15 +182,18 @@ database/                      # Database migrations
 ## Environment Variables
 
 ### Required
-- `DATABASE_URL` - PostgreSQL connection string
+- `DATABASE_URL` - MongoDB or PostgreSQL connection string
+- `DATABASE_TYPE` - `mongodb` or `postgres` (default: `postgres`)
 - `OPENAI_API_KEY` - OpenAI API key
 - `TELEGRAM_BOT_TOKEN` - Telegram bot token
 - `JWT_SECRET` - JWT signing secret
 
 ### Optional
 - `DIRECT_PORT` - REST API port (default: 3000)
-- `USE_OPENAI_EMBEDDING` - Use OpenAI embeddings (default: true)
-- `SMTP_HOST` - SMTP server hostname
+- `SMALL_OPENAI_MODEL` - OpenAI model for small tasks (default: `gpt-4o-mini`)
+- `MEDIUM_OPENAI_MODEL` - OpenAI model for medium tasks (default: `gpt-4o-mini`)
+- `LARGE_OPENAI_MODEL` - OpenAI model for large tasks (default: `gpt-4o-mini`)
+- `SMTP_HOST` - SMTP server hostname (for feature requests)
 - `SMTP_PORT` - SMTP server port
 - `SMTP_USER` - SMTP username
 - `SMTP_PASS` - SMTP password
@@ -225,13 +209,11 @@ database/                      # Database migrations
   "@elizaos/client-direct": "^0.1.0",
   "@elizaos/client-telegram": "^0.1.0",
   "@elizaos/core": "^0.1.0",
-  "bcryptjs": "^2.4.3",
   "dotenv": "^16.4.5",
   "express": "^4.21.0",
   "jsonwebtoken": "^9.0.2",
-  "nodemailer": "^7.0.11",
-  "pg": "^8.13.0",
-  "sharp": "^0.34.5"
+  "mongodb": "^6.3.0",
+  "pg": "^8.13.0"
 }
 ```
 
@@ -250,24 +232,26 @@ database/                      # Database migrations
 
 ## Architecture Patterns
 
+### Direct Message Handling
+- Custom message handler bypasses ElizaOS message processing for reliability
+- Direct OpenAI API integration for responses
+- Conversation history management for context
+
 ### Plugin Architecture
 - Modular plugins extend ElizaOS functionality
 - Each plugin provides: Actions, Evaluators, Providers
-- Plugins: Onboarding, Matching, Router
+- Plugins: Onboarding, Matching
 
-### Runtime Patching
-- Patches ElizaOS and Telegraf methods at runtime
-- Used for: LLM response blocking, message deduplication, restart handling
+### State Management
+- Database-backed persistent cache
+- User profiles and onboarding state stored in database
+- Survives container restarts and redeployments
 
 ### Multi-Agent System
 - Three separate AgentRuntime instances:
   - **Kaia** (Primary) - Main user interaction
   - **MoonDAO** (Sub-Agent) - Space/Governance expert
   - **SI<3>** (Sub-Agent) - Web3 education expert
-
-### State Management
-- Dual-layer caching: PostgreSQL (persistent) + in-memory (fast)
-- Synchronous cache for onboarding step checks
 
 ---
 
@@ -316,9 +300,9 @@ docker run -p 3000:3000 --env-file .env kaia-swarm
 ## Performance Considerations
 
 ### Caching Strategy
-- In-memory cache for frequently accessed data (onboarding state)
-- PostgreSQL cache for persistent storage
+- Database-backed persistent cache
 - Reduces database queries
+- Ensures data persistence across restarts
 
 ### Database Optimization
 - Indexed queries on user_id, match_id
@@ -335,7 +319,7 @@ docker run -p 3000:3000 --env-file .env kaia-swarm
 ### API Keys
 - All API keys stored as environment variables
 - Never committed to repository
-- Required for: OpenAI, Telegram, SMTP
+- Required for: OpenAI, Telegram
 
 ### Database Security
 - Connection string includes credentials
@@ -347,32 +331,13 @@ docker run -p 3000:3000 --env-file .env kaia-swarm
 
 ---
 
-## Future Technology Considerations
-
-### Potential Additions
-- **Redis**: For distributed caching
-- **WebSocket**: Real-time updates
-- **GraphQL**: Flexible API queries
-- **Vector Database**: For semantic matching (Pinecone, Weaviate)
-- **Monitoring**: Prometheus, Grafana
-- **Logging**: ELK Stack, Datadog
-
----
-
 ## Version Information
 
 - **Project Version**: `0.2.0`
 - **Node.js**: `22.x`
 - **TypeScript**: `5.6.3`
 - **ElizaOS**: `^0.1.0`
-
----
-
-## Additional Resources
-
-- **Architecture Documentation**: See `ARCHITECTURE.md`
-- **Deployment Guide**: See `deploy.sdl.yaml`
-- **Character Definitions**: See `characters/` directory
+- **Docker Image**: `v286`
 
 ---
 
@@ -380,14 +345,14 @@ docker run -p 3000:3000 --env-file .env kaia-swarm
 
 1. **Prerequisites**:
    - Node.js 22.x installed
-   - PostgreSQL database running
+   - MongoDB or PostgreSQL database running
    - OpenAI API key
    - Telegram bot token
 
 2. **Setup**:
    ```bash
    git clone <repository>
-   cd si3-multi-agent-swarm
+   cd AgentKaia
    npm install
    cp .env.example .env
    # Fill in environment variables
@@ -396,12 +361,12 @@ docker run -p 3000:3000 --env-file .env kaia-swarm
 
 3. **Key Files to Understand**:
    - `src/index.ts` - Application entry point
+   - `src/bootstrap.ts` - Error interception setup
    - `src/plugins/onboarding/` - Onboarding flow
    - `src/plugins/matching/` - Matchmaking logic
+   - `src/adapters/mongoAdapter.ts` - MongoDB adapter
    - `characters/kaia.character.json` - Agent personality
 
 ---
 
 *Last Updated: December 2024*
-
-

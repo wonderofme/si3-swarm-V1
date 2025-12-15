@@ -128,7 +128,8 @@ After onboarding, you can edit any part of your profile by saying:
 - You need to have at least one interest in your profile
 
 **If no matches found:**
-- Kaia will let you know to check back later
+- Kaia will let you know that SI<3> will explore potential matches within its broader network
+- You can share specific connection requests at tech@si3.space
 - You can try again anytime
 
 ---
@@ -218,27 +219,16 @@ After onboarding, you can edit any part of your profile by saying:
 
 ## General Conversation
 
-### Web3 Questions
-Kaia can answer questions about:
-- Web3 concepts
-- Cryptocurrency basics
-- DAOs (Decentralized Autonomous Organizations)
-- Smart contracts
-- Wallets and security
-- The SI<3> ecosystem
-- General knowledge questions
+### Knowledge Questions
+If you ask educational questions (like "what is a DAO", "explain blockchain", "what is DeFi"), Kaia will respond:
 
-**Just ask naturally:**
-- "What is a DAO?"
-- "How do wallets work?"
-- "Tell me about SI<3>"
-- "What is Web3?"
-- "Explain tokenomics"
+> "Great question! 🧠
+> 
+> I'm activating my peer-to-peer knowledge-sharing capabilities soon, where you'll be able to learn from other community members who are experts in these topics.
+> 
+> For now, I'm focused on making meaningful connections within the SI<3> community. Would you like me to find you a match? Just say 'find me a match'! 🤝💜"
 
-**What happens:**
-- Kaia provides helpful, educational answers
-- She explains things in accessible language
-- She stays grounded and avoids promising profits or financial outcomes
+**Note:** Kaia is currently focused on matchmaking. Knowledge-sharing capabilities will be available soon.
 
 ---
 
@@ -282,29 +272,26 @@ During onboarding, Kaia will ask you these questions (in order):
 **Question:** "What are you excited to explore in the Grow3dge program?"
 **Options:**
 - 1. Web3 Growth Marketing
-- 2. Business Development & Partnerships
+- 2. Sales, BD & Partnerships
 - 3. Education 3.0
 - 4. AI
 - 5. Cybersecurity
 - 6. DAO's
 - 7. Tokenomics
 - 8. Fundraising
-- 9. Other
+- 9. DeepTech
 **Response:** Reply with numbers (e.g., `2,3`) or add custom interests
 
 ### 6. Goals
 **Question:** "What are you looking for? 🤝"
 **Options:**
-- 1. Startups to invest in
-- 2. Investors/grant program operators
-- 3. Marketing support
-- 4. BD & Partnerships
-- 5. Communities and/or DAO's to join
-- 6. Other
+- 1. Growth tools, strategies, and/or support
+- 2. Sales/BD tools, strategies and/or support
+- 3. New job opportunities
 **Response:** Reply with numbers or add custom goals
 
 ### 7. Events (Optional)
-**Question:** "Can you share any events that you will be attending?"
+**Question:** "Can you share any events that you will be attending? I could try to connect you with other Grow3dge members that are attending the same events and conferences."
 **Response:** Type event details, or type `Next` to skip
 
 ### 8. Social Media (Optional)
@@ -378,7 +365,6 @@ If something doesn't work:
 | Edit profile | `Edit [field name]` |
 | Suggest feature | `I want to suggest a feature` |
 | Restart | `Restart` or `Start over` |
-| Ask Web3 question | Just ask naturally! |
 
 ---
 
@@ -388,5 +374,4 @@ If something doesn't work:
 - **Something not working?** Try rephrasing your request
 - **Want to start over?** Say `Restart` or `Start over`
 - **Have a feature idea?** Tell Kaia what you'd like to see!
-
-
+- **Need technical support?** Contact tech@si3.space
