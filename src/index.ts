@@ -1313,8 +1313,22 @@ async function startAgents() {
                             responseText = "Which language would you like?\n\n• English\n• Español\n• Português\n• Français\n\nJust say 'change language to [language]'";
                           }
                         } else if (isFeatureRequest) {
-                          // FEATURE REQUEST - Save to database
+                          // FEATURE REQUEST - Send email and save to database
                           console.log('[Telegram Chat ID Capture] 💡 Feature request detected...');
+                          
+                          // Try to send email first
+                          let emailSent = false;
+                          try {
+                            const { sendFeatureRequest } = await import('./services/featureRequest.js');
+                            await sendFeatureRequest(userId, state.profile.name || 'Anonymous', messageText, messageText);
+                            emailSent = true;
+                            console.log('[Feature Request] ✅ Email sent successfully');
+                          } catch (emailError: any) {
+                            console.log('[Feature Request] ⚠️ Could not send email:', emailError.message);
+                            // Continue to save to database even if email fails
+                          }
+                          
+                          // Always save to database as backup
                           try {
                             const db = kaiaRuntimeForOnboardingCheck.databaseAdapter as any;
                             if (db && db.query) {
@@ -1328,9 +1342,16 @@ async function startAgents() {
                           } catch (e) {
                             console.log('[Feature Request] Could not save to DB:', e);
                           }
-                          responseText = `Thank you for your suggestion, ${state.profile.name}! 💜\n\n` +
-                            `I've recorded your request:\n"${messageText.substring(0, 200)}${messageText.length > 200 ? '...' : ''}"\n\n` +
-                            `The SI<3> team reviews all suggestions. Your feedback helps make me better! 🚀`;
+                          
+                          if (emailSent) {
+                            responseText = `Thank you for your suggestion, ${state.profile.name}! 💜\n\n` +
+                              `I've sent your request to tech@si3.space:\n"${messageText.substring(0, 200)}${messageText.length > 200 ? '...' : ''}"\n\n` +
+                              `The SI<3> team reviews all suggestions. Your feedback helps make me better! 🚀`;
+                          } else {
+                            responseText = `Thank you for your suggestion, ${state.profile.name}! 💜\n\n` +
+                              `I've recorded your request:\n"${messageText.substring(0, 200)}${messageText.length > 200 ? '...' : ''}"\n\n` +
+                              `The SI<3> team reviews all suggestions. Your feedback helps make me better! 🚀`;
+                          }
                         } else if (isKnowledgeQuestion) {
                           // ==================== KNOWLEDGE QUESTION - COMING SOON ====================
                           console.log('[Telegram Chat ID Capture] 📚 Knowledge question detected - showing coming soon message');
