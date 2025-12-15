@@ -1080,34 +1080,16 @@ async function startAgents() {
                           conversationHistory = conversationHistory.slice(-MAX_HISTORY_MESSAGES * 2);
                         }
                         
-                        // ==================== SI<3> KNOWLEDGE BASE ====================
-                        // Inject knowledge context for SI<3> related questions
-                        const SI3_KNOWLEDGE = `
-SI<3> KNOWLEDGE BASE:
-
-About SI<3>:
-SI<3> (Social Impact Cubed) is a Web3 community focused on inclusion and education. We help under-represented groups navigate and thrive in Web3 through community, education, and meaningful connections.
-
-Programs:
-1. Grow3dge Accelerator: A 10-week accelerator program with the Growth and Education 3.0 Playbook. Helps Web3 founders and builders grow their projects with mentorship, resources, and network access.
-
-2. Si Her DAO: A decentralized autonomous organization for women in Web3. Members participate in governance, vote on proposals, and access exclusive opportunities.
-
-3. SI U (Social Impact University): Educational platform offering courses on Web3 fundamentals, smart contracts, DeFi, NFTs, DAOs, and more. Self-paced learning with community support.
-
-Leadership:
-- Kara Howard: Founder & CEO of SI<3>. Passionate about diversity in Web3 and social impact through technology.
-
-Community:
-- 4 languages supported: English, Spanish, Portuguese, French
-- Global community across multiple continents
-- Focus on networking, education, and opportunity access
-
-Keywords: grow3dge, si her dao, si u, social impact university, kara howard, web3 education, diversity in web3`;
-
-                        // Check if question is about SI<3> to inject knowledge
-                        const si3Keywords = ['grow3dge', 'si<3>', 'si3', 'si her', 'si u', 'kara', 'social impact', 'accelerator'];
-                        const isSI3Question = si3Keywords.some(k => lowerText.includes(k));
+                        // ==================== KNOWLEDGE QUESTION DETECTION ====================
+                        // Detect knowledge/educational questions to redirect with "coming soon" message
+                        const knowledgeKeywords = [
+                          'what is', 'what are', 'explain', 'tell me about', 'how does', 'define',
+                          'dao', 'defi', 'nft', 'blockchain', 'cryptocurrency', 'crypto', 'web3',
+                          'smart contract', 'token', 'wallet', 'ethereum', 'bitcoin', 'solana',
+                          'proof of stake', 'proof of work', 'mining', 'staking', 'yield', 'liquidity'
+                        ];
+                        const isKnowledgeQuestion = knowledgeKeywords.some(k => lowerText.includes(k)) && 
+                          !lowerText.includes('match') && !lowerText.includes('profile') && !lowerText.includes('update');
                         
                         // ==================== COMMAND DETECTION ====================
                         const isMatchRequest = lowerText.includes('match') || lowerText.includes('connect me') || lowerText.includes('find someone') || lowerText.includes('find me') || lowerText.includes('introduce');
@@ -1121,10 +1103,10 @@ Keywords: grow3dge, si her dao, si u, social impact university, kara howard, web
                         if (isHelpRequest) {
                           // HELP MENU
                           const langPhrases: Record<string, any> = {
-                            en: { title: 'Here\'s what I can help you with', match: 'Find a match', profile: 'Show my profile', lang: 'Change language', feature: 'Suggest a feature', update: 'Update profile', web3: 'Ask me anything about Web3' },
-                            es: { title: 'Esto es lo que puedo hacer por ti', match: 'Encontrar una conexión', profile: 'Mostrar mi perfil', lang: 'Cambiar idioma', feature: 'Sugerir una función', update: 'Actualizar perfil', web3: 'Pregúntame sobre Web3' },
-                            pt: { title: 'Aqui está o que posso fazer por você', match: 'Encontrar uma conexão', profile: 'Mostrar meu perfil', lang: 'Mudar idioma', feature: 'Sugerir uma função', update: 'Atualizar perfil', web3: 'Pergunte-me sobre Web3' },
-                            fr: { title: 'Voici ce que je peux faire pour vous', match: 'Trouver une connexion', profile: 'Afficher mon profil', lang: 'Changer de langue', feature: 'Suggérer une fonctionnalité', update: 'Mettre à jour le profil', web3: 'Demandez-moi sur Web3' }
+                            en: { title: 'Here\'s what I can help you with', match: 'Find a match', profile: 'Show my profile', lang: 'Change language', feature: 'Suggest a feature', update: 'Update profile' },
+                            es: { title: 'Esto es lo que puedo hacer por ti', match: 'Encontrar una conexión', profile: 'Mostrar mi perfil', lang: 'Cambiar idioma', feature: 'Sugerir una función', update: 'Actualizar perfil' },
+                            pt: { title: 'Aqui está o que posso fazer por você', match: 'Encontrar uma conexão', profile: 'Mostrar meu perfil', lang: 'Mudar idioma', feature: 'Sugerir uma função', update: 'Atualizar perfil' },
+                            fr: { title: 'Voici ce que je peux faire pour vous', match: 'Trouver une connexion', profile: 'Afficher mon profil', lang: 'Changer de langue', feature: 'Suggérer une fonctionnalité', update: 'Mettre à jour le profil' }
                           };
                           const phrases = langPhrases[state.profile.language || 'en'] || langPhrases.en;
                           responseText = `💜 ${phrases.title}:\n\n` +
@@ -1132,8 +1114,7 @@ Keywords: grow3dge, si her dao, si u, social impact university, kara howard, web
                             `📋 "${phrases.profile}" - View your Grow3dge profile\n` +
                             `✏️ "${phrases.update}" - Edit a specific field in your profile\n` +
                             `🌍 "${phrases.lang}" - Switch to another language\n` +
-                            `💡 "${phrases.feature}" - Tell me what features you'd like\n\n` +
-                            `🧠 ${phrases.web3}!`;
+                            `💡 "${phrases.feature}" - Tell me what features you'd like`;
                         } else if (isMatchRequest) {
                           // ==================== MATCHING WITH TRACKING ====================
                           console.log('[Telegram Chat ID Capture] 🤝 Processing match request...');
@@ -1194,7 +1175,7 @@ Keywords: grow3dge, si her dao, si u, social impact university, kara howard, web
                               }
                               
                               if (candidates.length === 0) {
-                                responseText = "I couldn't find any new matches right now. Check back later! 🕵️‍♀️\n\nTip: More members are joining every day!";
+                                responseText = "I couldn't find a match within the current pool, but don't worry! 💜\n\nSI<3> will explore potential matches within its broader network and reach out if we find someone great for you.\n\nIn the meantime, feel free to share any specific connection requests with us at tech@si3.space. 🚀";
                               } else {
                                 const topMatch = candidates.sort((a, b) => b.score - a.score)[0];
                                 matchedUserId = topMatch.id;
@@ -1350,12 +1331,22 @@ Keywords: grow3dge, si her dao, si u, social impact university, kara howard, web
                           responseText = `Thank you for your suggestion, ${state.profile.name}! 💜\n\n` +
                             `I've recorded your request:\n"${messageText.substring(0, 200)}${messageText.length > 200 ? '...' : ''}"\n\n` +
                             `The SI<3> team reviews all suggestions. Your feedback helps make me better! 🚀`;
+                        } else if (isKnowledgeQuestion) {
+                          // ==================== KNOWLEDGE QUESTION - COMING SOON ====================
+                          console.log('[Telegram Chat ID Capture] 📚 Knowledge question detected - showing coming soon message');
+                          const langResponses: Record<string, string> = {
+                            en: `Great question! 🧠\n\nI'm activating my peer-to-peer knowledge-sharing capabilities soon, where you'll be able to learn from other community members who are experts in these topics.\n\nFor now, I'm focused on making meaningful connections within the SI<3> community. Would you like me to find you a match? Just say "find me a match"! 🤝💜`,
+                            es: `¡Gran pregunta! 🧠\n\nPronto activaré mis capacidades de intercambio de conocimientos entre pares, donde podrás aprender de otros miembros de la comunidad que son expertos en estos temas.\n\nPor ahora, estoy enfocada en hacer conexiones significativas dentro de la comunidad SI<3>. ¿Te gustaría que te encuentre una conexión? ¡Solo di "encuéntrame una conexión"! 🤝💜`,
+                            pt: `Ótima pergunta! 🧠\n\nEm breve ativarei minhas capacidades de compartilhamento de conhecimento entre pares, onde você poderá aprender com outros membros da comunidade que são especialistas nesses tópicos.\n\nPor enquanto, estou focada em fazer conexões significativas dentro da comunidade SI<3>. Gostaria que eu encontrasse uma conexão para você? Basta dizer "encontre uma conexão"! 🤝💜`,
+                            fr: `Excellente question! 🧠\n\nJ'activerai bientôt mes capacités de partage de connaissances entre pairs, où vous pourrez apprendre d'autres membres de la communauté qui sont experts dans ces sujets.\n\nPour l'instant, je me concentre sur la création de connexions significatives au sein de la communauté SI<3>. Voulez-vous que je vous trouve une connexion? Dites simplement "trouve-moi une connexion"! 🤝💜`
+                          };
+                          responseText = langResponses[state.profile.language || 'en'] || langResponses.en;
                         } else {
-                          // ==================== GENERAL CHAT WITH KNOWLEDGE + HISTORY ====================
-                          console.log('[Telegram Chat ID Capture] 🤖 Calling OpenAI with knowledge + history...');
+                          // ==================== GENERAL CHAT (MATCHMAKING FOCUSED) ====================
+                          console.log('[Telegram Chat ID Capture] 🤖 Calling OpenAI (matchmaking focused)...');
                           
-                          // Build system prompt with knowledge injection
-                          let systemPrompt = `You are Kaia, the SI<3> Web3 community assistant. 
+                          // Build system prompt (matchmaking focused)
+                          let systemPrompt = `You are Kaia, the SI<3> community matchmaker assistant. 
 
 USER PROFILE:
 - Name: ${state.profile.name}
@@ -1365,25 +1356,24 @@ USER PROFILE:
 - Connection Goals: ${state.profile.connectionGoals?.join(', ') || 'Not specified'}
 - Language: ${state.profile.language || 'en'}
 
-YOUR CAPABILITIES:
+YOUR CAPABILITIES (MATCHMAKING FOCUSED):
 - Find matches for users (they can say "find me a match")
 - Show profile (they can say "show my profile" or "my history")
-- Answer Web3 questions (blockchain, DeFi, DAOs, NFTs, etc.)
-- Take feature suggestions
+- Take feature suggestions and direct them to tech@si3.space
 - Change language (they can say "change language to Spanish")
 - Provide help (they can say "help")
+
+IMPORTANT - KNOWLEDGE QUESTIONS:
+If users ask educational/knowledge questions (like "what is a DAO", "explain blockchain", "what is DeFi"), 
+respond that peer-to-peer knowledge-sharing capabilities will be activated soon, and for now you're focused 
+on making great connections within the SI<3> community.
 
 PERSONALITY:
 - Be warm, friendly, and helpful
 - Use emojis naturally (💜, 🚀, 🤝, 🎉)
 - Be encouraging and supportive
-- Explain Web3 concepts in accessible language
+- Focus conversations on matchmaking and connections
 - Respond in ${state.profile.language === 'es' ? 'Spanish' : state.profile.language === 'pt' ? 'Portuguese' : state.profile.language === 'fr' ? 'French' : 'English'}`;
-
-                          // Inject SI<3> knowledge if relevant
-                          if (isSI3Question) {
-                            systemPrompt += `\n\n${SI3_KNOWLEDGE}`;
-                          }
                           
                           // Build messages array with conversation history
                           const messages: Array<{role: string, content: string}> = [
