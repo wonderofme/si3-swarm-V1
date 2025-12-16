@@ -1315,7 +1315,7 @@ async function startAgents() {
                         
                         if (emailSent) {
                           responseText = `Thank you for your suggestion, ${state.profile.name}! 💜\n\n` +
-                            `I've sent your request to members@si3.space:\n"${messageText.substring(0, 200)}${messageText.length > 200 ? '...' : ''}"\n\n` +
+                            `I've sent your request to tech@si3.space:\n"${messageText.substring(0, 200)}${messageText.length > 200 ? '...' : ''}"\n\n` +
                             `The SI<3> team reviews all suggestions. Your feedback helps make me better! 🚀`;
                         } else {
                           responseText = `Thank you for your suggestion, ${state.profile.name}! 💜\n\n` +
@@ -1481,6 +1481,16 @@ async function startAgents() {
                               }
                               
                               if (candidates.length === 0) {
+                                // Send email notification to members@si3.space with user info
+                                try {
+                                  const { sendNoMatchNotification } = await import('./services/featureRequest.js');
+                                  await sendNoMatchNotification(userId, state.profile);
+                                  console.log('[No Match] ✅ Sent no-match notification email');
+                                } catch (emailError: any) {
+                                  console.log('[No Match] ⚠️ Could not send no-match notification email:', emailError.message);
+                                  // Continue even if email fails
+                                }
+                                
                                 responseText = "I couldn't find a match within the current pool, but don't worry! 💜\n\nSI<3> will explore potential matches within its broader network and reach out if we find someone great for you.\n\nIn the meantime, feel free to share any specific connection requests with us at members@si3.space. 🚀";
                               } else {
                                 const topMatch = candidates.sort((a, b) => b.score - a.score)[0];
@@ -1686,7 +1696,7 @@ async function startAgents() {
                             
                             if (emailSent) {
                               responseText = `Thank you for your suggestion, ${state.profile.name}! 💜\n\n` +
-                                `I've sent your request to members@si3.space:\n"${messageText.substring(0, 200)}${messageText.length > 200 ? '...' : ''}"\n\n` +
+                                `I've sent your request to tech@si3.space:\n"${messageText.substring(0, 200)}${messageText.length > 200 ? '...' : ''}"\n\n` +
                                 `The SI<3> team reviews all suggestions. Your feedback helps make me better! 🚀`;
                             } else {
                               responseText = `Thank you for your suggestion, ${state.profile.name}! 💜\n\n` +
@@ -1732,7 +1742,7 @@ USER PROFILE:
 YOUR CAPABILITIES (MATCHMAKING FOCUSED):
 - Find matches for users (they can say "find me a match")
 - Show profile (they can say "show my profile" or "my history")
-- Take feature suggestions and direct them to members@si3.space
+- Take feature suggestions and direct them to tech@si3.space
 - Change language (they can say "change language to Spanish")
 - Provide help (they can say "help")
 

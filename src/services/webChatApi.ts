@@ -246,6 +246,17 @@ export async function processWebChatMessage(
                   `💡 You both share interests in: ${topMatch.commonInterests.join(', ')}\n\n` +
                   `Reach out and connect! 🤝💜`;
               } else {
+                // Send email notification to members@si3.space with user info
+                try {
+                  const { sendNoMatchNotification } = await import('./featureRequest.js');
+                  const profile = state.profile || {};
+                  await sendNoMatchNotification(userId, profile);
+                  console.log('[Web Chat No Match] ✅ Sent no-match notification email');
+                } catch (emailError: any) {
+                  console.log('[Web Chat No Match] ⚠️ Could not send no-match notification email:', emailError.message);
+                  // Continue even if email fails
+                }
+                
                 responseText = "I couldn't find a match within the current pool, but don't worry! 💜\n\nSI<3> will explore potential matches within its broader network and reach out if we find someone great for you.\n\nIn the meantime, feel free to share any specific connection requests with us at members@si3.space. 🚀";
               }
             } else {
@@ -303,7 +314,7 @@ USER PROFILE:
 YOUR CAPABILITIES (MATCHMAKING FOCUSED):
 - Find matches for users (they can say "find me a match")
 - Show profile (they can say "show my profile" or "my history")
-- Take feature suggestions and direct them to members@si3.space
+- Take feature suggestions and direct them to tech@si3.space
 - Change language (they can say "change language to Spanish")
 - Provide help (they can say "help")
 
