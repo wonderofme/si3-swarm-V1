@@ -1,5 +1,6 @@
 import { IAgentRuntime, UUID } from '@elizaos/core';
 import { OnboardingStep, UserProfile } from './types.js';
+import { getMessages, LanguageCode } from './translations.js';
 
 const ONBOARDING_MEMORY_TYPE = 'onboarding_state';
 
@@ -87,5 +88,20 @@ export async function getUserProfile(runtime: IAgentRuntime, userId: UUID): Prom
 export async function getOnboardingStep(runtime: IAgentRuntime, userId: UUID): Promise<OnboardingStep> {
   const state = await getOnboardingState(runtime, userId);
   return state.step || 'NONE';
+}
+
+export function formatProfileForDisplay(profile: UserProfile, lang: string = 'en'): string {
+  const msgs = getMessages(lang as LanguageCode);
+  return `💜 Your Grow3dge Profile:\n\n` +
+    `${msgs.SUMMARY_NAME} ${profile.name || msgs.SUMMARY_NOT_PROVIDED}\n` +
+    `${msgs.SUMMARY_LOCATION} ${profile.location || msgs.SUMMARY_NOT_PROVIDED}\n` +
+    `${msgs.SUMMARY_ROLES} ${profile.roles?.join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
+    `${msgs.SUMMARY_INTERESTS} ${profile.interests?.join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
+    `${msgs.SUMMARY_GOALS} ${profile.connectionGoals?.join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
+    `${msgs.SUMMARY_EVENTS} ${profile.events?.join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
+    `${msgs.SUMMARY_SOCIALS} ${profile.socials?.join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
+    `${msgs.SUMMARY_TELEGRAM} ${profile.telegramHandle ? '@' + profile.telegramHandle : msgs.SUMMARY_NOT_PROVIDED}\n` +
+    `${msgs.SUMMARY_DIVERSITY} ${profile.diversityResearchInterest || msgs.SUMMARY_NOT_PROVIDED}\n` +
+    `${msgs.SUMMARY_NOTIFICATIONS} ${profile.notifications || msgs.SUMMARY_NOT_PROVIDED}`;
 }
 

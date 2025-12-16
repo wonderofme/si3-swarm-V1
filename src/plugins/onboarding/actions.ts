@@ -474,6 +474,36 @@ export const continueOnboardingAction: Action = {
           await updateOnboardingStep(runtime, message.userId, roomId, 'CONFIRMATION', { gender: text, isEditing: false, editingField: undefined });
           if (roomId) recordActionExecution(roomId);
         } else {
+          // Check if user wants to participate in diversity research
+          const lowerText = text.toLowerCase().trim();
+          const wantsDiversityResearch = lowerText.includes('yes') && (lowerText.includes('diversity') || lowerText.includes('diversidad') || lowerText.includes('diversidade') || lowerText.includes('diversité'));
+          
+          if (wantsDiversityResearch) {
+            // Track Telegram handle for diversity research
+            try {
+              const profile = await getUserProfile(runtime, message.userId);
+              const telegramHandle = profile.telegramHandle || roomId?.toString() || message.userId;
+              
+              // Save to MongoDB collection for diversity research tracking
+              const db = runtime.databaseAdapter as any;
+              if (db && db.getDb) {
+                const mongoDb = await db.getDb();
+                const diversityCollection = mongoDb.collection('diversity_research');
+                await diversityCollection.insertOne({
+                  userId: message.userId,
+                  telegramHandle: telegramHandle,
+                  roomId: roomId,
+                  interestedAt: new Date(),
+                  status: 'pending'
+                });
+                console.log('[Diversity Research] ✅ Tracked Telegram handle for diversity research:', telegramHandle);
+              }
+            } catch (error) {
+              console.error('[Diversity Research] Error tracking diversity research interest:', error);
+              // Don't fail the onboarding flow if tracking fails
+            }
+          }
+          
           // Handle "next" to skip optional question
           const genderValue = text.toLowerCase().trim() === 'next' ? undefined : text;
           await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_NOTIFICATIONS', { gender: genderValue });

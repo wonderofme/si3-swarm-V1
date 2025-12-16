@@ -24,6 +24,7 @@ export interface Messages {
   SUMMARY_SOCIALS: string;
   SUMMARY_TELEGRAM: string;
   SUMMARY_GENDER: string;
+  SUMMARY_DIVERSITY: string;
   SUMMARY_NOTIFICATIONS: string;
   SUMMARY_NOT_PROVIDED: string;
   EDIT_NAME: string;
@@ -97,35 +98,31 @@ Reply with the number before the topic (for example: 2,3). If you have a topic t
 Reply with the number before the connection type (for example: 3, 4). If you have a connection type that is not listed, type that as text (for example 3,4 and Cybersecurity).`,
     EVENTS: `I am also able to match you with other Grow3dge members that are attending the same events and conferences.
 
-Can you share any events that you will be attending coming up (event name, month, and location)? (optional)
+Can you share any events that you will be attending coming up (event name, date, and location)? (optional)
 
 To move on to the next question, type 'Next'`,
-    SOCIALS: `Can you share your digital links and/or social media profiles so we can share those with those that you are matched with? (optional)
+    SOCIALS: `Can you share your digital links and/or social media profiles so we can share those with your matches? (optional)
 
 To move on to the next question, type 'Next'`,
-    TELEGRAM: `What's your Telegram handle so matches can reach you? (e.g., @username)`,
+    TELEGRAM: `What's your Telegram handle so members that you match with can reach you? (e.g., @username)`,
     GENDER: `We are an ecosystem that values the inclusion of under-represented groups in Web3. We are engaging in industry-related market research to support these groups in achieving more equitable access to funding, growth and career opportunities.
 
-If you would like to share your gender data (anonymously) within our research, please provide how you identify: (optional)
-
-1. She/Her
-2. He/Him
-3. They/Them
-4. Other
+If you would like to be (anonymously) included within our research, please say Yes, Diversity and we will follow up with you soon with our research questions and policies.
 
 To move on to the next question, type 'Next'`,
     NOTIFICATIONS: `One last thing…would you be interested in receiving notifications for project and mission collaboration opportunities initiated by SI<3> and its ecosystem partners?
 
 1. Yes!
 2. No, thanks
-3. Not sure yet, check in with me another time`,
-    COMPLETION: `Thank you so much for onboarding! I will now begin letting you know when there are members of our network that have aligned interests and needs with yours. 🎉`,
-    COMPLETION_2: `How can I support you today, {{name}}?
+3. Not sure yet, check in with me another time
 
-I can help you:
-• Find relevant Grow3dge members to connect with based on your interests and needs - just ask!
-• Build and edit your member profile
-• Answer questions about Web3 (I am just starting to build my knowledge base)`,
+Please reply with the number (for example: 1)`,
+    COMPLETION: `Thank you so much for onboarding! 
+
+Please see your member profile here. At any time you would like to edit this data, please type 'Edit Profile' and I will help you make updates.
+
+In the meantime, I will let you know when I have a member match for you.`,
+    COMPLETION_2: ``, // Deprecated - keeping for backwards compatibility
     SUMMARY_TITLE: `Here's your summary. Does it look right?`,
     SUMMARY_NAME: `Name:`,
     SUMMARY_LOCATION: `Location:`,
@@ -136,6 +133,7 @@ I can help you:
     SUMMARY_SOCIALS: `Personal Links:`,
     SUMMARY_TELEGRAM: `Telegram Handle:`,
     SUMMARY_GENDER: `Gender Info:`,
+    SUMMARY_DIVERSITY: `Diversity Research Interest:`,
     SUMMARY_NOTIFICATIONS: `Notifications for Collabs:`,
     SUMMARY_NOT_PROVIDED: `Not provided`,
     EDIT_NAME: `Edit name`,
@@ -207,35 +205,31 @@ Responde con el número antes del tema (por ejemplo: 2,3). Si tienes un tema que
 Responde con el número antes del tipo de conexión (por ejemplo: 3, 4). Si tienes un tipo de conexión que no está en la lista, escríbelo como texto (por ejemplo 3,4 y Ciberseguridad).`,
     EVENTS: `También puedo conectarte con otros miembros de Grow3dge que asistirán a los mismos eventos y conferencias.
 
-¿Puedes compartir algún evento al que asistirás próximamente (nombre del evento, mes y ubicación)? (opcional)
+¿Puedes compartir algún evento al que asistirás próximamente (nombre del evento, fecha y ubicación)? (opcional)
 
 Para pasar a la siguiente pregunta, escribe 'Next'`,
-    SOCIALS: `¿Puedes compartir tus enlaces digitales y/o perfiles de redes sociales para que podamos compartirlos con aquellos con los que te conectemos? (opcional)
+    SOCIALS: `¿Puedes compartir tus enlaces digitales y/o perfiles de redes sociales para que podamos compartirlos con tus conexiones? (opcional)
 
 Para pasar a la siguiente pregunta, escribe 'Next'`,
-    TELEGRAM: `¿Cuál es tu nombre de usuario de Telegram para que las conexiones puedan contactarte? (por ejemplo: @usuario)`,
+    TELEGRAM: `¿Cuál es tu nombre de usuario de Telegram para que los miembros con los que te conectes puedan contactarte? (por ejemplo: @usuario)`,
     GENDER: `Somos un ecosistema que valora la inclusión de grupos subrepresentados en Web3. Estamos realizando investigaciones de mercado relacionadas con la industria para apoyar a estos grupos a lograr un acceso más equitativo a financiamiento, crecimiento y oportunidades profesionales.
 
-Si deseas compartir tus datos de género (de forma anónima) en nuestra investigación, proporciona cómo te identificas: (opcional)
-
-1. Ella
-2. Él
-3. Ellos/Ellas
-4. Otro
+Si deseas ser (anónimamente) incluido en nuestra investigación, por favor di Sí, Diversidad y te contactaremos pronto con nuestras preguntas de investigación y políticas.
 
 Para pasar a la siguiente pregunta, escribe 'Next'`,
     NOTIFICATIONS: `Una última cosa... ¿estarías interesado en recibir notificaciones de oportunidades de colaboración de proyectos y misiones iniciadas por SI<3> y sus socios del ecosistema?
 
 1. ¡Sí!
 2. No, gracias
-3. No estoy seguro aún, contáctame en otro momento`,
-    COMPLETION: `¡Muchas gracias por completar el registro! Ahora comenzaré a avisarte cuando haya miembros de nuestra red con intereses y necesidades alineados con los tuyos. 🎉`,
-    COMPLETION_2: `¿Cómo puedo ayudarte hoy, {{name}}?
+3. No estoy seguro aún, contáctame en otro momento
 
-Puedo ayudarte a:
-• Encontrar miembros relevantes de Grow3dge para conectar según tus intereses y necesidades - ¡solo pregunta!
-• Construir y editar tu perfil de miembro
-• Responder preguntas sobre Web3 (apenas estoy construyendo mi base de conocimientos)`,
+Por favor responde con el número (por ejemplo: 1)`,
+    COMPLETION: `¡Muchas gracias por completar el registro! 
+
+Por favor consulta tu perfil de miembro aquí. En cualquier momento que desees editar esta información, escribe 'Edit Profile' y te ayudaré a hacer actualizaciones.
+
+Mientras tanto, te avisaré cuando tenga una conexión de miembro para ti.`,
+    COMPLETION_2: ``, // Deprecated - keeping for backwards compatibility
     SUMMARY_TITLE: `Aquí está tu resumen. ¿Se ve bien?`,
     SUMMARY_NAME: `Nombre:`,
     SUMMARY_LOCATION: `Ubicación:`,
@@ -246,6 +240,7 @@ Puedo ayudarte a:
     SUMMARY_SOCIALS: `Enlaces Personales:`,
     SUMMARY_TELEGRAM: `Nombre de Usuario de Telegram:`,
     SUMMARY_GENDER: `Información de Género:`,
+    SUMMARY_DIVERSITY: `Interés en Investigación de Diversidad:`,
     SUMMARY_NOTIFICATIONS: `Notificaciones para Colaboraciones:`,
     SUMMARY_NOT_PROVIDED: `No proporcionado`,
     EDIT_NAME: `Editar nombre`,
@@ -317,35 +312,31 @@ Responda com o número antes do tópico (por exemplo: 2,3). Se você tem um tóp
 Responda com o número antes do tipo de conexão (por exemplo: 3, 4). Se você tem um tipo de conexão que não está na lista, digite isso como texto (por exemplo 3,4 e Cibersegurança).`,
     EVENTS: `Também posso conectá-lo com outros membros do Grow3dge que participarão dos mesmos eventos e conferências.
 
-Você pode compartilhar algum evento que participará em breve (nome do evento, mês e localização)? (opcional)
+Você pode compartilhar algum evento que participará em breve (nome do evento, data e localização)? (opcional)
 
 Para passar para a próxima pergunta, digite 'Next'`,
-    SOCIALS: `Você pode compartilhar seus links digitais e/ou perfis de redes sociais para que possamos compartilhá-los com aqueles com quem você for conectado? (opcional)
+    SOCIALS: `Você pode compartilhar seus links digitais e/ou perfis de redes sociais para que possamos compartilhá-los com suas conexões? (opcional)
 
 Para passar para a próxima pergunta, digite 'Next'`,
-    TELEGRAM: `Qual é o seu nome de usuário do Telegram para que as conexões possam entrar em contato? (por exemplo: @usuario)`,
+    TELEGRAM: `Qual é o seu nome de usuário do Telegram para que os membros com os quais você se conectar possam entrar em contato? (por exemplo: @usuario)`,
     GENDER: `Somos um ecossistema que valoriza a inclusão de grupos sub-representados na Web3. Estamos realizando pesquisas de mercado relacionadas à indústria para apoiar esses grupos a alcançar acesso mais equitativo a financiamento, crescimento e oportunidades de carreira.
 
-Se você gostaria de compartilhar seus dados de gênero (anonimamente) em nossa pesquisa, forneça como você se identifica: (opcional)
-
-1. Ela
-2. Ele
-3. Eles/Elas
-4. Outro
+Se você gostaria de ser (anonimamente) incluído em nossa pesquisa, por favor diga Sim, Diversidade e entraremos em contato em breve com nossas perguntas de pesquisa e políticas.
 
 Para passar para a próxima pergunta, digite 'Next'`,
     NOTIFICATIONS: `Uma última coisa... você estaria interessado em receber notificações de oportunidades de colaboração de projetos e missões iniciadas pela SI<3> e seus parceiros do ecossistema?
 
 1. Sim!
 2. Não, obrigado
-3. Ainda não tenho certeza, entre em contato comigo em outro momento`,
-    COMPLETION: `Muito obrigado por se registrar! Agora vou começar a avisá-lo quando houver membros de nossa rede com interesses e necessidades alinhados com os seus. 🎉`,
-    COMPLETION_2: `Como posso ajudá-lo hoje, {{name}}?
+3. Ainda não tenho certeza, entre em contato comigo em outro momento
 
-Posso ajudá-lo a:
-• Encontrar membros relevantes do Grow3dge para conectar com base em seus interesses e necessidades - é só perguntar!
-• Construir e editar seu perfil de membro
-• Responder perguntas sobre Web3 (estou apenas começando a construir minha base de conhecimento)`,
+Por favor responda com o número (por exemplo: 1)`,
+    COMPLETION: `Muito obrigado por se registrar! 
+
+Por favor, consulte seu perfil de membro aqui. A qualquer momento que desejar editar essas informações, digite 'Edit Profile' e eu o ajudarei a fazer atualizações.
+
+Enquanto isso, avisarei quando tiver uma conexão de membro para você.`,
+    COMPLETION_2: ``, // Deprecated - keeping for backwards compatibility
     SUMMARY_TITLE: `Aqui está o seu resumo. Parece correto?`,
     SUMMARY_NAME: `Nome:`,
     SUMMARY_LOCATION: `Localização:`,
@@ -356,6 +347,7 @@ Posso ajudá-lo a:
     SUMMARY_SOCIALS: `Links Pessoais:`,
     SUMMARY_TELEGRAM: `Nome de Usuário do Telegram:`,
     SUMMARY_GENDER: `Informações de Gênero:`,
+    SUMMARY_DIVERSITY: `Interesse em Pesquisa de Diversidade:`,
     SUMMARY_NOTIFICATIONS: `Notificações para Colaborações:`,
     SUMMARY_NOT_PROVIDED: `Não fornecido`,
     EDIT_NAME: `Editar nome`,
@@ -427,35 +419,31 @@ Répondez avec le numéro avant le sujet (par exemple: 2,3). Si vous avez un suj
 Répondez avec le numéro avant le type de connexion (par exemple: 3, 4). Si vous avez un type de connexion qui n'est pas dans la liste, tapez-le en texte (par exemple 3,4 et Cybersécurité).`,
     EVENTS: `Je peux également vous connecter avec d'autres membres de Grow3dge qui assistent aux mêmes événements et conférences.
 
-Pouvez-vous partager des événements auxquels vous assisterez prochainement (nom de l'événement, mois et lieu)? (optionnel)
+Pouvez-vous partager des événements auxquels vous assisterez prochainement (nom de l'événement, date et lieu)? (optionnel)
 
 Pour passer à la question suivante, tapez 'Next'`,
-    SOCIALS: `Pouvez-vous partager vos liens numériques et/ou profils de réseaux sociaux afin que nous puissions les partager avec ceux avec qui vous êtes mis en relation? (optionnel)
+    SOCIALS: `Pouvez-vous partager vos liens numériques et/ou profils de réseaux sociaux afin que nous puissions les partager avec vos correspondances? (optionnel)
 
 Pour passer à la question suivante, tapez 'Next'`,
-    TELEGRAM: `Quel est votre nom d'utilisateur Telegram pour que les correspondances puissent vous contacter? (par exemple: @utilisateur)`,
+    TELEGRAM: `Quel est votre nom d'utilisateur Telegram pour que les membres avec lesquels vous vous connectez puissent vous contacter? (par exemple: @utilisateur)`,
     GENDER: `Nous sommes un écosystème qui valorise l'inclusion de groupes sous-représentés dans Web3. Nous menons des recherches de marché liées à l'industrie pour soutenir ces groupes à atteindre un accès plus équitable au financement, à la croissance et aux opportunités de carrière.
 
-Si vous souhaitez partager vos données de genre (anonymement) dans notre recherche, veuillez indiquer comment vous vous identifiez: (optionnel)
-
-1. Elle
-2. Il
-3. Ils/Elles
-4. Autre
+Si vous souhaitez être (anonymement) inclus dans notre recherche, veuillez dire Oui, Diversité et nous vous contacterons bientôt avec nos questions de recherche et nos politiques.
 
 Pour passer à la question suivante, tapez 'Next'`,
     NOTIFICATIONS: `Une dernière chose... seriez-vous intéressé à recevoir des notifications pour les opportunités de collaboration de projets et de missions initiées par SI<3> et ses partenaires de l'écosystème?
 
 1. Oui!
 2. Non, merci
-3. Pas encore sûr, contactez-moi à un autre moment`,
-    COMPLETION: `Merci beaucoup pour votre inscription! Je vais maintenant commencer à vous informer lorsqu'il y a des membres de notre réseau avec des intérêts et des besoins alignés avec les vôtres. 🎉`,
-    COMPLETION_2: `Comment puis-je vous aider aujourd'hui, {{name}}?
+3. Pas encore sûr, contactez-moi à un autre moment
 
-Je peux vous aider à:
-• Trouver des membres Grow3dge pertinents à connecter selon vos intérêts et besoins - il suffit de demander!
-• Construire et modifier votre profil de membre
-• Répondre aux questions sur Web3 (je commence juste à construire ma base de connaissances)`,
+Veuillez répondre avec le numéro (par exemple: 1)`,
+    COMPLETION: `Merci beaucoup pour votre inscription! 
+
+Veuillez consulter votre profil de membre ici. À tout moment où vous souhaitez modifier ces données, tapez 'Edit Profile' et je vous aiderai à faire des mises à jour.
+
+En attendant, je vous informerai lorsque j'aurai une correspondance de membre pour vous.`,
+    COMPLETION_2: ``, // Deprecated - keeping for backwards compatibility
     SUMMARY_TITLE: `Voici votre résumé. Cela semble correct?`,
     SUMMARY_NAME: `Nom:`,
     SUMMARY_LOCATION: `Localisation:`,
@@ -466,6 +454,7 @@ Je peux vous aider à:
     SUMMARY_SOCIALS: `Liens Personnels:`,
     SUMMARY_TELEGRAM: `Nom d'Utilisateur Telegram:`,
     SUMMARY_GENDER: `Informations de Genre:`,
+    SUMMARY_DIVERSITY: `Intérêt pour la Recherche sur la Diversité:`,
     SUMMARY_NOTIFICATIONS: `Notifications pour Collaborations:`,
     SUMMARY_NOT_PROVIDED: `Non fourni`,
     EDIT_NAME: `Modifier le nom`,

@@ -28,6 +28,7 @@ export interface UserProfile {
   telegramHandle?: string;
   gender?: string;
   notifications?: string;
+  diversityResearchInterest?: string; // 'Yes', 'No', 'Not sure yet'
   isConfirmed?: boolean;
   isEditing?: boolean;
   editingField?: string;

@@ -1036,18 +1036,49 @@ async function startAgents() {
                         responseText = msgs.GENDER;
                         console.log('[Telegram Chat ID Capture] 📋 Telegram handle saved:', telegramHandle);
                       } else if (state.step === 'ASK_GENDER') {
+                        // Check if user wants to participate in diversity research
+                        const wantsDiversityResearch = lowerText.includes('yes') && (lowerText.includes('diversity') || lowerText.includes('diversidad') || lowerText.includes('diversidade') || lowerText.includes('diversité'));
+                        
+                        let diversityResearchInterest: string | undefined;
+                        if (wantsDiversityResearch) {
+                          diversityResearchInterest = 'Yes';
+                          // Track Telegram handle for diversity research
+                          try {
+                            const telegramHandle = state.profile.telegramHandle || chatId.toString();
+                            const db = kaiaRuntimeForOnboardingCheck.databaseAdapter as any;
+                            if (db && db.getDb) {
+                              const mongoDb = await db.getDb();
+                              const diversityCollection = mongoDb.collection('diversity_research');
+                              // Check if already exists
+                              const existing = await diversityCollection.findOne({ userId: userId });
+                              if (!existing) {
+                                await diversityCollection.insertOne({
+                                  userId: userId,
+                                  telegramHandle: telegramHandle,
+                                  roomId: chatId.toString(),
+                                  interestedAt: new Date(),
+                                  status: 'pending'
+                                });
+                                console.log('[Diversity Research] ✅ Tracked Telegram handle for diversity research:', telegramHandle);
+                              }
+                            }
+                          } catch (error) {
+                            console.error('[Diversity Research] Error tracking diversity research interest:', error);
+                            // Don't fail the onboarding flow if tracking fails
+                          }
+                        } else if (!isNext) {
+                          // User said something else (not "Yes, Diversity" and not "Next")
+                          diversityResearchInterest = 'No';
+                        }
+                        
                         // Save gender (or skip) and ask for notifications
                         let gender: string | undefined;
-                        if (!isNext) {
-                          if (lowerText.includes('1')) gender = 'She/Her';
-                          else if (lowerText.includes('2')) gender = 'He/Him';
-                          else if (lowerText.includes('3')) gender = 'They/Them';
-                          else if (lowerText.includes('4')) gender = messageText.trim();
-                          else gender = messageText.trim();
+                        if (!isNext && !wantsDiversityResearch) {
+                          gender = messageText.trim();
                         }
-                        await updateState('ASK_NOTIFICATIONS', { gender });
+                        await updateState('ASK_NOTIFICATIONS', { gender, diversityResearchInterest });
                         responseText = msgs.NOTIFICATIONS;
-                        console.log('[Telegram Chat ID Capture] 📋 Gender saved:', gender || 'skipped');
+                        console.log('[Telegram Chat ID Capture] 📋 Gender saved:', gender || 'skipped', 'Diversity research:', diversityResearchInterest || 'skipped');
                       } else if (state.step === 'ASK_NOTIFICATIONS') {
                         // Save notifications preference and complete
                         let notifications = 'Not sure';
@@ -1057,14 +1088,10 @@ async function startAgents() {
                         
                         await updateState('COMPLETED', { notifications, onboardingCompletedAt: new Date() });
                         
-                        // Send two-part completion message
-                        responseText = msgs.COMPLETION;
-                        // Send first message
-                        await originalSendMessage(chatId, responseText);
-                        
-                        // Get COMPLETION_2 with name substitution
-                        const completion2 = (msgs as any).COMPLETION_2 || `How can I support you today, {{name}}?\n\nI can help you:\n• Find relevant Grow3dge members to connect with based on your interests and needs - just ask!\n• Build and edit your member profile\n• Answer questions about Web3 (I am just starting to build my knowledge base)`;
-                        responseText = completion2.replace('{{name}}', state.profile.name || 'friend');
+                        // Send completion message with profile
+                        const { formatProfileForDisplay } = await import('./plugins/onboarding/utils.js');
+                        const profileText = formatProfileForDisplay(state.profile, state.profile.language || 'en');
+                        responseText = msgs.COMPLETION + '\n\n' + profileText;
                         
                         console.log('[Telegram Chat ID Capture] 📋 Onboarding completed!');
                         
@@ -1078,23 +1105,47 @@ async function startAgents() {
                         }, 5000);
                       } else if (state.step === 'AWAITING_UPDATE_FIELD') {
                         // User is choosing which field to update
-                        const fieldMap: Record<string, { step: string, prompt: string }> = {
-                          'name': { step: 'UPDATING_NAME', prompt: 'What would you like to change your name to?' },
-                          'location': { step: 'UPDATING_LOCATION', prompt: 'What is your new location (city and country)?' },
-                          'roles': { step: 'UPDATING_ROLES', prompt: msgs.ROLES },
-                          'interests': { step: 'UPDATING_INTERESTS', prompt: msgs.INTERESTS },
-                          'goals': { step: 'UPDATING_GOALS', prompt: msgs.GOALS },
-                          'events': { step: 'UPDATING_EVENTS', prompt: 'What events will you be attending? (event name, month, location)' },
-                          'socials': { step: 'UPDATING_SOCIALS', prompt: 'Share your social media links:' },
-                          'telegram': { step: 'UPDATING_TELEGRAM', prompt: 'What is your Telegram handle? (e.g., @username)' },
-                          'notifications': { step: 'UPDATING_NOTIFICATIONS', prompt: msgs.NOTIFICATIONS }
+                        const fieldMap: Record<string, { step: string, prompt: string, number: number }> = {
+                          'name': { step: 'UPDATING_NAME', prompt: 'What would you like to change your name to?', number: 1 },
+                          'location': { step: 'UPDATING_LOCATION', prompt: 'What is your new location (city and country)?', number: 2 },
+                          'roles': { step: 'UPDATING_ROLES', prompt: msgs.ROLES, number: 3 },
+                          'interests': { step: 'UPDATING_INTERESTS', prompt: msgs.INTERESTS, number: 4 },
+                          'goals': { step: 'UPDATING_GOALS', prompt: msgs.GOALS, number: 5 },
+                          'events': { step: 'UPDATING_EVENTS', prompt: 'What events will you be attending? (event name, date, location)', number: 6 },
+                          'socials': { step: 'UPDATING_SOCIALS', prompt: 'Share your social media links:', number: 7 },
+                          'telegram': { step: 'UPDATING_TELEGRAM', prompt: 'What is your Telegram handle? (e.g., @username)', number: 8 },
+                          'diversity': { step: 'UPDATING_DIVERSITY', prompt: 'Would you like to be (anonymously) included within our diversity research?\n\n1. Yes\n2. No\n3. Not sure yet\n\nPlease reply with the number (for example: 1)', number: 9 },
+                          'notifications': { step: 'UPDATING_NOTIFICATIONS', prompt: msgs.NOTIFICATIONS, number: 10 }
                         };
                         
+                        // Check for number input (1-10)
+                        const numberMatch = lowerText.match(/\b([1-9]|10)\b/);
                         let matchedField: string | null = null;
-                        for (const field of Object.keys(fieldMap)) {
-                          if (lowerText.includes(field)) {
-                            matchedField = field;
-                            break;
+                        
+                        if (numberMatch) {
+                          // User provided a number
+                          const fieldNumber = parseInt(numberMatch[1]);
+                          const fieldEntry = Object.entries(fieldMap).find(([_, info]) => info.number === fieldNumber);
+                          if (fieldEntry) {
+                            matchedField = fieldEntry[0];
+                          }
+                        } else {
+                          // Check for field name in text
+                          for (const [field, _] of Object.entries(fieldMap)) {
+                            if (lowerText.includes(field) || 
+                                (field === 'name' && (lowerText.includes('name') || lowerText.includes('nombre'))) ||
+                                (field === 'location' && (lowerText.includes('location') || lowerText.includes('ubicación') || lowerText.includes('localização'))) ||
+                                (field === 'roles' && (lowerText.includes('role') || lowerText.includes('rol'))) ||
+                                (field === 'interests' && (lowerText.includes('interest') || lowerText.includes('interés'))) ||
+                                (field === 'goals' && lowerText.includes('goal')) ||
+                                (field === 'events' && (lowerText.includes('event') || lowerText.includes('conference'))) ||
+                                (field === 'socials' && (lowerText.includes('social') || lowerText.includes('link'))) ||
+                                (field === 'telegram' && lowerText.includes('telegram')) ||
+                                (field === 'diversity' && (lowerText.includes('diversity') || lowerText.includes('diversidad'))) ||
+                                (field === 'notifications' && (lowerText.includes('notification') || lowerText.includes('collab')))) {
+                              matchedField = field;
+                              break;
+                            }
                           }
                         }
                         
@@ -1103,7 +1154,18 @@ async function startAgents() {
                           await updateState(updateInfo.step, {});
                           responseText = updateInfo.prompt;
                         } else {
-                          responseText = `I didn't recognize that field. Please choose from:\n\n• Name\n• Location\n• Roles\n• Interests\n• Goals\n• Events\n• Socials\n• Telegram\n• Notifications`;
+                          responseText = `I didn't recognize that field. Please choose from:\n\n` +
+                            `1. Name\n` +
+                            `2. Location\n` +
+                            `3. Professional role(s)\n` +
+                            `4. Professional interests\n` +
+                            `5. Professional goals\n` +
+                            `6. Events & conferences attending\n` +
+                            `7. Personal social and/or digital links\n` +
+                            `8. Telegram handle\n` +
+                            `9. Diversity research interest\n` +
+                            `10. Collaboration notifications\n\n` +
+                            `Just type the field number(s) (e.g. 1, 3).`;
                         }
                       } else if (state.step.startsWith('UPDATING_')) {
                         // Handle update for specific field
@@ -1117,6 +1179,58 @@ async function startAgents() {
                           if (lowerText.includes('1') || lowerText.includes('yes')) updateValue = 'Yes';
                           else if (lowerText.includes('2') || lowerText.includes('no')) updateValue = 'No';
                           else if (lowerText.includes('3')) updateValue = 'Check later';
+                        } else if (fieldBeingUpdated === 'diversity') {
+                          // Handle diversity research interest
+                          if (lowerText.includes('1') || lowerText.includes('yes')) {
+                            updateValue = 'Yes';
+                            // Track Telegram handle for diversity research if they said Yes
+                            try {
+                              const telegramHandle = state.profile.telegramHandle || chatId.toString();
+                              const db = kaiaRuntimeForOnboardingCheck.databaseAdapter as any;
+                              if (db && db.getDb) {
+                                const mongoDb = await db.getDb();
+                                const diversityCollection = mongoDb.collection('diversity_research');
+                                // Check if already exists
+                                const existing = await diversityCollection.findOne({ userId: userId });
+                                if (!existing) {
+                                  await diversityCollection.insertOne({
+                                    userId: userId,
+                                    telegramHandle: telegramHandle,
+                                    roomId: chatId.toString(),
+                                    interestedAt: new Date(),
+                                    status: 'pending'
+                                  });
+                                  console.log('[Diversity Research] ✅ Tracked Telegram handle for diversity research:', telegramHandle);
+                                } else {
+                                  // Update existing record
+                                  await diversityCollection.updateOne(
+                                    { userId: userId },
+                                    { $set: { interestedAt: new Date(), status: 'pending' } }
+                                  );
+                                  console.log('[Diversity Research] ✅ Updated diversity research interest');
+                                }
+                              }
+                            } catch (error) {
+                              console.error('[Diversity Research] Error tracking diversity research interest:', error);
+                              // Don't fail the update if tracking fails
+                            }
+                          } else if (lowerText.includes('2') || lowerText.includes('no')) {
+                            updateValue = 'No';
+                            // Remove from diversity research tracking if they said No
+                            try {
+                              const db = kaiaRuntimeForOnboardingCheck.databaseAdapter as any;
+                              if (db && db.getDb) {
+                                const mongoDb = await db.getDb();
+                                const diversityCollection = mongoDb.collection('diversity_research');
+                                await diversityCollection.deleteOne({ userId: userId });
+                                console.log('[Diversity Research] ✅ Removed from diversity research tracking');
+                              }
+                            } catch (error) {
+                              console.error('[Diversity Research] Error removing from tracking:', error);
+                            }
+                          } else if (lowerText.includes('3') || lowerText.includes('not sure')) {
+                            updateValue = 'Not sure yet';
+                          }
                         } else if (fieldBeingUpdated === 'telegram') {
                           updateValue = messageText.trim().replace('@', '');
                         }
@@ -1131,6 +1245,7 @@ async function startAgents() {
                           'events': 'events',
                           'socials': 'socials',
                           'telegram': 'telegramHandle',
+                          'diversity': 'diversityResearchInterest',
                           'notifications': 'notifications'
                         };
                         
@@ -1139,7 +1254,7 @@ async function startAgents() {
                         updateObj[profileKey] = updateValue;
                         
                         await updateState('COMPLETED', updateObj);
-                        responseText = `✅ Your ${fieldBeingUpdated} has been updated!\n\nSay "my profile" to see your updated profile, or ask me anything else! 💜`;
+                        responseText = `✅ Your ${fieldBeingUpdated === 'diversity' ? 'diversity research interest' : fieldBeingUpdated} has been updated!\n\nSay "my profile" to see your updated profile, or ask me anything else! 💜`;
                         console.log(`[Telegram Chat ID Capture] ✏️ Updated ${fieldBeingUpdated} to:`, updateValue);
                       } else if (state.step === 'COMPLETED') {
                         // User has completed onboarding - handle all commands with full features
@@ -1177,7 +1292,16 @@ async function startAgents() {
                         const isMatchRequest = lowerText.includes('match') || lowerText.includes('connect me') || lowerText.includes('find someone') || lowerText.includes('find me') || lowerText.includes('introduce');
                         const isHistoryRequest = lowerText.includes('history') || lowerText.includes('my profile') || lowerText.includes('my matches') || lowerText.includes('show profile');
                         const isLanguageChange = lowerText.includes('change language') || lowerText.includes('cambiar idioma') || lowerText.includes('mudar idioma') || lowerText.includes('changer de langue');
-                        const isUpdateRequest = lowerText === 'update' || lowerText.startsWith('update ') || lowerText.includes('edit my') || lowerText.includes('change my');
+                        const isUpdateRequest = lowerText === 'update' || 
+                          lowerText.startsWith('update ') || 
+                          lowerText.includes('edit my') || 
+                          lowerText.includes('change my') ||
+                          lowerText.includes('edit profile') ||
+                          lowerText.includes('change details') ||
+                          lowerText.includes('update profile') ||
+                          lowerText.includes('edit details') ||
+                          lowerText.includes('modify profile') ||
+                          lowerText.includes('change profile');
                         const isFeatureRequest = (lowerText.includes('feature') && lowerText.includes('request')) || 
                                                  (lowerText.includes('suggest') && lowerText.length > 30);
                         const isHelpRequest = lowerText === 'help' || lowerText === '?' || lowerText.includes('what can you do');
@@ -1337,6 +1461,7 @@ async function startAgents() {
                             `Events: ${p.events?.join(', ') || 'None'}\n` +
                             `Socials: ${p.socials?.join(', ') || 'None'}\n` +
                             `Telegram: ${p.telegramHandle ? '@' + p.telegramHandle : 'Not set'}\n` +
+                            `Diversity Research Interest: ${p.diversityResearchInterest || 'Not set'}\n` +
                             `Notifications: ${p.notifications || 'Not set'}\n` +
                             `Total Matches: ${matchCount}` +
                             matchList +
@@ -1345,24 +1470,48 @@ async function startAgents() {
                           // ==================== PROFILE UPDATE FEATURE ====================
                           console.log('[Telegram Chat ID Capture] ✏️ Update request...');
                           
-                          // Check if they specified what to update
-                          const updateFields: Record<string, { step: string, prompt: string }> = {
-                            'name': { step: 'UPDATING_NAME', prompt: 'What would you like to change your name to?' },
-                            'location': { step: 'UPDATING_LOCATION', prompt: 'What is your new location (city and country)?' },
-                            'roles': { step: 'UPDATING_ROLES', prompt: msgs.ROLES },
-                            'interests': { step: 'UPDATING_INTERESTS', prompt: msgs.INTERESTS },
-                            'goals': { step: 'UPDATING_GOALS', prompt: msgs.GOALS },
-                            'events': { step: 'UPDATING_EVENTS', prompt: 'What events will you be attending? (event name, month, location)' },
-                            'socials': { step: 'UPDATING_SOCIALS', prompt: 'Share your social media links:' },
-                            'telegram': { step: 'UPDATING_TELEGRAM', prompt: 'What is your Telegram handle? (e.g., @username)' },
-                            'notifications': { step: 'UPDATING_NOTIFICATIONS', prompt: msgs.NOTIFICATIONS }
+                          // Check if they specified what to update by number or name
+                          const updateFields: Record<string, { step: string, prompt: string, number: number }> = {
+                            'name': { step: 'UPDATING_NAME', prompt: 'What would you like to change your name to?', number: 1 },
+                            'location': { step: 'UPDATING_LOCATION', prompt: 'What is your new location (city and country)?', number: 2 },
+                            'roles': { step: 'UPDATING_ROLES', prompt: msgs.ROLES, number: 3 },
+                            'interests': { step: 'UPDATING_INTERESTS', prompt: msgs.INTERESTS, number: 4 },
+                            'goals': { step: 'UPDATING_GOALS', prompt: msgs.GOALS, number: 5 },
+                            'events': { step: 'UPDATING_EVENTS', prompt: 'What events will you be attending? (event name, date, location)', number: 6 },
+                            'socials': { step: 'UPDATING_SOCIALS', prompt: 'Share your social media links:', number: 7 },
+                            'telegram': { step: 'UPDATING_TELEGRAM', prompt: 'What is your Telegram handle? (e.g., @username)', number: 8 },
+                            'diversity': { step: 'UPDATING_DIVERSITY', prompt: 'Would you like to be (anonymously) included within our diversity research?\n\n1. Yes\n2. No\n3. Not sure yet\n\nPlease reply with the number (for example: 1)', number: 9 },
+                            'notifications': { step: 'UPDATING_NOTIFICATIONS', prompt: msgs.NOTIFICATIONS, number: 10 }
                           };
                           
+                          // Check for number input (1-10)
+                          const numberMatch = lowerText.match(/\b([1-9]|10)\b/);
                           let fieldToUpdate: string | null = null;
-                          for (const [field, _] of Object.entries(updateFields)) {
-                            if (lowerText.includes(field)) {
-                              fieldToUpdate = field;
-                              break;
+                          
+                          if (numberMatch) {
+                            // User provided a number
+                            const fieldNumber = parseInt(numberMatch[1]);
+                            const fieldEntry = Object.entries(updateFields).find(([_, info]) => info.number === fieldNumber);
+                            if (fieldEntry) {
+                              fieldToUpdate = fieldEntry[0];
+                            }
+                          } else {
+                            // Check for field name in text
+                            for (const [field, _] of Object.entries(updateFields)) {
+                              if (lowerText.includes(field) || 
+                                  (field === 'name' && (lowerText.includes('name') || lowerText.includes('nombre'))) ||
+                                  (field === 'location' && (lowerText.includes('location') || lowerText.includes('ubicación') || lowerText.includes('localização'))) ||
+                                  (field === 'roles' && (lowerText.includes('role') || lowerText.includes('rol'))) ||
+                                  (field === 'interests' && (lowerText.includes('interest') || lowerText.includes('interés'))) ||
+                                  (field === 'goals' && lowerText.includes('goal')) ||
+                                  (field === 'events' && (lowerText.includes('event') || lowerText.includes('conference'))) ||
+                                  (field === 'socials' && (lowerText.includes('social') || lowerText.includes('link'))) ||
+                                  (field === 'telegram' && lowerText.includes('telegram')) ||
+                                  (field === 'diversity' && (lowerText.includes('diversity') || lowerText.includes('diversidad'))) ||
+                                  (field === 'notifications' && (lowerText.includes('notification') || lowerText.includes('collab')))) {
+                                fieldToUpdate = field;
+                                break;
+                              }
                             }
                           }
                           
@@ -1372,11 +1521,20 @@ async function startAgents() {
                             await updateState(updateInfo.step, {});
                             responseText = updateInfo.prompt;
                           } else {
-                            // They just said "update" - ask what they want to update
+                            // They just said "update" - ask what they want to update with numbered list
                             await updateState('AWAITING_UPDATE_FIELD', {});
                             responseText = `What would you like to update? 📝\n\n` +
-                              `• Name\n• Location\n• Roles\n• Interests\n• Goals\n• Events\n• Socials\n• Telegram\n• Notifications\n\n` +
-                              `Just type the field name (e.g., "name" or "interests").`;
+                              `1. Name\n` +
+                              `2. Location\n` +
+                              `3. Professional role(s)\n` +
+                              `4. Professional interests\n` +
+                              `5. Professional goals\n` +
+                              `6. Events & conferences attending\n` +
+                              `7. Personal social and/or digital links\n` +
+                              `8. Telegram handle\n` +
+                              `9. Diversity research interest\n` +
+                              `10. Collaboration notifications\n\n` +
+                              `Just type the field number(s) (e.g. 1, 3).`;
                           }
                         } else if (isLanguageChange) {
                           // LANGUAGE CHANGE

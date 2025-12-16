@@ -1,5 +1,5 @@
 import { Provider, IAgentRuntime, Memory, State } from '@elizaos/core';
-import { getOnboardingStep, getUserProfile } from './utils.js';
+import { getOnboardingStep, getUserProfile, formatProfileForDisplay } from './utils.js';
 import { getMessages, LanguageCode } from './translations.js';
 import { OnboardingStep } from './types.js';
 import { checkActionExecutedRecently, getOnboardingStepFromCache } from '../../services/llmResponseInterceptor.js';
@@ -247,9 +247,12 @@ After sending this message, wait for the user's response with notification prefe
       `${msgs.CONFIRM}`;
     
     if (messageText.includes('confirm') || messageText.includes('yes') || messageText.includes('check')) {
+      const profileText = formatProfileForDisplay(profile, userLang);
       return `[ONBOARDING STEP: CONFIRMATION - User confirmed their profile. Send this EXACT message word-for-word. Do not modify, paraphrase, or add anything:
 
 ${msgs.COMPLETION}
+
+${profileText}
 
 After sending this message, the action handler will mark onboarding as COMPLETED.]`;
     } else {
