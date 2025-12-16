@@ -1256,6 +1256,48 @@ async function startAgents() {
                         await updateState('COMPLETED', updateObj);
                         responseText = `✅ Your ${fieldBeingUpdated === 'diversity' ? 'diversity research interest' : fieldBeingUpdated} has been updated!\n\nSay "my profile" to see your updated profile, or ask me anything else! 💜`;
                         console.log(`[Telegram Chat ID Capture] ✏️ Updated ${fieldBeingUpdated} to:`, updateValue);
+                      } else if (state.step === 'AWAITING_FEATURE_DETAILS') {
+                        // User is providing feature request details
+                        console.log('[Telegram Chat ID Capture] 💡 Feature request details received...');
+                        
+                        // Try to send email first
+                        let emailSent = false;
+                        try {
+                          const { sendFeatureRequest } = await import('./services/featureRequest.js');
+                          await sendFeatureRequest(userId, state.profile.name || 'Anonymous', messageText, messageText);
+                          emailSent = true;
+                          console.log('[Feature Request] ✅ Email sent successfully');
+                        } catch (emailError: any) {
+                          console.log('[Feature Request] ⚠️ Could not send email:', emailError.message);
+                          // Continue to save to database even if email fails
+                        }
+                        
+                        // Always save to database as backup
+                        try {
+                          const db = kaiaRuntimeForOnboardingCheck.databaseAdapter as any;
+                          if (db && db.query) {
+                            const { v4: uuidv4 } = await import('uuid');
+                            await db.query(
+                              `INSERT INTO feature_requests (id, user_id, user_name, request_text, created_at) VALUES ($1, $2, $3, $4, NOW())`,
+                              [uuidv4(), userId, state.profile.name || 'Anonymous', messageText]
+                            );
+                            console.log('[Feature Request] ✅ Saved to database');
+                          }
+                        } catch (e) {
+                          console.log('[Feature Request] Could not save to DB:', e);
+                        }
+                        
+                        await updateState('COMPLETED', {});
+                        
+                        if (emailSent) {
+                          responseText = `Thank you for your suggestion, ${state.profile.name}! 💜\n\n` +
+                            `I've sent your request to members@si3.space:\n"${messageText.substring(0, 200)}${messageText.length > 200 ? '...' : ''}"\n\n` +
+                            `The SI<3> team reviews all suggestions. Your feedback helps make me better! 🚀`;
+                        } else {
+                          responseText = `Thank you for your suggestion, ${state.profile.name}! 💜\n\n` +
+                            `I've recorded your request:\n"${messageText.substring(0, 200)}${messageText.length > 200 ? '...' : ''}"\n\n` +
+                            `The SI<3> team reviews all suggestions. Your feedback helps make me better! 🚀`;
+                        }
                       } else if (state.step === 'COMPLETED') {
                         // User has completed onboarding - handle all commands with full features
                         console.log('[Telegram Chat ID Capture] 🤖 Processing completed user request...');
@@ -1583,48 +1625,6 @@ async function startAgents() {
                             responseText = `✅ Language changed to ${langNames[newLang]}! I'll respond in ${langNames[newLang]} from now on. 💜`;
                           } else {
                             responseText = "Which language would you like?\n\n• English\n• Español\n• Português\n• Français\n\nJust say 'change language to [language]'";
-                          }
-                        } else if (state.step === 'AWAITING_FEATURE_DETAILS') {
-                          // User is providing feature request details
-                          console.log('[Telegram Chat ID Capture] 💡 Feature request details received...');
-                          
-                          // Try to send email first
-                          let emailSent = false;
-                          try {
-                            const { sendFeatureRequest } = await import('./services/featureRequest.js');
-                            await sendFeatureRequest(userId, state.profile.name || 'Anonymous', messageText, messageText);
-                            emailSent = true;
-                            console.log('[Feature Request] ✅ Email sent successfully');
-                          } catch (emailError: any) {
-                            console.log('[Feature Request] ⚠️ Could not send email:', emailError.message);
-                            // Continue to save to database even if email fails
-                          }
-                          
-                          // Always save to database as backup
-                          try {
-                            const db = kaiaRuntimeForOnboardingCheck.databaseAdapter as any;
-                            if (db && db.query) {
-                              const { v4: uuidv4 } = await import('uuid');
-                              await db.query(
-                                `INSERT INTO feature_requests (id, user_id, user_name, request_text, created_at) VALUES ($1, $2, $3, $4, NOW())`,
-                                [uuidv4(), userId, state.profile.name || 'Anonymous', messageText]
-                              );
-                              console.log('[Feature Request] ✅ Saved to database');
-                            }
-                          } catch (e) {
-                            console.log('[Feature Request] Could not save to DB:', e);
-                          }
-                          
-                          await updateState('COMPLETED', {});
-                          
-                          if (emailSent) {
-                            responseText = `Thank you for your suggestion, ${state.profile.name}! 💜\n\n` +
-                              `I've sent your request to members@si3.space:\n"${messageText.substring(0, 200)}${messageText.length > 200 ? '...' : ''}"\n\n` +
-                              `The SI<3> team reviews all suggestions. Your feedback helps make me better! 🚀`;
-                          } else {
-                            responseText = `Thank you for your suggestion, ${state.profile.name}! 💜\n\n` +
-                              `I've recorded your request:\n"${messageText.substring(0, 200)}${messageText.length > 200 ? '...' : ''}"\n\n` +
-                              `The SI<3> team reviews all suggestions. Your feedback helps make me better! 🚀`;
                           }
                         } else if (isFeatureRequest) {
                           // FEATURE REQUEST - Check if details are included
