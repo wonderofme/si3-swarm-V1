@@ -1037,7 +1037,11 @@ async function startAgents() {
                         console.log('[Telegram Chat ID Capture] 📋 Telegram handle saved:', telegramHandle);
                       } else if (state.step === 'ASK_GENDER') {
                         // Check if user wants to participate in diversity research
-                        const wantsDiversityResearch = lowerText.includes('yes') && (lowerText.includes('diversity') || lowerText.includes('diversidad') || lowerText.includes('diversidade') || lowerText.includes('diversité'));
+                        // If they say "Yes" (with or without "Diversity"), or "Yes, Diversity", treat as wanting to participate
+                        // If they say "Next" or "No", treat as not interested
+                        const saidYes = lowerText.includes('yes') || lowerText.includes('sí') || lowerText.includes('sim') || lowerText.includes('oui');
+                        const saidNo = lowerText.includes('no') && !lowerText.includes('not sure');
+                        const wantsDiversityResearch = saidYes && !saidNo && !isNext;
                         
                         let diversityResearchInterest: string | undefined;
                         if (wantsDiversityResearch) {
@@ -1060,20 +1064,40 @@ async function startAgents() {
                                   status: 'pending'
                                 });
                                 console.log('[Diversity Research] ✅ Tracked Telegram handle for diversity research:', telegramHandle);
+                              } else {
+                                // Update existing record
+                                await diversityCollection.updateOne(
+                                  { userId: userId },
+                                  { $set: { interestedAt: new Date(), status: 'pending' } }
+                                );
+                                console.log('[Diversity Research] ✅ Updated diversity research interest');
                               }
                             }
                           } catch (error) {
                             console.error('[Diversity Research] Error tracking diversity research interest:', error);
                             // Don't fail the onboarding flow if tracking fails
                           }
-                        } else if (!isNext) {
-                          // User said something else (not "Yes, Diversity" and not "Next")
+                        } else if (saidNo || isNext) {
+                          // User explicitly said "No" or skipped with "Next"
                           diversityResearchInterest = 'No';
+                          // Remove from diversity research tracking if they said No
+                          try {
+                            const db = kaiaRuntimeForOnboardingCheck.databaseAdapter as any;
+                            if (db && db.getDb) {
+                              const mongoDb = await db.getDb();
+                              const diversityCollection = mongoDb.collection('diversity_research');
+                              await diversityCollection.deleteOne({ userId: userId });
+                              console.log('[Diversity Research] ✅ Removed from diversity research tracking');
+                            }
+                          } catch (error) {
+                            console.error('[Diversity Research] Error removing from tracking:', error);
+                          }
                         }
                         
                         // Save gender (or skip) and ask for notifications
                         let gender: string | undefined;
-                        if (!isNext && !wantsDiversityResearch) {
+                        if (!isNext && !wantsDiversityResearch && !saidYes) {
+                          // Only save gender if it's not a diversity research response
                           gender = messageText.trim();
                         }
                         await updateState('ASK_NOTIFICATIONS', { gender, diversityResearchInterest });
@@ -1335,7 +1359,9 @@ async function startAgents() {
                         const isHistoryRequest = lowerText.includes('history') || lowerText.includes('my profile') || lowerText.includes('my matches') || lowerText.includes('show profile');
                         const isLanguageChange = lowerText.includes('change language') || lowerText.includes('cambiar idioma') || lowerText.includes('mudar idioma') || lowerText.includes('changer de langue');
                         const isUpdateRequest = lowerText === 'update' || 
+                          lowerText === 'edit' ||
                           lowerText.startsWith('update ') || 
+                          lowerText.startsWith('edit ') ||
                           lowerText.includes('edit my') || 
                           lowerText.includes('change my') ||
                           lowerText.includes('edit profile') ||

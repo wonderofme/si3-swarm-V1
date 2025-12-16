@@ -476,9 +476,14 @@ export const continueOnboardingAction: Action = {
         } else {
           // Check if user wants to participate in diversity research
           const lowerText = text.toLowerCase().trim();
-          const wantsDiversityResearch = lowerText.includes('yes') && (lowerText.includes('diversity') || lowerText.includes('diversidad') || lowerText.includes('diversidade') || lowerText.includes('diversité'));
+          const saidYes = lowerText.includes('yes') || lowerText.includes('sí') || lowerText.includes('sim') || lowerText.includes('oui');
+          const saidNo = lowerText.includes('no') && !lowerText.includes('not sure');
+          const isNext = lowerText === 'next';
+          const wantsDiversityResearch = saidYes && !saidNo && !isNext;
           
+          let diversityResearchInterest: string | undefined;
           if (wantsDiversityResearch) {
+            diversityResearchInterest = 'Yes';
             // Track Telegram handle for diversity research
             try {
               const profile = await getUserProfile(runtime, message.userId);
@@ -489,24 +494,49 @@ export const continueOnboardingAction: Action = {
               if (db && db.getDb) {
                 const mongoDb = await db.getDb();
                 const diversityCollection = mongoDb.collection('diversity_research');
-                await diversityCollection.insertOne({
-                  userId: message.userId,
-                  telegramHandle: telegramHandle,
-                  roomId: roomId,
-                  interestedAt: new Date(),
-                  status: 'pending'
-                });
-                console.log('[Diversity Research] ✅ Tracked Telegram handle for diversity research:', telegramHandle);
+                // Check if already exists
+                const existing = await diversityCollection.findOne({ userId: message.userId });
+                if (!existing) {
+                  await diversityCollection.insertOne({
+                    userId: message.userId,
+                    telegramHandle: telegramHandle,
+                    roomId: roomId,
+                    interestedAt: new Date(),
+                    status: 'pending'
+                  });
+                  console.log('[Diversity Research] ✅ Tracked Telegram handle for diversity research:', telegramHandle);
+                } else {
+                  // Update existing record
+                  await diversityCollection.updateOne(
+                    { userId: message.userId },
+                    { $set: { interestedAt: new Date(), status: 'pending' } }
+                  );
+                  console.log('[Diversity Research] ✅ Updated diversity research interest');
+                }
               }
             } catch (error) {
               console.error('[Diversity Research] Error tracking diversity research interest:', error);
               // Don't fail the onboarding flow if tracking fails
             }
+          } else if (saidNo || isNext) {
+            diversityResearchInterest = 'No';
+            // Remove from diversity research tracking if they said No
+            try {
+              const db = runtime.databaseAdapter as any;
+              if (db && db.getDb) {
+                const mongoDb = await db.getDb();
+                const diversityCollection = mongoDb.collection('diversity_research');
+                await diversityCollection.deleteOne({ userId: message.userId });
+                console.log('[Diversity Research] ✅ Removed from diversity research tracking');
+              }
+            } catch (error) {
+              console.error('[Diversity Research] Error removing from tracking:', error);
+            }
           }
           
           // Handle "next" to skip optional question
-          const genderValue = text.toLowerCase().trim() === 'next' ? undefined : text;
-          await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_NOTIFICATIONS', { gender: genderValue });
+          const genderValue = isNext ? undefined : (wantsDiversityResearch ? undefined : text);
+          await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_NOTIFICATIONS', { gender: genderValue, diversityResearchInterest });
           if (roomId) recordActionExecution(roomId);
           // LLM will send the notifications question via provider
           console.log('[Onboarding Action] State updated to ASK_NOTIFICATIONS - LLM will send message via provider');
