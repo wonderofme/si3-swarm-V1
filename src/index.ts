@@ -936,24 +936,96 @@ async function startAgents() {
                       
                       const userId = update.message?.from?.id?.toString() || chatId;
                       
-                      // Get state from cache only
+                      // Get state from cache first, then database (for persistence across deployments)
                       let state: { step: string, profile: any } = { step: 'NONE', profile: {} };
                       try {
                         const cached = await kaiaRuntimeForOnboardingCheck.cacheManager.get(`onboarding_${userId}`);
                         if (cached && typeof cached === 'object') {
                           state = cached as { step: string, profile: any };
+                          console.log('[Telegram Chat ID Capture] 📋 Loaded state from cache');
+                        } else {
+                          // Cache miss - try database
+                          const db = kaiaRuntimeForOnboardingCheck.databaseAdapter as any;
+                          if (db && db.query) {
+                            // PostgreSQL
+                            const result = await db.query(
+                              `SELECT value FROM cache WHERE key = $1`,
+                              [`onboarding_${userId}`]
+                            );
+                            if (result.rows && result.rows.length > 0) {
+                              const dbValue = typeof result.rows[0].value === 'string' 
+                                ? JSON.parse(result.rows[0].value) 
+                                : result.rows[0].value;
+                              if (dbValue && typeof dbValue === 'object') {
+                                state = dbValue;
+                                // Restore to cache for faster access
+                                await kaiaRuntimeForOnboardingCheck.cacheManager.set(`onboarding_${userId}`, state);
+                                console.log('[Telegram Chat ID Capture] 💾 Loaded state from database and restored to cache');
+                              }
+                            }
+                          } else if (db && db.getDb) {
+                            // MongoDB
+                            const mongoDb = await db.getDb();
+                            const cacheCollection = mongoDb.collection('cache');
+                            const dbDoc = await cacheCollection.findOne({ key: `onboarding_${userId}` });
+                            if (dbDoc && dbDoc.value) {
+                              state = typeof dbDoc.value === 'string' ? JSON.parse(dbDoc.value) : dbDoc.value;
+                              // Restore to cache for faster access
+                              await kaiaRuntimeForOnboardingCheck.cacheManager.set(`onboarding_${userId}`, state);
+                              console.log('[Telegram Chat ID Capture] 💾 Loaded state from MongoDB and restored to cache');
+                            }
+                          }
                         }
                       } catch (cacheErr) {
-                        console.log('[Telegram Chat ID Capture] Cache read error, using default state');
+                        console.log('[Telegram Chat ID Capture] Cache/database read error, using default state:', cacheErr);
                       }
                       
-                      // Helper to update state (cache only, no database)
+                      // Helper to update state (cache + database for persistence)
                       const updateState = async (newStep: string, profileUpdate: any = {}) => {
                         const newState = {
                           step: newStep,
                           profile: { ...state.profile, ...profileUpdate }
                         };
+                        
+                        // Save to cache (fast access)
                         await kaiaRuntimeForOnboardingCheck.cacheManager.set(`onboarding_${userId}`, newState);
+                        
+                        // CRITICAL: Also persist to database so it survives deployments
+                        try {
+                          const db = kaiaRuntimeForOnboardingCheck.databaseAdapter as any;
+                          if (db && db.query) {
+                            // PostgreSQL: Save as JSON in cache table
+                            await db.query(
+                              `INSERT INTO cache (key, value, created_at, updated_at) 
+                               VALUES ($1, $2, NOW(), NOW())
+                               ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW()`,
+                              [`onboarding_${userId}`, JSON.stringify(newState)]
+                            );
+                            console.log('[Telegram Chat ID Capture] 💾 Persisted state to database');
+                          } else if (db && db.getDb) {
+                            // MongoDB: Save to collection
+                            const mongoDb = await db.getDb();
+                            const cacheCollection = mongoDb.collection('cache');
+                            await cacheCollection.updateOne(
+                              { key: `onboarding_${userId}` },
+                              { 
+                                $set: { 
+                                  value: newState,
+                                  updated_at: new Date()
+                                },
+                                $setOnInsert: {
+                                  created_at: new Date()
+                                }
+                              },
+                              { upsert: true }
+                            );
+                            console.log('[Telegram Chat ID Capture] 💾 Persisted state to MongoDB');
+                          }
+                        } catch (dbError: any) {
+                          console.error('[Telegram Chat ID Capture] ⚠️ Could not persist to database:', dbError.message);
+                          // Continue even if database save fails - cache is still updated
+                        }
+                        
                         state = newState;
                         console.log('[Telegram Chat ID Capture] 📋 Updated state to:', newStep);
                       };
@@ -1278,7 +1350,16 @@ async function startAgents() {
                         updateObj[profileKey] = updateValue;
                         
                         await updateState('COMPLETED', updateObj);
-                        responseText = `✅ Your ${fieldBeingUpdated === 'diversity' ? 'diversity research interest' : fieldBeingUpdated} has been updated!\n\nSay "my profile" to see your updated profile, or ask me anything else! 💜`;
+                        // Reload state to ensure it's up to date
+                        try {
+                          const updatedCached = await kaiaRuntimeForOnboardingCheck.cacheManager.get(`onboarding_${userId}`);
+                          if (updatedCached && typeof updatedCached === 'object') {
+                            state = updatedCached as { step: string, profile: any };
+                          }
+                        } catch (e) {
+                          // State already updated above
+                        }
+                        responseText = `✅ Your ${fieldBeingUpdated === 'diversity' ? 'diversity research interest' : fieldBeingUpdated} has been updated!\n\nSay "my profile" to see your updated profile! 💜`;
                         console.log(`[Telegram Chat ID Capture] ✏️ Updated ${fieldBeingUpdated} to:`, updateValue);
                       } else if (state.step === 'AWAITING_FEATURE_DETAILS') {
                         // User is providing feature request details
