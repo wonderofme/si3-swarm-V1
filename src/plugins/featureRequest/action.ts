@@ -88,11 +88,11 @@ export const featureRequestAction: Action = {
       let errorMessage = `I encountered an issue sending your feature request. `;
       
       if (error.message?.includes('not configured')) {
-        errorMessage += `The email service is not configured yet. Your request has been logged. Please contact tech@si3.space directly for now.`;
+        errorMessage += `The email service is not configured yet. Your request has been logged. Please contact members@si3.space directly for now.`;
       } else if (error.message?.includes('authentication failed')) {
-        errorMessage += `There's an issue with the email configuration. Your request has been logged. Please contact tech@si3.space directly.`;
+        errorMessage += `There's an issue with the email configuration. Your request has been logged. Please contact members@si3.space directly.`;
       } else {
-        errorMessage += `Please try again later or contact tech@si3.space directly.`;
+        errorMessage += `Please try again later or contact members@si3.space directly.`;
       }
       
       if (callback) {

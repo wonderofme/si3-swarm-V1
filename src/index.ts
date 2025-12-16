@@ -1302,8 +1302,40 @@ async function startAgents() {
                           lowerText.includes('edit details') ||
                           lowerText.includes('modify profile') ||
                           lowerText.includes('change profile');
-                        const isFeatureRequest = (lowerText.includes('feature') && lowerText.includes('request')) || 
-                                                 (lowerText.includes('suggest') && lowerText.length > 30);
+                        // Natural language feature request detection
+                        const hasFeatureRequestKeywords = 
+                          lowerText.includes('feature') || 
+                          lowerText.includes('suggest') || 
+                          lowerText.includes('idea') ||
+                          lowerText.includes('request') ||
+                          lowerText.includes('want') ||
+                          lowerText.includes('wish') ||
+                          lowerText.includes('would like') ||
+                          lowerText.includes('can you add') ||
+                          lowerText.includes('could you add') ||
+                          lowerText.includes('it would be') ||
+                          lowerText.includes('itd be') ||
+                          lowerText.includes('should have') ||
+                          lowerText.includes('need') ||
+                          lowerText.includes('would be cool') ||
+                          lowerText.includes('would be great');
+                        
+                        // Check if message has actual details (more than just keywords)
+                        // Exclude cases where user just says keywords without details
+                        const isJustKeyword = 
+                          lowerText.trim() === 'feature request' || 
+                          lowerText.trim() === 'feature' || 
+                          lowerText.trim() === 'suggestion' || 
+                          lowerText.trim() === 'suggest' ||
+                          lowerText.trim() === 'idea' ||
+                          lowerText.trim() === 'i want' ||
+                          (lowerText.startsWith('i want') && messageText.trim().length < 50) ||
+                          (lowerText.startsWith('can you add') && messageText.trim().length < 50) ||
+                          (lowerText.startsWith('could you add') && messageText.trim().length < 50);
+                        
+                        const hasDetails = messageText.trim().length > 30 && !isJustKeyword;
+                        
+                        const isFeatureRequest = hasFeatureRequestKeywords;
                         const isHelpRequest = lowerText === 'help' || lowerText === '?' || lowerText.includes('what can you do');
                         
                         if (isHelpRequest) {
@@ -1381,7 +1413,7 @@ async function startAgents() {
                               }
                               
                               if (candidates.length === 0) {
-                                responseText = "I couldn't find a match within the current pool, but don't worry! 💜\n\nSI<3> will explore potential matches within its broader network and reach out if we find someone great for you.\n\nIn the meantime, feel free to share any specific connection requests with us at tech@si3.space. 🚀";
+                                responseText = "I couldn't find a match within the current pool, but don't worry! 💜\n\nSI<3> will explore potential matches within its broader network and reach out if we find someone great for you.\n\nIn the meantime, feel free to share any specific connection requests with us at members@si3.space. 🚀";
                               } else {
                                 const topMatch = candidates.sort((a, b) => b.score - a.score)[0];
                                 matchedUserId = topMatch.id;
@@ -1552,9 +1584,9 @@ async function startAgents() {
                           } else {
                             responseText = "Which language would you like?\n\n• English\n• Español\n• Português\n• Français\n\nJust say 'change language to [language]'";
                           }
-                        } else if (isFeatureRequest) {
-                          // FEATURE REQUEST - Send email and save to database
-                          console.log('[Telegram Chat ID Capture] 💡 Feature request detected...');
+                        } else if (state.step === 'AWAITING_FEATURE_DETAILS') {
+                          // User is providing feature request details
+                          console.log('[Telegram Chat ID Capture] 💡 Feature request details received...');
                           
                           // Try to send email first
                           let emailSent = false;
@@ -1583,14 +1615,68 @@ async function startAgents() {
                             console.log('[Feature Request] Could not save to DB:', e);
                           }
                           
+                          await updateState('COMPLETED', {});
+                          
                           if (emailSent) {
                             responseText = `Thank you for your suggestion, ${state.profile.name}! 💜\n\n` +
-                              `I've sent your request to tech@si3.space:\n"${messageText.substring(0, 200)}${messageText.length > 200 ? '...' : ''}"\n\n` +
+                              `I've sent your request to members@si3.space:\n"${messageText.substring(0, 200)}${messageText.length > 200 ? '...' : ''}"\n\n` +
                               `The SI<3> team reviews all suggestions. Your feedback helps make me better! 🚀`;
                           } else {
                             responseText = `Thank you for your suggestion, ${state.profile.name}! 💜\n\n` +
                               `I've recorded your request:\n"${messageText.substring(0, 200)}${messageText.length > 200 ? '...' : ''}"\n\n` +
                               `The SI<3> team reviews all suggestions. Your feedback helps make me better! 🚀`;
+                          }
+                        } else if (isFeatureRequest) {
+                          // FEATURE REQUEST - Check if details are included
+                          console.log('[Telegram Chat ID Capture] 💡 Feature request detected...');
+                          
+                          if (hasDetails) {
+                            // User provided details in the same message - send directly
+                            let emailSent = false;
+                            try {
+                              const { sendFeatureRequest } = await import('./services/featureRequest.js');
+                              await sendFeatureRequest(userId, state.profile.name || 'Anonymous', messageText, messageText);
+                              emailSent = true;
+                              console.log('[Feature Request] ✅ Email sent successfully');
+                            } catch (emailError: any) {
+                              console.log('[Feature Request] ⚠️ Could not send email:', emailError.message);
+                              // Continue to save to database even if email fails
+                            }
+                            
+                            // Always save to database as backup
+                            try {
+                              const db = kaiaRuntimeForOnboardingCheck.databaseAdapter as any;
+                              if (db && db.query) {
+                                const { v4: uuidv4 } = await import('uuid');
+                                await db.query(
+                                  `INSERT INTO feature_requests (id, user_id, user_name, request_text, created_at) VALUES ($1, $2, $3, $4, NOW())`,
+                                  [uuidv4(), userId, state.profile.name || 'Anonymous', messageText]
+                                );
+                                console.log('[Feature Request] ✅ Saved to database');
+                              }
+                            } catch (e) {
+                              console.log('[Feature Request] Could not save to DB:', e);
+                            }
+                            
+                            if (emailSent) {
+                              responseText = `Thank you for your suggestion, ${state.profile.name}! 💜\n\n` +
+                                `I've sent your request to members@si3.space:\n"${messageText.substring(0, 200)}${messageText.length > 200 ? '...' : ''}"\n\n` +
+                                `The SI<3> team reviews all suggestions. Your feedback helps make me better! 🚀`;
+                            } else {
+                              responseText = `Thank you for your suggestion, ${state.profile.name}! 💜\n\n` +
+                                `I've recorded your request:\n"${messageText.substring(0, 200)}${messageText.length > 200 ? '...' : ''}"\n\n` +
+                                `The SI<3> team reviews all suggestions. Your feedback helps make me better! 🚀`;
+                            }
+                          } else {
+                            // User just mentioned feature request without details - ask for details
+                            await updateState('AWAITING_FEATURE_DETAILS', {});
+                            const langPrompts: Record<string, string> = {
+                              en: `Great! I'd love to hear your suggestion. 💡\n\nPlease tell me more about the feature you'd like to see. What would you like me to be able to do?`,
+                              es: `¡Genial! Me encantaría escuchar tu sugerencia. 💡\n\nPor favor, cuéntame más sobre la función que te gustaría ver. ¿Qué te gustaría que pudiera hacer?`,
+                              pt: `Ótimo! Adoraria ouvir sua sugestão. 💡\n\nPor favor, me conte mais sobre a função que você gostaria de ver. O que você gostaria que eu pudesse fazer?`,
+                              fr: `Excellent! J'aimerais entendre votre suggestion. 💡\n\nVeuillez me dire plus sur la fonctionnalité que vous aimeriez voir. Qu'aimeriez-vous que je puisse faire?`
+                            };
+                            responseText = langPrompts[state.profile.language || 'en'] || langPrompts.en;
                           }
                         } else if (isKnowledgeQuestion) {
                           // ==================== KNOWLEDGE QUESTION - COMING SOON ====================
@@ -1620,7 +1706,7 @@ USER PROFILE:
 YOUR CAPABILITIES (MATCHMAKING FOCUSED):
 - Find matches for users (they can say "find me a match")
 - Show profile (they can say "show my profile" or "my history")
-- Take feature suggestions and direct them to tech@si3.space
+- Take feature suggestions and direct them to members@si3.space
 - Change language (they can say "change language to Spanish")
 - Provide help (they can say "help")
 

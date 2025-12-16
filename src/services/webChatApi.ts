@@ -246,7 +246,7 @@ export async function processWebChatMessage(
                   `💡 You both share interests in: ${topMatch.commonInterests.join(', ')}\n\n` +
                   `Reach out and connect! 🤝💜`;
               } else {
-                responseText = "I couldn't find a match within the current pool, but don't worry! 💜\n\nSI<3> will explore potential matches within its broader network and reach out if we find someone great for you.\n\nIn the meantime, feel free to share any specific connection requests with us at tech@si3.space. 🚀";
+                responseText = "I couldn't find a match within the current pool, but don't worry! 💜\n\nSI<3> will explore potential matches within its broader network and reach out if we find someone great for you.\n\nIn the meantime, feel free to share any specific connection requests with us at members@si3.space. 🚀";
               }
             } else {
               responseText = "Matching is currently unavailable. Please try again later! 💜";
@@ -303,7 +303,7 @@ USER PROFILE:
 YOUR CAPABILITIES (MATCHMAKING FOCUSED):
 - Find matches for users (they can say "find me a match")
 - Show profile (they can say "show my profile" or "my history")
-- Take feature suggestions and direct them to tech@si3.space
+- Take feature suggestions and direct them to members@si3.space
 - Change language (they can say "change language to Spanish")
 - Provide help (they can say "help")
 
