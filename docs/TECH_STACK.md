@@ -34,6 +34,8 @@ The bot supports both MongoDB and PostgreSQL:
   - `matches` - Match records between users
   - `follow_ups` - Scheduled follow-up messages
   - `profiles` - User profile data
+  - `diversity_research` - Users interested in diversity research (Telegram handles)
+  - `feature_requests` - User feature suggestions
 
 **PostgreSQL** (alternative):
 - **Adapter**: `@elizaos/adapter-postgres` `^0.1.0`
@@ -51,7 +53,8 @@ The bot supports both MongoDB and PostgreSQL:
 - **Persistent Cache**: Database-backed cache adapter (`DatabaseCacheAdapter`)
   - Stores onboarding state and user profiles in database
   - Survives container restarts and redeployments
-  - Ensures user data persistence
+  - Ensures user data persistence across deployments
+  - Automatic database fallback if cache is empty (loads from DB on startup)
 
 ---
 
@@ -69,6 +72,7 @@ The bot supports both MongoDB and PostgreSQL:
 - Direct OpenAI API integration for chat completions
 - Conversation history management (last 20 messages)
 - Context-aware responses based on user profile
+- Knowledge-sharing capabilities: Currently responds with "coming soon" message for Web3 educational questions (focused on matchmaking)
 
 ---
 
@@ -96,6 +100,11 @@ The bot supports both MongoDB and PostgreSQL:
     - Auth: `X-API-Key` header or `Authorization: Bearer <key>`
   - `GET /api/history/:userId` - User profile & match history
   - `GET /api/health` - Health check endpoint
+- **Features**:
+  - Same functionality as Telegram bot
+  - User profile persistence
+  - Onboarding state management
+  - Matchmaking capabilities
 
 ---
 
@@ -134,7 +143,7 @@ The bot supports both MongoDB and PostgreSQL:
 - **Base Image**: `node:22-slim`
 - **Build Strategy**: Multi-stage build
 - **Registry**: GitHub Container Registry (GHCR)
-- **Image**: `ghcr.io/wonderofme/kaia-swarm:v286`
+- **Image**: `ghcr.io/wonderofme/kaia-swarm:v294`
 - **Build Dependencies**: Python3, make, g++ (for native modules)
 
 ### Deployment Platform
@@ -144,7 +153,9 @@ The bot supports both MongoDB and PostgreSQL:
   - CPU: 1.0 units
   - Memory: 2Gi
   - Storage: 1Gi
-  - Port: 3000 (exposed as 80)
+  - Ports:
+    - 3000 (DirectClient, exposed as 80)
+    - 3001 (REST API, exposed as 3001)
 
 ### CI/CD
 - **Platform**: GitHub Actions
@@ -152,7 +163,7 @@ The bot supports both MongoDB and PostgreSQL:
 - **Trigger**: Push to `main` branch
 - **Process**:
   1. Build Docker image
-  2. Push to GHCR with tags: `v286`, `latest`, and commit SHA
+  2. Push to GHCR with tags: `v294`, `v${{ github.run_number }}`, `latest`, and commit SHA
 
 ---
 
@@ -206,6 +217,7 @@ src/
 - `SMTP_PASS` - SMTP password
 - `WEB_API_KEY` - API key for web chat endpoint (set to `disabled` to allow public access)
 - `CORS_ORIGINS` - Comma-separated list of allowed origins (default: `*`)
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` - Email configuration for feature requests and no-match notifications
 
 ---
 
@@ -245,6 +257,8 @@ src/
 - Custom message handler bypasses ElizaOS message processing for reliability
 - Direct OpenAI API integration for responses
 - Conversation history management for context
+- Knowledge-sharing: Responds with "coming soon" message for Web3 educational questions
+- Focus: Matchmaking and community connections (knowledge base temporarily disabled)
 
 ### Plugin Architecture
 - Modular plugins extend ElizaOS functionality
@@ -255,6 +269,8 @@ src/
 - Database-backed persistent cache
 - User profiles and onboarding state stored in database
 - Survives container restarts and redeployments
+- Automatic state restoration from database on startup
+- Diversity research interest tracking (MongoDB collection)
 
 ### Multi-Agent System
 - Three separate AgentRuntime instances:
@@ -346,7 +362,7 @@ docker run -p 3000:3000 --env-file .env kaia-swarm
 - **Node.js**: `22.x`
 - **TypeScript**: `5.6.3`
 - **ElizaOS**: `^0.1.0`
-- **Docker Image**: `v286`
+- **Docker Image**: `v294`
 
 ---
 

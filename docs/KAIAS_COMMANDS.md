@@ -130,7 +130,7 @@ After onboarding, you can edit any part of your profile by saying:
 
 **If no matches found:**
 - Kaia will let you know that SI<3> will explore potential matches within its broader network
-- You can share specific connection requests at tech@si3.space
+- You can share specific connection requests at members@si3.space
 - You can try again anytime
 
 ---
