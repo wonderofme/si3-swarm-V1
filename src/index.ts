@@ -1150,8 +1150,43 @@ async function startAgents() {
                     return; // We handled it, don't pass to ElizaOS
                   }
                   
-                  // If not handled, pass to next middleware/handler (ElizaOS)
-                  return next();
+                  // If not handled, still don't pass to ElizaOS - use OpenAI directly
+                  // This ensures we completely bypass ElizaOS message handling
+                  console.log('[Telegram Middleware] ⚠️ Message not handled by onboarding/completed handlers, using OpenAI directly');
+                  if (openaiKey) {
+                    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${openaiKey}`
+                      },
+                      body: JSON.stringify({
+                        model: 'gpt-4o-mini',
+                        messages: [
+                          {
+                            role: 'system',
+                            content: `You are Kaia, the SI<3> assistant. Be warm, friendly, and helpful. Use emojis naturally (💜, 🚀, 🤝).`
+                          },
+                          {
+                            role: 'user',
+                            content: messageText
+                          }
+                        ],
+                        max_tokens: 1000
+                      })
+                    });
+                    
+                    if (response.ok) {
+                      const data = await response.json();
+                      const responseText = data.choices?.[0]?.message?.content || "How can I help you? 💜";
+                      await originalSendMessage(chatId, responseText);
+                    } else {
+                      await originalSendMessage(chatId, "How can I help you? 💜");
+                    }
+                  } else {
+                    await originalSendMessage(chatId, "How can I help you? 💜");
+                  }
+                  return; // Never pass to ElizaOS
                 } catch (error: any) {
                   console.error('[Telegram Middleware] ❌ Error processing message:', error);
                   // Fail-fast on critical errors
@@ -1168,11 +1203,42 @@ async function startAgents() {
                   return; // Don't pass to next on error
                 }
               } else {
-                // No text message - pass to next handler (for callbacks, etc.)
-                return next();
+                // No text message - still don't pass to ElizaOS
+                // For callbacks and other non-text updates, we'll let them through but log
+                console.log('[Telegram Middleware] ⚠️ Non-text message received, skipping ElizaOS');
+                return; // Don't pass to ElizaOS
               }
             });
             console.log('[Telegram Middleware] ✅ Middleware installed successfully');
+            
+            // CRITICAL: Ensure polling starts after middleware is set up
+            // ElizaOS might not start polling automatically, so we need to do it explicitly
+            if (bot && typeof bot.launch === 'function') {
+              try {
+                // Check if polling is already running
+                if (!bot.polling?.isRunning) {
+                  console.log('[Telegram Middleware] 🚀 Starting polling explicitly...');
+                  await bot.launch();
+                  console.log('[Telegram Middleware] ✅ Polling started successfully');
+                  
+                  // Verify polling started
+                  setTimeout(() => {
+                    if (bot.polling?.isRunning) {
+                      console.log('[Telegram Middleware] ✅ Polling confirmed running');
+                    } else {
+                      console.error('[Telegram Middleware] ❌ Polling still not running after launch');
+                    }
+                  }, 2000);
+                } else {
+                  console.log('[Telegram Middleware] ✅ Polling already running');
+                }
+              } catch (launchError: any) {
+                console.error('[Telegram Middleware] ⚠️ Error starting polling:', launchError.message);
+                // Continue - might still work if ElizaOS started it
+              }
+            } else {
+              console.warn('[Telegram Middleware] ⚠️ bot.launch() not available, relying on ElizaOS to start polling');
+            }
           } else if (bot && bot.handler) {
             // Fallback: If bot.use() not available, use handler patching (legacy)
             console.log('[Telegram Chat ID Capture] ⚠️ bot.use() not available, falling back to handler patching...');
