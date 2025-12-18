@@ -87,7 +87,11 @@ async function deleteUser(mongoDb: any, pgClient: pg.Pool | null, userId: string
   try {
     if (mongoDb) {
       const cacheCollection = mongoDb.collection('cache');
-      const result = await cacheCollection.deleteOne({ key });
+      // Delete ALL cache entries for this user (there might be multiple entries with same key)
+      // Use exact match first, but also handle any edge cases
+      const cacheResult = await cacheCollection.deleteMany({ 
+        key: key  // Exact match - MongoDB should handle this correctly
+      });
       
       // Also delete related data
       const matchesCollection = mongoDb.collection('matches');
@@ -107,7 +111,7 @@ async function deleteUser(mongoDb: any, pgClient: pg.Pool | null, userId: string
       const diversityCollection = mongoDb.collection('diversity_research');
       await diversityCollection.deleteMany({ userId });
       
-      return result.deletedCount > 0;
+      return cacheResult.deletedCount > 0;
     } else if (pgClient) {
       // PostgreSQL
       await pgClient.query('BEGIN');
@@ -178,22 +182,44 @@ async function main() {
     return;
   }
   
-  console.log(`⚠️  Found ${ayoolaUsers.length} user(s) with "Ayoola" in their name:\n`);
+  // Group by userId to get unique users (there might be multiple cache entries per user)
+  const uniqueUsers = new Map<string, UserInfo>();
+  for (const user of ayoolaUsers) {
+    if (!uniqueUsers.has(user.userId)) {
+      uniqueUsers.set(user.userId, user);
+    } else {
+      // Keep the one with the most complete profile (COMPLETED > other steps)
+      const existing = uniqueUsers.get(user.userId)!;
+      if (user.step === 'COMPLETED' && existing.step !== 'COMPLETED') {
+        uniqueUsers.set(user.userId, user);
+      } else if (user.name && user.name.length > (existing.name || '').length) {
+        uniqueUsers.set(user.userId, user);
+      }
+    }
+  }
+  
+  const uniqueUserList = Array.from(uniqueUsers.values());
+  const totalEntries = ayoolaUsers.length;
+  
+  console.log(`⚠️  Found ${totalEntries} cache entry/entries for ${uniqueUserList.length} unique user(s) with "Ayoola" in their name:\n`);
   console.log('ID'.padEnd(20), 'Name'.padEnd(30), 'Step');
   console.log('-'.repeat(70));
   
-  ayoolaUsers.forEach((user) => {
+  uniqueUserList.forEach((user) => {
+    const entryCount = ayoolaUsers.filter(u => u.userId === user.userId).length;
+    const entryInfo = entryCount > 1 ? ` (${entryCount} entries)` : '';
     console.log(
       user.userId.padEnd(20),
-      (user.name || 'N/A').padEnd(30),
+      ((user.name || 'N/A') + entryInfo).padEnd(30),
       user.step || 'N/A'
     );
   });
   
   console.log('\n' + '='.repeat(70));
-  console.log(`\n⚠️  WARNING: This will delete ${ayoolaUsers.length} user(s) and all their related data!`);
+  console.log(`\n⚠️  WARNING: This will delete ${uniqueUserList.length} unique user(s) and all their related data!`);
+  console.log(`   (This includes ${totalEntries} cache entry/entries)`);
   console.log('This includes:');
-  console.log('  - User profile and onboarding state');
+  console.log('  - User profile and onboarding state (all cache entries)');
   console.log('  - All matches');
   console.log('  - All follow-ups');
   console.log('  - Feature requests');
@@ -205,7 +231,7 @@ async function main() {
   
   if (args.length === 0 || args[0] !== '--confirm') {
     console.log('\n💡 To proceed, run with --confirm flag:');
-    console.log('   npm run ts-node scripts/delete-ayoola-users.ts --confirm');
+    console.log('   npm run delete-ayoola-users --confirm');
     return;
   }
   
@@ -214,23 +240,25 @@ async function main() {
   let successCount = 0;
   let failCount = 0;
   
-    for (const user of ayoolaUsers) {
-      console.log(`Deleting ${user.name || user.userId} (${user.userId})...`);
-      const success = await deleteUser(mongoDb, pgClient, user.userId);
-      if (success) {
-        console.log(`✅ Successfully deleted ${user.name || user.userId}`);
-        successCount++;
-      } else {
-        console.log(`❌ Failed to delete ${user.name || user.userId}`);
-        failCount++;
-      }
+  // Delete each unique user (this will delete all cache entries for that userId)
+  for (const user of uniqueUserList) {
+    const entryCount = ayoolaUsers.filter(u => u.userId === user.userId).length;
+    console.log(`Deleting ${user.name || user.userId} (${user.userId})${entryCount > 1 ? ` - ${entryCount} cache entries` : ''}...`);
+    const success = await deleteUser(mongoDb, pgClient, user.userId);
+    if (success) {
+      console.log(`✅ Successfully deleted ${user.name || user.userId}`);
+      successCount++;
+    } else {
+      console.log(`❌ Failed to delete ${user.name || user.userId}`);
+      failCount++;
     }
-    
-    console.log('\n' + '='.repeat(70));
-    console.log(`\n✅ Deletion complete!`);
-    console.log(`   Successfully deleted: ${successCount}`);
-    console.log(`   Failed: ${failCount}`);
-    console.log(`   Total processed: ${ayoolaUsers.length}`);
+  }
+  
+  console.log('\n' + '='.repeat(70));
+  console.log(`\n✅ Deletion complete!`);
+  console.log(`   Successfully deleted: ${successCount} unique user(s)`);
+  console.log(`   Failed: ${failCount}`);
+  console.log(`   Total processed: ${uniqueUserList.length} unique user(s)`);
   } catch (error: any) {
     console.error('❌ Error:', error.message);
     console.error(error.stack);
