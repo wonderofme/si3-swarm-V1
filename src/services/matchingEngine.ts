@@ -333,8 +333,9 @@ export async function findMatches(
       }
     } else {
       // PostgreSQL
-      const res = await db.query(`SELECT key, value FROM cache WHERE key LIKE 'onboarding_%'`);
-      for (const row of (res.rows || [])) {
+      const res: any = await db.query(`SELECT key, value FROM cache WHERE key LIKE 'onboarding_%'`);
+      const rows: any[] = res?.rows || [];
+      for (const row of rows) {
         const otherUserId = row.key.replace('onboarding_', '');
         if (otherUserId === userId || excludeUserIds.includes(otherUserId)) continue;
         
