@@ -1127,20 +1127,117 @@ async function startAgents() {
                         responseText = msgs.ROLES;
                         console.log('[Telegram Chat ID Capture] 📋 Location saved:', location || 'skipped');
                       } else if (state.step === 'ASK_ROLE') {
-                        // Save roles and ask for interests
-                        const roles = messageText.split(',').map((r: string) => r.trim()).filter((r: string) => r);
+                        // Map role numbers to actual role names
+                        const roleMap: Record<string, string> = {
+                          '1': 'Founder/Builder',
+                          '2': 'Marketing/BD/Partnerships',
+                          '3': 'DAO Council Member/Delegate',
+                          '4': 'Community Leader',
+                          '5': 'Investor/Grant Program Operator',
+                          '6': 'Early Web3 Explorer',
+                          '7': 'Media',
+                          '8': 'Artist',
+                          '9': 'Developer',
+                          '10': 'Other'
+                        };
+                        const roleInputs = messageText.split(',').map((r: string) => r.trim()).filter((r: string) => r);
+                        const roles: string[] = [];
+                        for (const input of roleInputs) {
+                          // Check if input contains "and" or is just a number
+                          if (input.includes(' and ') || input.includes(' and')) {
+                            // Parse "9 and Designer" -> ["Developer", "Designer"]
+                            const parts = input.split(/ and /i).map(p => p.trim());
+                            for (const part of parts) {
+                              if (roleMap[part]) {
+                                roles.push(roleMap[part]);
+                              } else if (part && !/^\d+$/.test(part)) {
+                                // Not a number, treat as custom text
+                                roles.push(part);
+                              }
+                            }
+                          } else if (roleMap[input]) {
+                            // Direct number mapping
+                            roles.push(roleMap[input]);
+                          } else if (input && !/^\d+$/.test(input)) {
+                            // Custom text (not a number)
+                            roles.push(input);
+                          }
+                        }
                         await updateState('ASK_INTERESTS', { roles });
                         responseText = msgs.INTERESTS;
                         console.log('[Telegram Chat ID Capture] 📋 Roles saved:', roles);
                       } else if (state.step === 'ASK_INTERESTS') {
-                        // Save interests and ask for connection goals
-                        const interests = messageText.split(',').map((r: string) => r.trim()).filter((r: string) => r);
+                        // Map interest numbers to actual interest names
+                        const interestMap: Record<string, string> = {
+                          '1': 'Web3 Growth Marketing',
+                          '2': 'Sales, BD & Partnerships',
+                          '3': 'Education 3.0',
+                          '4': 'AI',
+                          '5': 'Cybersecurity',
+                          '6': "DAO's",
+                          '7': 'Tokenomics',
+                          '8': 'Fundraising',
+                          '9': 'DeepTech'
+                        };
+                        const interestInputs = messageText.split(',').map((r: string) => r.trim()).filter((r: string) => r);
+                        const interests: string[] = [];
+                        for (const input of interestInputs) {
+                          // Check if input contains "and" or is just a number
+                          if (input.includes(' and ') || input.includes(' and')) {
+                            // Parse "4 and Machine Learning" -> ["AI", "Machine Learning"]
+                            const parts = input.split(/ and /i).map(p => p.trim());
+                            for (const part of parts) {
+                              if (interestMap[part]) {
+                                interests.push(interestMap[part]);
+                              } else if (part && !/^\d+$/.test(part)) {
+                                // Not a number, treat as custom text
+                                interests.push(part);
+                              }
+                            }
+                          } else if (interestMap[input]) {
+                            // Direct number mapping
+                            interests.push(interestMap[input]);
+                          } else if (input && !/^\d+$/.test(input)) {
+                            // Custom text (not a number)
+                            interests.push(input);
+                          }
+                        }
                         await updateState('ASK_CONNECTION_GOALS', { interests });
                         responseText = msgs.GOALS;
                         console.log('[Telegram Chat ID Capture] 📋 Interests saved:', interests);
                       } else if (state.step === 'ASK_CONNECTION_GOALS') {
-                        // Save goals and ask for events
-                        const connectionGoals = messageText.split(',').map((r: string) => r.trim()).filter((r: string) => r);
+                        // Map goal numbers to actual goal names
+                        const goalMap: Record<string, string> = {
+                          '1': 'Startups to invest in',
+                          '2': 'Investors/grant programs',
+                          '3': 'Growth tools, strategies, and/or support',
+                          '4': 'Sales/BD tools, strategies and/or support',
+                          '5': "Communities and/or DAO's to join",
+                          '6': 'New job opportunities'
+                        };
+                        const goalInputs = messageText.split(',').map((r: string) => r.trim()).filter((r: string) => r);
+                        const connectionGoals: string[] = [];
+                        for (const input of goalInputs) {
+                          // Check if input contains "and" or is just a number
+                          if (input.includes(' and ') || input.includes(' and')) {
+                            // Parse "2 and Cybersecurity" -> ["Investors/grant programs", "Cybersecurity"]
+                            const parts = input.split(/ and /i).map(p => p.trim());
+                            for (const part of parts) {
+                              if (goalMap[part]) {
+                                connectionGoals.push(goalMap[part]);
+                              } else if (part && !/^\d+$/.test(part)) {
+                                // Not a number, treat as custom text
+                                connectionGoals.push(part);
+                              }
+                            }
+                          } else if (goalMap[input]) {
+                            // Direct number mapping
+                            connectionGoals.push(goalMap[input]);
+                          } else if (input && !/^\d+$/.test(input)) {
+                            // Custom text (not a number)
+                            connectionGoals.push(input);
+                          }
+                        }
                         await updateState('ASK_EVENTS', { connectionGoals });
                         responseText = msgs.EVENTS;
                         console.log('[Telegram Chat ID Capture] 📋 Goals saved:', connectionGoals);
