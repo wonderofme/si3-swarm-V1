@@ -33,7 +33,7 @@ const DEFAULT_CONFIG: MatchingConfig = {
   intentWeight: 0.6,
   interestWeight: 0.3,
   eventWeight: 0.1,
-  highDemandRoles: ['Investor/Grant Program Operator', 'Investor/Grant Program Operator'],
+  highDemandRoles: ['Investor/Grant Program Operator'],
   highDemandThreshold: 90
 };
 

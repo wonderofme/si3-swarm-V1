@@ -12,7 +12,8 @@
     "delete-ayoola-users": "node --loader ts-node/esm scripts/delete-ayoola-users.ts",
     "list-matches": "node --loader ts-node/esm scripts/list-matches.ts",
     "test-matching": "node --loader ts-node/esm scripts/test-matching-logic.ts",
-    "test-matching-simple": "node --loader ts-node/esm scripts/test-matching-simple.ts"
+    "test-matching-simple": "node --loader ts-node/esm scripts/test-matching-simple.ts",
+    "test-matching-engine": "node --loader ts-node/esm scripts/test-new-matching-engine.ts"
   },
   "dependencies": {
     "@elizaos/adapter-postgres": "^0.1.0",
