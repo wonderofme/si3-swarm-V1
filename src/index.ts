@@ -1599,7 +1599,7 @@ async function startAgents() {
                         
                         // ==================== COMMAND DETECTION ====================
                         const isMatchRequest = lowerText.includes('match') || lowerText.includes('connect me') || lowerText.includes('find someone') || lowerText.includes('find me') || lowerText.includes('introduce');
-                        const isHistoryRequest = lowerText.includes('history') || lowerText.includes('my profile') || lowerText.includes('my matches') || lowerText.includes('show profile');
+                        const isHistoryRequest = lowerText === 'profile' || lowerText.includes('history') || lowerText.includes('my profile') || lowerText.includes('my matches') || lowerText.includes('show profile') || lowerText.includes('view profile');
                         const isLanguageChange = lowerText.includes('change language') || lowerText.includes('cambiar idioma') || lowerText.includes('mudar idioma') || lowerText.includes('changer de langue');
                         const isUpdateRequest = lowerText === 'update' || 
                           lowerText === 'edit' ||
@@ -1811,6 +1811,16 @@ async function startAgents() {
                             `\n\nTotal Matches: ${matchCount}` +
                             matchList +
                             `\n\n✅ Onboarding: Completed\n\nTo update any field, say "update" or "update [field name]".`;
+                          
+                          // Record that we sent a profile message to prevent LLM duplicates
+                          try {
+                            const { recordProfileMessageSent } = await import('./services/llmResponseInterceptor.js');
+                            if (typeof recordProfileMessageSent === 'function') {
+                              recordProfileMessageSent(chatId.toString());
+                            }
+                          } catch (e) {
+                            // Non-critical, continue
+                          }
                         } else if (isUpdateRequest) {
                           // ==================== PROFILE UPDATE FEATURE ====================
                           console.log('[Telegram Chat ID Capture] ✏️ Update request...');

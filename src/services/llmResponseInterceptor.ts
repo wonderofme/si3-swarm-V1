@@ -651,12 +651,15 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
           // Pattern 4: Any remaining "[ONBOARDING STEP:" patterns
           cleanedText = cleanedText.replace(/\[ONBOARDING STEP:[^\]]+\]\s*/gi, '');
           
+          // Remove markdown asterisks (e.g., **text** -> text)
+          cleanedText = cleanedText.replace(/\*\*/g, '');
+          
           // Remove leading/trailing whitespace and newlines
           cleanedText = cleanedText.trim();
           
           // If the text was modified, update the memory
           if (cleanedText !== memory.content.text) {
-            console.log('[LLM Response Interceptor] 🧹 Cleaned instruction text from LLM response');
+            console.log('[LLM Response Interceptor] 🧹 Cleaned instruction text and markdown from LLM response');
             console.log('[LLM Response Interceptor] Original:', memory.content.text.substring(0, 200));
             console.log('[LLM Response Interceptor] Cleaned:', cleanedText.substring(0, 200));
             memory.content.text = cleanedText;
@@ -863,6 +866,7 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
       
       // Block LLM from generating duplicate profile messages after completion
       // Also block messages that show numbers instead of actual values (e.g., "Roles: 9")
+      // Also block messages with markdown formatting (e.g., **Name:**)
       if (memory.content.text) {
         const text = memory.content.text;
         const isProfileMessage = 
@@ -874,18 +878,26 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
         // Check if it's showing numbers instead of actual values (bad format)
         const hasNumberFormat = /\*\*Roles:\*\*\s*\d+|\*\*Interests:\*\*\s*\d+|\*\*Connection Goals:\*\*\s*\d+|Roles:\s*\d+\s*$/m.test(text);
         
-        if (isProfileMessage || hasNumberFormat) {
+        // Check if it has markdown asterisks (e.g., **Name:**, **Location:**)
+        const hasMarkdown = /\*\*[A-Za-z\s]+:\*\*/g.test(text) || /\*\*Name:\*\*|\*\*Location:\*\*|\*\*Roles:\*\*|\*\*Interests:\*\*|\*\*Connection Goals:\*\*/g.test(text);
+        
+        if (isProfileMessage || hasNumberFormat || hasMarkdown) {
           const cachedStep = getOnboardingStepFromCache(memory.userId);
           if (cachedStep === 'COMPLETED') {
-            console.log('[LLM Response Interceptor] 🚫 BLOCKING LLM-generated profile message (duplicate or bad format)');
-            console.log('[LLM Response Interceptor] Blocked text preview:', text.substring(0, 100));
-            return await originalCreateMemory({
-              ...memory,
-              content: {
-                ...memory.content,
-                text: '' // Empty text prevents sending
-              }
-            });
+            const recentProfileMessage = recentProfileMessages.get(memory.roomId);
+            // Block if it's been less than 5 seconds since last profile message OR if it has markdown/number format
+            if (hasMarkdown || hasNumberFormat || (recentProfileMessage && Date.now() - recentProfileMessage < 5000)) {
+              console.log('[LLM Response Interceptor] 🚫 BLOCKING LLM-generated profile message (duplicate, markdown, or bad format)');
+              console.log('[LLM Response Interceptor] Blocked text preview:', text.substring(0, 150));
+              console.log('[LLM Response Interceptor] Reason:', hasMarkdown ? 'markdown detected' : hasNumberFormat ? 'number format detected' : 'duplicate within 5s');
+              return await originalCreateMemory({
+                ...memory,
+                content: {
+                  ...memory.content,
+                  text: '' // Empty text prevents sending
+                }
+              });
+            }
           }
         }
       }
