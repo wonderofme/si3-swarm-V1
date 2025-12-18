@@ -1,5 +1,6 @@
 import 'dotenv/config';
-import { createDatabaseAdapter } from '../src/adapters/databaseAdapter.js';
+import { MongoClient } from 'mongodb';
+import pg from 'pg';
 
 /**
  * One-time script to delete all users with "Ayoola" in their name
@@ -20,11 +21,11 @@ interface UserInfo {
   step?: string;
 }
 
-async function findAyoolaUsers(db: any, isMongo: boolean): Promise<UserInfo[]> {
+async function findAyoolaUsers(mongoDb: any, pgClient: pg.Pool | null): Promise<UserInfo[]> {
   const users: UserInfo[] = [];
   
-  if (isMongo) {
-    const cacheCollection = db.db.collection('cache');
+  if (mongoDb) {
+    const cacheCollection = mongoDb.collection('cache');
     const docs = await cacheCollection.find({
       key: { $regex: /^onboarding_/ }
     }).toArray();
@@ -48,9 +49,9 @@ async function findAyoolaUsers(db: any, isMongo: boolean): Promise<UserInfo[]> {
         console.error(`Error parsing document ${doc.key}:`, e);
       }
     }
-  } else {
+  } else if (pgClient) {
     // PostgreSQL
-    const result = await db.query(`
+    const result = await pgClient.query(`
       SELECT key, value 
       FROM cache 
       WHERE key LIKE 'onboarding_%'
@@ -80,53 +81,54 @@ async function findAyoolaUsers(db: any, isMongo: boolean): Promise<UserInfo[]> {
   return users;
 }
 
-async function deleteUser(db: any, isMongo: boolean, userId: string): Promise<boolean> {
+async function deleteUser(mongoDb: any, pgClient: pg.Pool | null, userId: string): Promise<boolean> {
   const key = `onboarding_${userId}`;
   
   try {
-    if (isMongo) {
-      const cacheCollection = db.db.collection('cache');
+    if (mongoDb) {
+      const cacheCollection = mongoDb.collection('cache');
       const result = await cacheCollection.deleteOne({ key });
       
       // Also delete related data
-      const matchesCollection = db.db.collection('matches');
+      const matchesCollection = mongoDb.collection('matches');
       await matchesCollection.deleteMany({ 
         $or: [{ user_id: userId }, { matched_user_id: userId }] 
       });
       
-      const followUpsCollection = db.db.collection('follow_ups');
+      const followUpsCollection = mongoDb.collection('follow_ups');
       await followUpsCollection.deleteMany({ user_id: userId });
       
-      const featureRequestsCollection = db.db.collection('feature_requests');
+      const featureRequestsCollection = mongoDb.collection('feature_requests');
       await featureRequestsCollection.deleteMany({ user_id: userId });
       
-      const manualRequestsCollection = db.db.collection('manual_connection_requests');
+      const manualRequestsCollection = mongoDb.collection('manual_connection_requests');
       await manualRequestsCollection.deleteMany({ user_id: userId });
       
-      const diversityCollection = db.db.collection('diversity_research');
+      const diversityCollection = mongoDb.collection('diversity_research');
       await diversityCollection.deleteMany({ userId });
       
       return result.deletedCount > 0;
-    } else {
+    } else if (pgClient) {
       // PostgreSQL
-      await db.query('BEGIN');
+      await pgClient.query('BEGIN');
       
       // Delete from cache
-      await db.query('DELETE FROM cache WHERE key = $1', [key]);
+      await pgClient.query('DELETE FROM cache WHERE key = $1', [key]);
       
       // Delete related data
-      await db.query('DELETE FROM matches WHERE user_id = $1 OR matched_user_id = $1', [userId]);
-      await db.query('DELETE FROM follow_ups WHERE user_id = $1', [userId]);
-      await db.query('DELETE FROM feature_requests WHERE user_id = $1', [userId]);
-      await db.query('DELETE FROM manual_connection_requests WHERE user_id = $1', [userId]);
-      await db.query('DELETE FROM diversity_research WHERE user_id = $1', [userId]);
+      await pgClient.query('DELETE FROM matches WHERE user_id = $1 OR matched_user_id = $1', [userId]);
+      await pgClient.query('DELETE FROM follow_ups WHERE user_id = $1', [userId]);
+      await pgClient.query('DELETE FROM feature_requests WHERE user_id = $1', [userId]);
+      await pgClient.query('DELETE FROM manual_connection_requests WHERE user_id = $1', [userId]);
+      await pgClient.query('DELETE FROM diversity_research WHERE user_id = $1', [userId]);
       
-      await db.query('COMMIT');
+      await pgClient.query('COMMIT');
       return true;
     }
+    return false;
   } catch (error: any) {
-    if (!isMongo) {
-      await db.query('ROLLBACK');
+    if (pgClient) {
+      await pgClient.query('ROLLBACK');
     }
     console.error(`Error deleting user ${userId}:`, error.message);
     return false;
@@ -134,16 +136,42 @@ async function deleteUser(db: any, isMongo: boolean, userId: string): Promise<bo
 }
 
 async function main() {
-  console.log('🔍 Connecting to database...');
+  let mongoClient: MongoClient | null = null;
+  let mongoDb: any = null;
+  let pgClient: pg.Pool | null = null;
   
-  const db = await createDatabaseAdapter();
-  const databaseType = (process.env.DATABASE_TYPE || 'postgres').toLowerCase();
-  const isMongo = databaseType === 'mongodb' || databaseType === 'mongo';
-  
-  console.log(`📊 Database type: ${databaseType}`);
-  console.log('🔍 Searching for users with "Ayoola" in their name...\n');
-  
-  const ayoolaUsers = await findAyoolaUsers(db, isMongo);
+  try {
+    console.log('🔍 Connecting to database...');
+    
+    if (!process.env.DATABASE_URL) {
+      console.error('❌ DATABASE_URL environment variable is required');
+      process.exit(1);
+    }
+    
+    const databaseType = (process.env.DATABASE_TYPE || 'postgres').toLowerCase();
+    const isMongo = databaseType === 'mongodb' || databaseType === 'mongo';
+    
+    console.log(`📊 Database type: ${databaseType}`);
+    
+    if (isMongo) {
+      // MongoDB connection
+      mongoClient = new MongoClient(process.env.DATABASE_URL);
+      await mongoClient.connect();
+      const dbName = process.env.DATABASE_URL.match(/\/([^/?]+)(\?|$)/)?.[1] || 'kaia';
+      mongoDb = mongoClient.db(dbName);
+      console.log(`✅ Connected to MongoDB database: ${dbName}`);
+    } else {
+      // PostgreSQL connection
+      pgClient = new pg.Pool({
+        connectionString: process.env.DATABASE_URL
+      });
+      await pgClient.query('SELECT 1'); // Test connection
+      console.log('✅ Connected to PostgreSQL');
+    }
+    
+    console.log('🔍 Searching for users with "Ayoola" in their name...\n');
+    
+    const ayoolaUsers = await findAyoolaUsers(mongoDb, pgClient);
   
   if (ayoolaUsers.length === 0) {
     console.log('✅ No users found with "Ayoola" in their name.');
@@ -186,29 +214,42 @@ async function main() {
   let successCount = 0;
   let failCount = 0;
   
-  for (const user of ayoolaUsers) {
-    console.log(`Deleting ${user.name || user.userId} (${user.userId})...`);
-    const success = await deleteUser(db, isMongo, user.userId);
-    if (success) {
-      console.log(`✅ Successfully deleted ${user.name || user.userId}`);
-      successCount++;
-    } else {
-      console.log(`❌ Failed to delete ${user.name || user.userId}`);
-      failCount++;
+    for (const user of ayoolaUsers) {
+      console.log(`Deleting ${user.name || user.userId} (${user.userId})...`);
+      const success = await deleteUser(mongoDb, pgClient, user.userId);
+      if (success) {
+        console.log(`✅ Successfully deleted ${user.name || user.userId}`);
+        successCount++;
+      } else {
+        console.log(`❌ Failed to delete ${user.name || user.userId}`);
+        failCount++;
+      }
     }
-  }
-  
-  console.log('\n' + '='.repeat(70));
-  console.log(`\n✅ Deletion complete!`);
-  console.log(`   Successfully deleted: ${successCount}`);
-  console.log(`   Failed: ${failCount}`);
-  console.log(`   Total processed: ${ayoolaUsers.length}`);
-  
-  // Close database connection
-  if (db && typeof db.close === 'function') {
-    await db.close();
+    
+    console.log('\n' + '='.repeat(70));
+    console.log(`\n✅ Deletion complete!`);
+    console.log(`   Successfully deleted: ${successCount}`);
+    console.log(`   Failed: ${failCount}`);
+    console.log(`   Total processed: ${ayoolaUsers.length}`);
+  } catch (error: any) {
+    console.error('❌ Error:', error.message);
+    console.error(error.stack);
+    process.exit(1);
+  } finally {
+    // Close database connections
+    if (mongoClient) {
+      await mongoClient.close();
+      console.log('✅ MongoDB connection closed');
+    }
+    if (pgClient) {
+      await pgClient.end();
+      console.log('✅ PostgreSQL connection closed');
+    }
   }
 }
 
-main().catch(console.error);
+main().catch((error) => {
+  console.error('❌ Unhandled error:', error);
+  process.exit(1);
+});
 
