@@ -1231,6 +1231,16 @@ async function startAgents() {
                         const profileText = formatProfileForDisplay(state.profile, state.profile.language || 'en');
                         responseText = msgs.COMPLETION + '\n\n' + profileText;
                         
+                        // Track that we just sent a profile message to prevent LLM duplicates
+                        try {
+                          const { recordProfileMessageSent } = await import('./services/llmResponseInterceptor.js');
+                          if (typeof recordProfileMessageSent === 'function') {
+                            recordProfileMessageSent(chatId.toString());
+                          }
+                        } catch (e) {
+                          // Non-critical, continue
+                        }
+                        
                         console.log('[Telegram Chat ID Capture] 📋 Onboarding completed!');
                         
                         // Trigger real-time match check for new user
@@ -1684,19 +1694,11 @@ async function startAgents() {
                             }
                           } catch (e) { /* no matches */ }
                           
-                          responseText = `💜 Your Grow3dge Profile:\n\n` +
-                            `Name: ${p.name || 'Not set'}\n` +
-                            `Location: ${p.location || 'Not set'}\n` +
-                            `Language: ${p.language || 'en'}\n` +
-                            `Roles: ${p.roles?.join(', ') || 'Not set'}\n` +
-                            `Interests: ${p.interests?.join(', ') || 'Not set'}\n` +
-                            `Goals: ${p.connectionGoals?.join(', ') || 'Not set'}\n` +
-                            `Events: ${p.events?.join(', ') || 'None'}\n` +
-                            `Socials: ${p.socials?.join(', ') || 'None'}\n` +
-                            `Telegram: ${p.telegramHandle ? '@' + p.telegramHandle : 'Not set'}\n` +
-                            `Diversity Research Interest: ${p.diversityResearchInterest || 'Not set'}\n` +
-                            `Notifications: ${p.notifications || 'Not set'}\n` +
-                            `Total Matches: ${matchCount}` +
+                          // Use formatProfileForDisplay to ensure actual values are shown
+                          const { formatProfileForDisplay } = await import('./plugins/onboarding/utils.js');
+                          const profileText = formatProfileForDisplay(p, p.language || 'en');
+                          responseText = profileText +
+                            `\n\nTotal Matches: ${matchCount}` +
                             matchList +
                             `\n\n✅ Onboarding: Completed\n\nTo update any field, say "update" or "update [field name]".`;
                         } else if (isUpdateRequest) {

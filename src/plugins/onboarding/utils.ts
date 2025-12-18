@@ -92,14 +92,25 @@ export async function getOnboardingStep(runtime: IAgentRuntime, userId: UUID): P
 
 export function formatProfileForDisplay(profile: UserProfile, lang: string = 'en'): string {
   const msgs = getMessages(lang as LanguageCode);
+  
+  // Helper to ensure we show actual values, not counts
+  const formatArray = (arr: any): string => {
+    if (!arr) return msgs.SUMMARY_NOT_PROVIDED;
+    if (Array.isArray(arr)) {
+      return arr.length > 0 ? arr.join(', ') : msgs.SUMMARY_NOT_PROVIDED;
+    }
+    // If it's stored as a string/number, return as-is (shouldn't happen but handle gracefully)
+    return String(arr);
+  };
+  
   return `💜 Your Grow3dge Profile:\n\n` +
     `${msgs.SUMMARY_NAME} ${profile.name || msgs.SUMMARY_NOT_PROVIDED}\n` +
     `${msgs.SUMMARY_LOCATION} ${profile.location || msgs.SUMMARY_NOT_PROVIDED}\n` +
-    `${msgs.SUMMARY_ROLES} ${profile.roles?.join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
-    `${msgs.SUMMARY_INTERESTS} ${profile.interests?.join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
-    `${msgs.SUMMARY_GOALS} ${profile.connectionGoals?.join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
-    `${msgs.SUMMARY_EVENTS} ${profile.events?.join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
-    `${msgs.SUMMARY_SOCIALS} ${profile.socials?.join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
+    `${msgs.SUMMARY_ROLES} ${formatArray(profile.roles)}\n` +
+    `${msgs.SUMMARY_INTERESTS} ${formatArray(profile.interests)}\n` +
+    `${msgs.SUMMARY_GOALS} ${formatArray(profile.connectionGoals)}\n` +
+    `${msgs.SUMMARY_EVENTS} ${formatArray(profile.events)}\n` +
+    `${msgs.SUMMARY_SOCIALS} ${formatArray(profile.socials)}\n` +
     `${msgs.SUMMARY_TELEGRAM} ${profile.telegramHandle ? '@' + profile.telegramHandle : msgs.SUMMARY_NOT_PROVIDED}\n` +
     `${msgs.SUMMARY_DIVERSITY} ${profile.diversityResearchInterest || msgs.SUMMARY_NOT_PROVIDED}\n` +
     `${msgs.SUMMARY_NOTIFICATIONS} ${profile.notifications || msgs.SUMMARY_NOT_PROVIDED}`;

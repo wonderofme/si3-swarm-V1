@@ -83,6 +83,16 @@ export function getUserIdForRoomId(roomId: string | undefined): string | undefin
 
 // Store pending restart commands with timestamps for timeout-based execution
 const pendingRestartCommands = new Map<string, { message: Memory; timestamp: number }>();
+const recentProfileMessages = new Map<string, number>(); // Track when profile messages were sent
+
+// Export function to record when profile message is sent
+export function recordProfileMessageSent(roomId: string): void {
+  recentProfileMessages.set(roomId, Date.now());
+  // Clean up old entries after 10 seconds
+  setTimeout(() => {
+    recentProfileMessages.delete(roomId);
+  }, 10000);
+}
 
 // Track messages created by timeout callback to prevent re-processing
 const timeoutCreatedMessages = new Set<string>();
@@ -791,8 +801,15 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
               telegrafInstancePatcher(bot);
             }
             
+            // Clean markdown asterisks from LLM responses
+            const cleanText = (text: string): string => {
+              // Remove markdown bold (**text** -> text)
+              return text.replace(/\*\*/g, '').trim();
+            };
+            
+            const cleanedText = cleanText(memory.content.text);
             console.log('[LLM Response Interceptor] Calling bot.telegram.sendMessage - this should be intercepted by instance patcher');
-            await bot.telegram.sendMessage(telegramChatId, memory.content.text);
+            await bot.telegram.sendMessage(telegramChatId, cleanedText);
             console.log('[LLM Response Interceptor] ✅ Successfully sent agent message via Telegram API');
             
             // Record in deduplication system immediately to prevent duplicates
@@ -842,6 +859,28 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
         }
       } else {
         console.log('[LLM Response Interceptor] Agent message has no text or empty text');
+      }
+      
+      // Block LLM from generating duplicate profile messages after completion
+      if (memory.content.text && 
+          (memory.content.text.includes("Here's your profile") || 
+           memory.content.text.includes("profile again") ||
+           memory.content.text.includes("Your Grow3dge Profile"))) {
+        const cachedStep = getOnboardingStepFromCache(memory.userId);
+        if (cachedStep === 'COMPLETED') {
+          // Check if we just sent a profile message (within last 5 seconds)
+          const recentProfileMessage = recentProfileMessages.get(memory.roomId);
+          if (recentProfileMessage && Date.now() - recentProfileMessage < 5000) {
+            console.log('[LLM Response Interceptor] 🚫 BLOCKING duplicate profile message from LLM');
+            return await originalCreateMemory({
+              ...memory,
+              content: {
+                ...memory.content,
+                text: '' // Empty text prevents sending
+              }
+            });
+          }
+        }
       }
       
       // Clear pending restart command since we got a response
