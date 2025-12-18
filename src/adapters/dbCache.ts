@@ -1,155 +1,149 @@
-import { ICacheAdapter } from '@elizaos/core';
+import { ICacheAdapter, elizaLogger } from '@elizaos/core';
 import { createDatabaseAdapter } from './databaseAdapter.js';
+
+interface CacheItem {
+  value: any;
+  expires: number;
+}
 
 /**
  * Database-backed cache adapter that persists state to MongoDB/PostgreSQL
+ * Includes in-memory LRU-like caching with TTL for performance.
  * This ensures user data survives container restarts/redeployments
  */
 export class DatabaseCacheAdapter implements ICacheAdapter {
   private db: any;
-  private localCache = new Map<string, any>(); // In-memory cache for fast reads
-  private initialized = false;
+  private localCache = new Map<string, CacheItem>();
+  private initializationPromise: Promise<void> | null = null;
+  private readonly LOCAL_TTL_MS = 5000; // 5 seconds local cache validity
 
   constructor() {
     this.db = createDatabaseAdapter();
   }
 
   private async ensureInitialized(): Promise<void> {
-    if (this.initialized) return;
-    
-    try {
-      // Create cache table if it doesn't exist (for PostgreSQL)
-      const databaseType = (process.env.DATABASE_TYPE || 'postgres').toLowerCase();
-      if (databaseType !== 'mongodb' && databaseType !== 'mongo') {
-        await this.db.query(`
-          CREATE TABLE IF NOT EXISTS cache (
-            key TEXT PRIMARY KEY,
-            value JSONB,
-            created_at TIMESTAMPTZ DEFAULT NOW(),
-            updated_at TIMESTAMPTZ DEFAULT NOW()
-          )
-        `);
+    // If already initialized (promise exists), return it
+    if (this.initializationPromise) return this.initializationPromise;
+
+    // Create a new initialization promise (Mutex pattern)
+    this.initializationPromise = (async () => {
+      try {
+        const databaseType = (process.env.DATABASE_TYPE || 'postgres').toLowerCase();
+        
+        // Only Postgres needs table creation
+        if (databaseType !== 'mongodb' && databaseType !== 'mongo') {
+          // Check if query method exists
+          if (!this.db.query) {
+            elizaLogger.warn('[DatabaseCache] DB adapter missing query method, persistence disabled');
+            return;
+          }
+
+          await this.db.query(`
+            CREATE TABLE IF NOT EXISTS cache (
+              key TEXT PRIMARY KEY,
+              value JSONB,
+              created_at TIMESTAMPTZ DEFAULT NOW(),
+              updated_at TIMESTAMPTZ DEFAULT NOW()
+            )
+          `);
+        }
+        elizaLogger.success('[DatabaseCache] ✅ Initialized');
+      } catch (error) {
+        elizaLogger.error('[DatabaseCache] ⚠️ Initialization error: ' + (error instanceof Error ? error.message : String(error)));
+        // Allow retry on failure
+        this.initializationPromise = null; 
       }
-      this.initialized = true;
-      console.log('[DatabaseCache] ✅ Initialized');
-    } catch (error) {
-      console.error('[DatabaseCache] ⚠️ Initialization error:', error);
-      // Continue anyway - we'll fall back to memory cache
-    }
+    })();
+
+    return this.initializationPromise;
   }
 
   async get(key: string): Promise<any> {
-    // Check local cache first for speed
-    if (this.localCache.has(key)) {
-      return this.localCache.get(key);
+    // 1. Check local cache validity
+    const cached = this.localCache.get(key);
+    if (cached && Date.now() < cached.expires) {
+      return cached.value;
     }
 
     try {
       await this.ensureInitialized();
+      let value: any = undefined;
+
+      // 2. Database Fetch
+      const isMongo = this.isMongo();
       
-      const databaseType = (process.env.DATABASE_TYPE || 'postgres').toLowerCase();
-      
-      if (databaseType === 'mongodb' || databaseType === 'mongo') {
-        // MongoDB: Direct collection access for reliability
-        if (this.db && typeof this.db.getDb === 'function') {
-          const mongoDb = await this.db.getDb();
-          const cacheCollection = mongoDb.collection('cache');
-          const doc = await cacheCollection.findOne({ key: key });
-          if (doc && doc.value) {
-            const parsed = typeof doc.value === 'string' ? JSON.parse(doc.value) : doc.value;
-            // Store in local cache for faster future reads
-            this.localCache.set(key, parsed);
-            return parsed;
-          }
-        } else {
-          // Fallback to SQL query (through adapter)
-          const result = await this.db.query(
-            `SELECT value FROM cache WHERE key = $1`,
-            [key]
-          );
-          if (result.rows && result.rows.length > 0) {
-            const value = result.rows[0].value;
-            const parsed = typeof value === 'string' ? JSON.parse(value) : value;
-            this.localCache.set(key, parsed);
-            return parsed;
-          }
-        }
+      if (isMongo) {
+        const mongoDb = await this.db.getDb();
+        const doc = await mongoDb.collection('cache').findOne({ key });
+        if (doc) value = doc.value;
       } else {
-        // PostgreSQL: Use SQL query
-        const result = await this.db.query(
-          `SELECT value FROM cache WHERE key = $1`,
-          [key]
-        );
-        
-        if (result.rows && result.rows.length > 0) {
-          const value = result.rows[0].value;
-          // Parse if it's a string (PostgreSQL returns JSONB as object, but might be string in some cases)
-          const parsed = typeof value === 'string' ? JSON.parse(value) : value;
-          // Store in local cache for faster future reads
-          this.localCache.set(key, parsed);
-          return parsed;
-        }
+        const res = await this.db.query('SELECT value FROM cache WHERE key = $1', [key]);
+        if (res.rows.length > 0) value = res.rows[0].value;
       }
-      
-      return undefined;
+
+      // 3. Parse & Cache Locally
+      if (value !== undefined) {
+        // Parse if it came back as a string but looks like an object/array
+        // This handles legacy data or driver quirks
+        if (typeof value === 'string') {
+          try {
+            const parsed = JSON.parse(value);
+            value = parsed;
+          } catch (e) {
+            // It was actually just a string
+          }
+        }
+
+        this.localCache.set(key, {
+          value,
+          expires: Date.now() + this.LOCAL_TTL_MS
+        });
+      }
+
+      return value;
     } catch (error) {
-      console.error(`[DatabaseCache] Error getting key ${key}:`, error);
-      // Fall back to local cache
-      return this.localCache.get(key);
+      elizaLogger.error(`[DatabaseCache] Error getting key ${key}: ` + (error instanceof Error ? error.message : String(error)));
+      // Fallback: return expired local cache if we have it, rather than crashing
+      return cached ? cached.value : undefined;
     }
   }
 
   async set(key: string, value: any): Promise<void> {
-    // Always update local cache immediately
-    this.localCache.set(key, value);
+    // 1. Update local cache immediately
+    this.localCache.set(key, {
+      value,
+      expires: Date.now() + this.LOCAL_TTL_MS
+    });
 
     try {
       await this.ensureInitialized();
-      
-      const databaseType = (process.env.DATABASE_TYPE || 'postgres').toLowerCase();
-      
-      if (databaseType === 'mongodb' || databaseType === 'mongo') {
-        // MongoDB: Direct collection access for reliability
-        if (this.db && typeof this.db.getDb === 'function') {
-          const mongoDb = await this.db.getDb();
-          const cacheCollection = mongoDb.collection('cache');
-          await cacheCollection.updateOne(
-            { key: key },
-            { 
-              $set: { 
-                value: value, // Store as object, MongoDB will handle it
-                updated_at: new Date()
-              },
-              $setOnInsert: {
-                created_at: new Date()
-              }
-            },
-            { upsert: true }
-          );
-        } else {
-          // Fallback to SQL query (through adapter)
-          const valueStr = JSON.stringify(value);
-          await this.db.query(
-            `INSERT INTO cache (key, value, updated_at) VALUES ($1, $2, NOW()) ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW()`,
-            [key, valueStr]
-          );
-        }
+      const isMongo = this.isMongo();
+
+      if (isMongo) {
+        const mongoDb = await this.db.getDb();
+        await mongoDb.collection('cache').updateOne(
+          { key },
+          { 
+            $set: { value, updated_at: new Date() },
+            $setOnInsert: { created_at: new Date() }
+          },
+          { upsert: true }
+        );
       } else {
-        // PostgreSQL upsert
-        const valueStr = JSON.stringify(value);
+        // For Postgres JSONB, we generally pass the object directly.
+        // The driver usually handles stringification for JSONB columns.
+        // If using a raw TEXT column, you MUST stringify. 
+        // Assuming JSONB based on create table:
         await this.db.query(
           `INSERT INTO cache (key, value, updated_at) 
-           VALUES ($1, $2::jsonb, NOW()) 
+           VALUES ($1, $2, NOW()) 
            ON CONFLICT (key) 
-           DO UPDATE SET value = $2::jsonb, updated_at = NOW()`,
-          [key, valueStr]
+           DO UPDATE SET value = $2, updated_at = NOW()`,
+          [key, value] 
         );
       }
-      
-      console.log(`[DatabaseCache] ✅ Saved key: ${key}`);
     } catch (error) {
-      console.error(`[DatabaseCache] Error setting key ${key}:`, error);
-      // Data is still in local cache, so operation partially succeeded
+      elizaLogger.error(`[DatabaseCache] Error setting key ${key}: ` + (error instanceof Error ? error.message : String(error)));
     }
   }
 
@@ -158,11 +152,25 @@ export class DatabaseCacheAdapter implements ICacheAdapter {
 
     try {
       await this.ensureInitialized();
-      await this.db.query(`DELETE FROM cache WHERE key = $1`, [key]);
-      console.log(`[DatabaseCache] ✅ Deleted key: ${key}`);
+      const isMongo = this.isMongo();
+
+      if (isMongo) {
+        const mongoDb = await this.db.getDb();
+        await mongoDb.collection('cache').deleteOne({ key });
+      } else {
+        await this.db.query('DELETE FROM cache WHERE key = $1', [key]);
+      }
     } catch (error) {
-      console.error(`[DatabaseCache] Error deleting key ${key}:`, error);
+      elizaLogger.error(`[DatabaseCache] Error deleting key ${key}: ` + (error instanceof Error ? error.message : String(error)));
     }
+  }
+
+  // Helper to determine DB type
+  private isMongo(): boolean {
+    const dbType = (process.env.DATABASE_TYPE || 'postgres').toLowerCase();
+    const isMongoType = dbType === 'mongodb' || dbType === 'mongo';
+    // Double check capability
+    return isMongoType && this.db && typeof this.db.getDb === 'function';
   }
 }
 

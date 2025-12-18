@@ -81,8 +81,9 @@ async function findAyoolaUsers(mongoDb: any, pgClient: pg.Pool | null): Promise<
   return users;
 }
 
-async function deleteUser(mongoDb: any, pgClient: pg.Pool | null, userId: string): Promise<boolean> {
+async function deleteUser(mongoDb: any, pgClient: pg.Pool | null, userId: string): Promise<{ success: boolean; deletedCounts: any }> {
   const key = `onboarding_${userId}`;
+  const deletedCounts: any = {};
   
   try {
     if (mongoDb) {
@@ -92,50 +93,66 @@ async function deleteUser(mongoDb: any, pgClient: pg.Pool | null, userId: string
       const cacheResult = await cacheCollection.deleteMany({ 
         key: key  // Exact match - MongoDB should handle this correctly
       });
+      deletedCounts.cache = cacheResult.deletedCount;
       
       // Also delete related data
       const matchesCollection = mongoDb.collection('matches');
-      await matchesCollection.deleteMany({ 
+      const matchesResult = await matchesCollection.deleteMany({ 
         $or: [{ user_id: userId }, { matched_user_id: userId }] 
       });
+      deletedCounts.matches = matchesResult.deletedCount;
       
       const followUpsCollection = mongoDb.collection('follow_ups');
-      await followUpsCollection.deleteMany({ user_id: userId });
+      const followUpsResult = await followUpsCollection.deleteMany({ user_id: userId });
+      deletedCounts.followUps = followUpsResult.deletedCount;
       
       const featureRequestsCollection = mongoDb.collection('feature_requests');
-      await featureRequestsCollection.deleteMany({ user_id: userId });
+      const featureRequestsResult = await featureRequestsCollection.deleteMany({ user_id: userId });
+      deletedCounts.featureRequests = featureRequestsResult.deletedCount;
       
       const manualRequestsCollection = mongoDb.collection('manual_connection_requests');
-      await manualRequestsCollection.deleteMany({ user_id: userId });
+      const manualRequestsResult = await manualRequestsCollection.deleteMany({ user_id: userId });
+      deletedCounts.manualConnectionRequests = manualRequestsResult.deletedCount;
       
       const diversityCollection = mongoDb.collection('diversity_research');
-      await diversityCollection.deleteMany({ userId });
+      const diversityResult = await diversityCollection.deleteMany({ userId });
+      deletedCounts.diversityResearch = diversityResult.deletedCount;
       
-      return cacheResult.deletedCount > 0;
+      return { success: cacheResult.deletedCount > 0, deletedCounts };
     } else if (pgClient) {
       // PostgreSQL
       await pgClient.query('BEGIN');
       
       // Delete from cache
-      await pgClient.query('DELETE FROM cache WHERE key = $1', [key]);
+      const cacheResult = await pgClient.query('DELETE FROM cache WHERE key = $1 RETURNING *', [key]);
+      deletedCounts.cache = cacheResult.rowCount || 0;
       
       // Delete related data
-      await pgClient.query('DELETE FROM matches WHERE user_id = $1 OR matched_user_id = $1', [userId]);
-      await pgClient.query('DELETE FROM follow_ups WHERE user_id = $1', [userId]);
-      await pgClient.query('DELETE FROM feature_requests WHERE user_id = $1', [userId]);
-      await pgClient.query('DELETE FROM manual_connection_requests WHERE user_id = $1', [userId]);
-      await pgClient.query('DELETE FROM diversity_research WHERE user_id = $1', [userId]);
+      const matchesResult = await pgClient.query('DELETE FROM matches WHERE user_id = $1 OR matched_user_id = $1 RETURNING *', [userId]);
+      deletedCounts.matches = matchesResult.rowCount || 0;
+      
+      const followUpsResult = await pgClient.query('DELETE FROM follow_ups WHERE user_id = $1 RETURNING *', [userId]);
+      deletedCounts.followUps = followUpsResult.rowCount || 0;
+      
+      const featureRequestsResult = await pgClient.query('DELETE FROM feature_requests WHERE user_id = $1 RETURNING *', [userId]);
+      deletedCounts.featureRequests = featureRequestsResult.rowCount || 0;
+      
+      const manualRequestsResult = await pgClient.query('DELETE FROM manual_connection_requests WHERE user_id = $1 RETURNING *', [userId]);
+      deletedCounts.manualConnectionRequests = manualRequestsResult.rowCount || 0;
+      
+      const diversityResult = await pgClient.query('DELETE FROM diversity_research WHERE user_id = $1 RETURNING *', [userId]);
+      deletedCounts.diversityResearch = diversityResult.rowCount || 0;
       
       await pgClient.query('COMMIT');
-      return true;
+      return { success: deletedCounts.cache > 0, deletedCounts };
     }
-    return false;
+    return { success: false, deletedCounts };
   } catch (error: any) {
     if (pgClient) {
       await pgClient.query('ROLLBACK');
     }
     console.error(`Error deleting user ${userId}:`, error.message);
-    return false;
+    return { success: false, deletedCounts };
   }
 }
 
@@ -226,14 +243,33 @@ async function main() {
   console.log('  - Manual connection requests');
   console.log('  - Diversity research records');
   
-  // For safety, require confirmation via command line argument
-  const args = process.argv.slice(2);
+  // For safety, require confirmation via command line argument or environment variable
+  // Check both process.argv and environment variable
+  const allArgs = process.argv;
   
-  if (args.length === 0 || args[0] !== '--confirm') {
-    console.log('\n💡 To proceed, run with --confirm flag:');
-    console.log('   npm run delete-ayoola-users --confirm');
+  const envConfirm = process.env.CONFIRM_DELETE === 'true' || process.env.CONFIRM_DELETE === '1';
+  // Check for --confirm anywhere in argv (npm might pass it differently)
+  const argConfirm = allArgs.some(arg => 
+    arg === '--confirm' || 
+    arg === 'confirm' || 
+    arg.includes('--confirm') ||
+    (arg === '--' && allArgs[allArgs.indexOf('--') + 1] === 'confirm')
+  );
+  
+  const hasConfirm = envConfirm || argConfirm;
+  
+  if (!hasConfirm) {
+    console.log('\n💡 To proceed, you have these options:');
+    console.log('   Windows PowerShell:');
+    console.log('     $env:CONFIRM_DELETE="true"; npm run delete-ayoola-users');
+    console.log('   Windows CMD:');
+    console.log('     set CONFIRM_DELETE=true && npm run delete-ayoola-users');
+    console.log('   Direct execution:');
+    console.log('     node --loader ts-node/esm scripts/delete-ayoola-users.ts --confirm');
     return;
   }
+  
+  console.log('\n✅ Confirmation received. Proceeding with deletion...\n');
   
   console.log('\n🗑️  Deleting users...\n');
   
@@ -244,9 +280,16 @@ async function main() {
   for (const user of uniqueUserList) {
     const entryCount = ayoolaUsers.filter(u => u.userId === user.userId).length;
     console.log(`Deleting ${user.name || user.userId} (${user.userId})${entryCount > 1 ? ` - ${entryCount} cache entries` : ''}...`);
-    const success = await deleteUser(mongoDb, pgClient, user.userId);
-    if (success) {
+    const result = await deleteUser(mongoDb, pgClient, user.userId);
+    if (result.success) {
       console.log(`✅ Successfully deleted ${user.name || user.userId}`);
+      console.log(`   📊 Deletion summary:`);
+      console.log(`      - Cache entries: ${result.deletedCounts.cache || 0}`);
+      console.log(`      - Matches: ${result.deletedCounts.matches || 0}`);
+      console.log(`      - Follow-ups: ${result.deletedCounts.followUps || 0}`);
+      console.log(`      - Feature requests: ${result.deletedCounts.featureRequests || 0}`);
+      console.log(`      - Manual connection requests: ${result.deletedCounts.manualConnectionRequests || 0}`);
+      console.log(`      - Diversity research records: ${result.deletedCounts.diversityResearch || 0}`);
       successCount++;
     } else {
       console.log(`❌ Failed to delete ${user.name || user.userId}`);

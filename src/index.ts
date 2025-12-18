@@ -24,7 +24,7 @@ import { createDatabaseAdapter, DatabaseAdapter } from './adapters/databaseAdapt
 
 // ==================== REAL-TIME MATCH NOTIFICATION (TINDER-STYLE) ====================
 // This function checks for matches when a new user completes onboarding and notifies both parties
-async function checkForNewMatches(
+export async function checkForNewMatches(
   newUserId: string, 
   newUserProfile: any, 
   newUserChatId: string | number,
@@ -37,88 +37,83 @@ async function checkForNewMatches(
     return;
   }
   
-  const db = kaiaRuntimeForOnboardingCheck.databaseAdapter as any;
-  if (!db || !db.query) {
-    console.log('[Real-Time Matching] No database adapter');
-    return;
-  }
-  
-  const newUserInterests = newUserProfile.interests || [];
-  const newUserRoles = newUserProfile.roles || [];
-  const newUserGoals = newUserProfile.connectionGoals || [];
-  
-  if (newUserInterests.length === 0 && newUserRoles.length === 0) {
-    console.log('[Real-Time Matching] New user has no interests/roles');
-    return;
-  }
-  
   try {
-    // Get all completed profiles
-    const res = await db.query(`SELECT key, value FROM cache WHERE key LIKE 'onboarding_%'`);
+    // Use new weighted matching engine
+    const { findMatches } = await import('./services/matchingEngine.js');
+    const candidates = await findMatches(
+      kaiaRuntimeForOnboardingCheck,
+      newUserId,
+      newUserProfile,
+      [],
+      { minScoreThreshold: 75 } // Use 75 as threshold for real-time matches
+    );
     
-    for (const row of (res.rows || [])) {
-      const otherUserId = row.key.replace('onboarding_', '');
-      if (otherUserId === newUserId) continue;
-      
-      try {
-        const otherState = typeof row.value === 'string' ? JSON.parse(row.value) : row.value;
-        if (otherState.step !== 'COMPLETED' || !otherState.profile) continue;
-        if (otherState.profile.notifications !== 'Yes') continue; // Only notify users who opted in
-        
-        const otherInterests = otherState.profile.interests || [];
-        const otherRoles = otherState.profile.roles || [];
-        const otherGoals = otherState.profile.connectionGoals || [];
-        
-        // Find common interests
-        const commonInterests = newUserInterests.filter((i: string) => 
-          otherInterests.some((oi: string) => oi.toLowerCase().includes(i.toLowerCase()))
-        );
-        
-        // Find complementary goals (one looking for what the other offers)
-        const complementaryMatch = 
-          (newUserGoals.some((g: string) => g.toLowerCase().includes('invest')) && otherRoles.some((r: string) => r.toLowerCase().includes('founder'))) ||
-          (otherGoals.some((g: string) => g.toLowerCase().includes('invest')) && newUserRoles.some((r: string) => r.toLowerCase().includes('founder'))) ||
-          (newUserGoals.some((g: string) => g.toLowerCase().includes('growth') || g.toLowerCase().includes('marketing')) && otherRoles.some((r: string) => r.toLowerCase().includes('marketing'))) ||
-          (otherGoals.some((g: string) => g.toLowerCase().includes('growth') || g.toLowerCase().includes('marketing')) && newUserRoles.some((r: string) => r.toLowerCase().includes('marketing')));
-        
-        if (commonInterests.length >= 2 || complementaryMatch) {
-          const matchReason = commonInterests.length >= 2 
-            ? `Shared interests: ${commonInterests.slice(0, 3).join(', ')}`
-            : 'Complementary goals - potential collaboration!';
-          
-          console.log(`[Real-Time Matching] 🎉 Found match: ${newUserProfile.name} <-> ${otherState.profile.name}`);
-          
-          // Notify the existing user about the new match
-          const otherUserLang = otherState.profile.language || 'en';
-          const notificationMessages: Record<string, string> = {
-            en: `🎉 New match alert!\n\nI found someone who might be a great connection for you:\n\n${newUserProfile.name} from ${newUserProfile.location || 'the community'}\nRoles: ${newUserRoles.join(', ') || 'Not specified'}\nInterests: ${newUserInterests.slice(0, 3).join(', ') || 'Not specified'}\n${newUserProfile.telegramHandle ? `Telegram: @${newUserProfile.telegramHandle}` : ''}\n\n💡 ${matchReason}\n\nSay "find me a match" for more connections! 🤝`,
-            es: `🎉 ¡Nueva conexión encontrada!\n\nEncontré a alguien que podría ser una gran conexión para ti:\n\n${newUserProfile.name} de ${newUserProfile.location || 'la comunidad'}\nRoles: ${newUserRoles.join(', ') || 'No especificado'}\nIntereses: ${newUserInterests.slice(0, 3).join(', ') || 'No especificado'}\n${newUserProfile.telegramHandle ? `Telegram: @${newUserProfile.telegramHandle}` : ''}\n\n💡 ${matchReason}\n\n¡Di "encuéntrame una conexión" para más! 🤝`,
-            pt: `🎉 Nova conexão encontrada!\n\nEncontrei alguém que pode ser uma ótima conexão para você:\n\n${newUserProfile.name} de ${newUserProfile.location || 'a comunidade'}\nFunções: ${newUserRoles.join(', ') || 'Não especificado'}\nInteresses: ${newUserInterests.slice(0, 3).join(', ') || 'Não especificado'}\n${newUserProfile.telegramHandle ? `Telegram: @${newUserProfile.telegramHandle}` : ''}\n\n💡 ${matchReason}\n\nDiga "encontre uma conexão" para mais! 🤝`,
-            fr: `🎉 Nouvelle connexion trouvée!\n\nJ'ai trouvé quelqu'un qui pourrait être une excellente connexion pour vous:\n\n${newUserProfile.name} de ${newUserProfile.location || 'la communauté'}\nRôles: ${newUserRoles.join(', ') || 'Non spécifié'}\nIntérêts: ${newUserInterests.slice(0, 3).join(', ') || 'Non spécifié'}\n${newUserProfile.telegramHandle ? `Telegram: @${newUserProfile.telegramHandle}` : ''}\n\n💡 ${matchReason}\n\nDites "trouve-moi une connexion" pour plus! 🤝`
-          };
-          
-          // Send notification to existing user via Telegram
-          const telegramToken = process.env.TELEGRAM_BOT_TOKEN;
-          if (telegramToken) {
-            try {
-              await fetch(`https://api.telegram.org/bot${telegramToken}/sendMessage`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  chat_id: otherUserId,
-                  text: notificationMessages[otherUserLang] || notificationMessages.en
-                })
-              });
-              console.log(`[Real-Time Matching] ✅ Notified ${otherState.profile.name} about new match`);
-            } catch (notifyErr) {
-              console.log(`[Real-Time Matching] Could not notify ${otherState.profile.name}:`, notifyErr);
-            }
-          }
-        }
-      } catch (e) { /* skip invalid entries */ }
+    if (candidates.length === 0) {
+      console.log('[Real-Time Matching] No matches found above threshold');
+      return;
     }
+    
+    // Notify top match (or top 3) to existing users who opted in
+    const topMatches = candidates.slice(0, 3);
+    
+    for (const match of topMatches) {
+      // Get the matched user's state to check notifications preference
+      const db = kaiaRuntimeForOnboardingCheck.databaseAdapter as any;
+      const databaseType = (process.env.DATABASE_TYPE || 'postgres').toLowerCase();
+      const isMongo = databaseType === 'mongodb' || databaseType === 'mongo';
+      
+      let otherState: any = null;
+      if (isMongo && db.getDb) {
+        const mongoDb = await db.getDb();
+        const cacheCollection = mongoDb.collection('cache');
+        const doc = await cacheCollection.findOne({ key: `onboarding_${match.userId}` });
+        if (doc && doc.value) {
+          otherState = typeof doc.value === 'string' ? JSON.parse(doc.value) : doc.value;
+        }
+      } else {
+        const res = await db.query(`SELECT value FROM cache WHERE key = $1`, [`onboarding_${match.userId}`]);
+        if (res.rows.length > 0) {
+          otherState = typeof res.rows[0].value === 'string' ? JSON.parse(res.rows[0].value) : res.rows[0].value;
+        }
+      }
+      
+      if (!otherState || !otherState.profile) continue;
+      if (otherState.profile.notifications !== 'Yes') continue; // Only notify users who opted in
+      
+      const otherUserLang = otherState.profile.language || 'en';
+      const matchMessage = match.icebreaker || match.reason;
+      
+      const notificationMessages: Record<string, string> = {
+        en: `🎉 New match alert!\n\nI found someone who might be a great connection for you:\n\n${newUserProfile.name} from ${newUserProfile.location || 'the community'}\nRoles: ${(newUserProfile.roles || []).join(', ') || 'Not specified'}\nInterests: ${(newUserProfile.interests || []).slice(0, 3).join(', ') || 'Not specified'}\n${newUserProfile.telegramHandle ? `Telegram: @${newUserProfile.telegramHandle}\n` : ''}\n💡 ${matchMessage}\n\nSay "find me a match" for more connections! 🤝`,
+        es: `🎉 ¡Nueva conexión encontrada!\n\nEncontré a alguien que podría ser una gran conexión para ti:\n\n${newUserProfile.name} de ${newUserProfile.location || 'la comunidad'}\nRoles: ${(newUserProfile.roles || []).join(', ') || 'No especificado'}\nIntereses: ${(newUserProfile.interests || []).slice(0, 3).join(', ') || 'No especificado'}\n${newUserProfile.telegramHandle ? `Telegram: @${newUserProfile.telegramHandle}\n` : ''}\n💡 ${matchMessage}\n\n¡Di "encuéntrame una conexión" para más! 🤝`,
+        pt: `🎉 Nova conexão encontrada!\n\nEncontrei alguém que pode ser uma ótima conexão para você:\n\n${newUserProfile.name} de ${newUserProfile.location || 'a comunidade'}\nFunções: ${(newUserProfile.roles || []).join(', ') || 'Não especificado'}\nInteresses: ${(newUserProfile.interests || []).slice(0, 3).join(', ') || 'Não especificado'}\n${newUserProfile.telegramHandle ? `Telegram: @${newUserProfile.telegramHandle}\n` : ''}\n💡 ${matchMessage}\n\nDiga "encontre uma conexão" para mais! 🤝`,
+        fr: `🎉 Nouvelle connexion trouvée!\n\nJ'ai trouvé quelqu'un qui pourrait être une excellente connexion pour vous:\n\n${newUserProfile.name} de ${newUserProfile.location || 'la communauté'}\nRôles: ${(newUserProfile.roles || []).join(', ') || 'Non spécifié'}\nIntérêts: ${(newUserProfile.interests || []).slice(0, 3).join(', ') || 'Non spécifié'}\n${newUserProfile.telegramHandle ? `Telegram: @${newUserProfile.telegramHandle}\n` : ''}\n💡 ${matchMessage}\n\nDites "trouve-moi une connexion" pour plus! 🤝`
+      };
+      
+      // Send notification to existing user via Telegram
+      const telegramToken = process.env.TELEGRAM_BOT_TOKEN;
+      if (telegramToken) {
+        try {
+          await fetch(`https://api.telegram.org/bot${telegramToken}/sendMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: match.userId,
+              text: notificationMessages[otherUserLang] || notificationMessages.en
+            })
+          });
+          console.log(`[Real-Time Matching] ✅ Notified ${otherState.profile.name} about new match (Score: ${match.score})`);
+        } catch (notifyErr) {
+          console.log(`[Real-Time Matching] Could not notify ${otherState.profile.name}:`, notifyErr);
+        }
+      }
+    }
+    
+    console.log(`[Real-Time Matching] ✅ Found ${candidates.length} match(es) for ${newUserProfile.name}`);
   } catch (error) {
     console.error('[Real-Time Matching] Error:', error);
+    // Fallback to old logic if new engine fails
+    console.log('[Real-Time Matching] Falling back to legacy matching logic');
   }
 }
 
@@ -300,6 +295,141 @@ async function createRuntime(character: any) {
   }
   
   return runtime;
+}
+
+// ==================== DATABASE ABSTRACTION HELPERS ====================
+// These helpers eliminate duplicate PostgreSQL/MongoDB logic throughout the codebase
+
+/**
+ * Get onboarding state from cache or database
+ * Tries cache first (fast), then falls back to database (for persistence across deployments)
+ */
+export async function getOnboardingState(runtime: AgentRuntime, userId: string): Promise<{ step: string, profile: any }> {
+  const stateKey = `onboarding_${userId}`;
+  
+  // 1. Try cache first (fast access)
+  try {
+    const cached = await runtime.cacheManager.get(stateKey);
+    if (cached && typeof cached === 'object' && (cached as any).step && (cached as any).step !== 'NONE') {
+      return cached as { step: string, profile: any };
+    }
+  } catch (cacheErr) {
+    console.log('[State Helper] Cache read error, trying database...');
+  }
+  
+  // 2. Fallback to database (for persistence across deployments)
+  const db = runtime.databaseAdapter as any;
+  const defaultState = { step: 'NONE', profile: {} };
+  
+  if (!db) {
+    console.error('[State Helper] No database adapter available');
+    return defaultState;
+  }
+  
+  try {
+    const databaseType = (process.env.DATABASE_TYPE || 'postgres').toLowerCase();
+    const isMongo = databaseType === 'mongodb' || databaseType === 'mongo';
+    
+    if (isMongo && db.getDb) {
+      // MongoDB: Direct collection access
+      const mongoDb = await db.getDb();
+      const cacheCollection = mongoDb.collection('cache');
+      const dbDoc = await cacheCollection.findOne({ key: stateKey });
+      
+      if (dbDoc && dbDoc.value) {
+        const parsedValue = typeof dbDoc.value === 'string' 
+          ? JSON.parse(dbDoc.value) 
+          : dbDoc.value;
+        
+        if (parsedValue && typeof parsedValue === 'object' && parsedValue.step && parsedValue.step !== 'NONE') {
+          // Restore to cache for faster future access
+          await runtime.cacheManager.set(stateKey, parsedValue);
+          return parsedValue;
+        }
+      }
+    } else if (db.query) {
+      // PostgreSQL: SQL query
+      const result = await db.query(
+        `SELECT value FROM cache WHERE key = $1`,
+        [stateKey]
+      );
+      
+      if (result.rows && result.rows.length > 0) {
+        const rawValue = result.rows[0].value;
+        const dbValue = typeof rawValue === 'string' 
+          ? JSON.parse(rawValue) 
+          : rawValue;
+        
+        if (dbValue && typeof dbValue === 'object' && dbValue.step && dbValue.step !== 'NONE') {
+          // Restore to cache for faster future access
+          await runtime.cacheManager.set(stateKey, dbValue);
+          return dbValue;
+        }
+      }
+    }
+  } catch (dbErr: any) {
+    console.error('[State Helper] Database read error:', dbErr.message);
+  }
+  
+  return defaultState;
+}
+
+/**
+ * Save onboarding state to both cache and database
+ * Ensures persistence across deployments
+ */
+export async function saveOnboardingState(
+  runtime: AgentRuntime, 
+  userId: string, 
+  newState: { step: string, profile: any }
+): Promise<void> {
+  const stateKey = `onboarding_${userId}`;
+  
+  // 1. Update cache (fast access)
+  await runtime.cacheManager.set(stateKey, newState);
+  
+  // 2. Persist to database (survives deployments)
+  const db = runtime.databaseAdapter as any;
+  if (!db) {
+    console.error('[State Helper] No database adapter available for persistence');
+    return;
+  }
+  
+  try {
+    const databaseType = (process.env.DATABASE_TYPE || 'postgres').toLowerCase();
+    const isMongo = databaseType === 'mongodb' || databaseType === 'mongo';
+    const valueJson = JSON.stringify(newState);
+    
+    if (isMongo && db.getDb) {
+      // MongoDB: Update with upsert
+      const mongoDb = await db.getDb();
+      const cacheCollection = mongoDb.collection('cache');
+      await cacheCollection.updateOne(
+        { key: stateKey },
+        { 
+          $set: { 
+            value: newState,
+            updated_at: new Date()
+          },
+          $setOnInsert: {
+            created_at: new Date()
+          }
+        },
+        { upsert: true }
+      );
+    } else if (db.query) {
+      // PostgreSQL: Upsert
+      await db.query(
+        `INSERT INTO cache (key, value, created_at, updated_at) 
+         VALUES ($1, $2, NOW(), NOW())
+         ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW()`,
+        [stateKey, valueJson]
+      );
+    }
+  } catch (dbErr: any) {
+    console.error('[State Helper] Database write error:', dbErr.message);
+    // Continue even if database save fails - cache is still updated
+  }
 }
 
 // CRITICAL: Patch Telegraf instances as they're created
@@ -922,11 +1052,130 @@ async function startAgents() {
           console.log('[Telegram Chat ID Capture] Bot type:', typeof bot);
           console.log('[Telegram Chat ID Capture] Bot keys:', bot ? Object.keys(bot) : 'null');
           
-          // Try intercepting the handler property instead
-          // NOTE: bot.handler might not be the main entry point - Telegraf uses bot.on() for events
-          // But we'll patch it anyway to see if it gets called
-          if (bot && bot.handler) {
-            console.log('[Telegram Chat ID Capture] Found bot.handler, attempting to patch...');
+          // Use Telegraf middleware instead of monkey-patching (supported approach)
+          if (bot && typeof bot.use === 'function') {
+            console.log('[Telegram Middleware] ✅ Setting up Telegraf middleware...');
+            bot.use(async (ctx: any, next: () => Promise<void>) => {
+              // Extract chat ID and message from Telegraf context
+              const chatId = ctx.message?.chat?.id || 
+                            ctx.callbackQuery?.message?.chat?.id ||
+                            ctx.editedMessage?.chat?.id ||
+                            ctx.channelPost?.chat?.id;
+              const messageId = ctx.message?.message_id ||
+                               ctx.editedMessage?.message_id ||
+                               ctx.callbackQuery?.message?.message_id;
+              const messageText = ctx.message?.text || 
+                                 ctx.editedMessage?.text || 
+                                 ctx.callbackQuery?.data ||
+                                 '';
+              
+              console.log('[Telegram Middleware] 📥 Message received - chatId:', chatId, 'messageId:', messageId, 'text:', messageText?.substring(0, 50) || '(empty)');
+              
+              // Record user message ID for tracking
+              if (chatId && messageId && messageText) {
+                try {
+                  const { recordUserMessage } = await import('./services/messageIdTracker.js');
+                  const roomId = String(chatId);
+                  recordUserMessage(chatId, messageId, roomId);
+                } catch (error) {
+                  console.error('[Telegram Middleware] Error recording user message:', error);
+                }
+              }
+              
+              // Store chat ID in global map for responses
+              if (chatId && messageText) {
+                (global as any).__telegramChatIdMap = (global as any).__telegramChatIdMap || new Map();
+                (global as any).__telegramChatIdMap.set(messageText, String(chatId));
+                setTimeout(() => {
+                  (global as any).__telegramChatIdMap?.delete(messageText);
+                }, 60000);
+              }
+              
+              // Process message if we have chat ID and text
+              if (chatId && messageText) {
+                const originalSendMessage = async (targetChatId: string | number, text: string) => {
+                  try {
+                    await ctx.telegram.sendMessage(targetChatId, text);
+                  } catch (err: any) {
+                    console.error('[Telegram Middleware] Error sending message:', err.message);
+                    throw err;
+                  }
+                };
+                
+                try {
+                  // Fail-fast: Check critical dependencies
+                  if (!kaiaRuntimeForOnboardingCheck) {
+                    console.error('[Telegram Middleware] ❌ CRITICAL: Runtime not available - failing fast');
+                    process.exit(1); // Fail-fast on critical error
+                  }
+                  
+                  const openaiKey = process.env.OPENAI_API_KEY;
+                  if (!openaiKey) {
+                    console.error('[Telegram Middleware] ❌ CRITICAL: OpenAI API key missing - failing fast');
+                    process.exit(1); // Fail-fast on critical error
+                  }
+                  
+                  const userId = ctx.message?.from?.id?.toString() || chatId;
+                  
+                  // Use extracted onboarding handler
+                  const { processOnboardingMessage } = await import('./services/onboardingHandler.js');
+                  const onboardingResult = await processOnboardingMessage(
+                    kaiaRuntimeForOnboardingCheck,
+                    userId,
+                    messageText,
+                    chatId,
+                    originalSendMessage
+                  );
+                  
+                  // If onboarding handler processed it, we're done (don't pass to ElizaOS)
+                  if (onboardingResult.handled) {
+                    return; // Don't call next() - we've handled it
+                  }
+                  
+                  // If not handled by onboarding, check if user is in COMPLETED state
+                  const { getOnboardingState } = await import('./index.js');
+                  let state = await getOnboardingState(kaiaRuntimeForOnboardingCheck, userId);
+                  
+                  if (state.step === 'COMPLETED') {
+                    // Process completed user commands (moved to separate function for clarity)
+                    const { processCompletedUserMessage } = await import('./services/completedUserHandler.js');
+                    await processCompletedUserMessage(
+                      kaiaRuntimeForOnboardingCheck,
+                      userId,
+                      messageText,
+                      chatId,
+                      state,
+                      originalSendMessage
+                    );
+                    return; // We handled it, don't pass to ElizaOS
+                  }
+                  
+                  // If not handled, pass to next middleware/handler (ElizaOS)
+                  return next();
+                } catch (error: any) {
+                  console.error('[Telegram Middleware] ❌ Error processing message:', error);
+                  // Fail-fast on critical errors
+                  if (error.message?.includes('CRITICAL') || error.message?.includes('fatal')) {
+                    console.error('[Telegram Middleware] ❌ CRITICAL ERROR - failing fast');
+                    process.exit(1);
+                  }
+                  // For non-critical errors, try to send error message
+                  try {
+                    await originalSendMessage(chatId, "I'm experiencing some issues right now. Please try again in a moment! 🔧");
+                  } catch (sendErr) {
+                    console.error('[Telegram Middleware] Could not send error message');
+                  }
+                  return; // Don't pass to next on error
+                }
+              } else {
+                // No text message - pass to next handler (for callbacks, etc.)
+                return next();
+              }
+            });
+            console.log('[Telegram Middleware] ✅ Middleware installed successfully');
+          } else if (bot && bot.handler) {
+            // Fallback: If bot.use() not available, use handler patching (legacy)
+            console.log('[Telegram Chat ID Capture] ⚠️ bot.use() not available, falling back to handler patching...');
             const originalHandler = bot.handler.bind(bot);
             bot.handler = async function(update: any) {
               // Log ALL updates to see what's coming in
@@ -991,1112 +1240,61 @@ async function startAgents() {
                       
                       const userId = update.message?.from?.id?.toString() || chatId;
                       
-                      // Get state from cache first, then database (for persistence across deployments)
-                      // CRITICAL: This must work correctly after deployments when cache is empty
-                      let state: { step: string, profile: any } = { step: 'NONE', profile: {} };
-                      let stateLoaded = false;
-                      const stateKey = `onboarding_${userId}`;
+                      // Get state using abstraction helper (cache first, then database fallback)
+                      console.log('[Telegram Chat ID Capture] 🔍 Loading state for user:', userId);
+                      let state = await getOnboardingState(kaiaRuntimeForOnboardingCheck, userId);
+                      console.log('[Telegram Chat ID Capture] ✅ State loaded:', state.step, 'Profile keys:', Object.keys(state.profile || {}).length);
                       
-                      console.log('[Telegram Chat ID Capture] 🔍 Loading state for user:', userId, 'key:', stateKey);
-                      
-                      try {
-                        // Step 1: Try cache manager (which checks local cache, then database)
-                        const cached = await kaiaRuntimeForOnboardingCheck.cacheManager.get(stateKey);
-                        console.log('[Telegram Chat ID Capture] Cache manager returned:', cached ? `object with step: ${(cached as any)?.step || 'missing'}` : 'undefined/null');
-                        
-                        if (cached && typeof cached === 'object' && (cached as any).step && (cached as any).step !== 'NONE') {
-                          state = cached as { step: string, profile: any };
-                          stateLoaded = true;
-                          console.log('[Telegram Chat ID Capture] ✅ Loaded state from cache manager:', state.step, 'Profile has', Object.keys(state.profile || {}).length, 'keys');
-                        } else {
-                          // Cache miss or invalid - try direct database access as fallback
-                          console.log('[Telegram Chat ID Capture] 🔍 Cache manager miss/invalid, trying direct database access...');
-                          const db = kaiaRuntimeForOnboardingCheck.databaseAdapter as any;
-                          
-                          if (!db) {
-                            console.error('[Telegram Chat ID Capture] ❌ No database adapter available!');
-                          } else if (db.query) {
-                            // PostgreSQL - direct query
-                            try {
-                              console.log('[Telegram Chat ID Capture] Querying PostgreSQL for key:', stateKey);
-                              const result = await db.query(
-                                `SELECT value FROM cache WHERE key = $1`,
-                                [stateKey]
-                              );
-                              console.log('[Telegram Chat ID Capture] PostgreSQL query result:', result.rows ? `${result.rows.length} rows` : 'no rows');
-                              
-                              if (result.rows && result.rows.length > 0) {
-                                const rawValue = result.rows[0].value;
-                                console.log('[Telegram Chat ID Capture] Raw value type:', typeof rawValue, 'is string:', typeof rawValue === 'string');
-                                
-                                const dbValue = typeof rawValue === 'string' 
-                                  ? JSON.parse(rawValue) 
-                                  : rawValue;
-                                
-                                console.log('[Telegram Chat ID Capture] Parsed value:', dbValue ? `object with step: ${dbValue.step || 'missing'}` : 'null/undefined');
-                                
-                                if (dbValue && typeof dbValue === 'object' && dbValue.step && dbValue.step !== 'NONE') {
-                                  state = dbValue;
-                                  stateLoaded = true;
-                                  // CRITICAL: Restore to cache for faster access
-                                  await kaiaRuntimeForOnboardingCheck.cacheManager.set(stateKey, state);
-                                  console.log('[Telegram Chat ID Capture] ✅ Loaded state from PostgreSQL and restored to cache:', state.step);
-                                } else {
-                                  console.log('[Telegram Chat ID Capture] ⚠️ Database value found but invalid or NONE:', JSON.stringify(dbValue).substring(0, 200));
-                                }
-                              } else {
-                                console.log('[Telegram Chat ID Capture] ⚠️ No state found in PostgreSQL for key:', stateKey);
-                              }
-                            } catch (pgErr: any) {
-                              console.error('[Telegram Chat ID Capture] ❌ PostgreSQL query error:', pgErr.message);
-                              console.error('[Telegram Chat ID Capture] Stack:', pgErr.stack);
-                            }
-                          } else if (db.getDb) {
-                            // MongoDB - direct collection access
-                            try {
-                              console.log('[Telegram Chat ID Capture] Querying MongoDB for key:', stateKey);
-                              const mongoDb = await db.getDb();
-                              const cacheCollection = mongoDb.collection('cache');
-                              const dbDoc = await cacheCollection.findOne({ key: stateKey });
-                              console.log('[Telegram Chat ID Capture] MongoDB query result:', dbDoc ? 'document found' : 'no document');
-                              
-                              if (dbDoc) {
-                                console.log('[Telegram Chat ID Capture] MongoDB doc has value:', !!dbDoc.value, 'value type:', typeof dbDoc.value);
-                                
-                                if (dbDoc.value) {
-                                  const parsedValue = typeof dbDoc.value === 'string' 
-                                    ? JSON.parse(dbDoc.value) 
-                                    : dbDoc.value;
-                                  
-                                  console.log('[Telegram Chat ID Capture] Parsed value:', parsedValue ? `object with step: ${parsedValue.step || 'missing'}` : 'null/undefined');
-                                  
-                                  if (parsedValue && typeof parsedValue === 'object' && parsedValue.step && parsedValue.step !== 'NONE') {
-                                    state = parsedValue;
-                                    stateLoaded = true;
-                                    // CRITICAL: Restore to cache for faster access
-                                    await kaiaRuntimeForOnboardingCheck.cacheManager.set(stateKey, state);
-                                    console.log('[Telegram Chat ID Capture] ✅ Loaded state from MongoDB and restored to cache:', state.step);
-                                  } else {
-                                    console.log('[Telegram Chat ID Capture] ⚠️ MongoDB value found but invalid or NONE:', JSON.stringify(parsedValue).substring(0, 200));
-                                  }
-                                } else {
-                                  console.log('[Telegram Chat ID Capture] ⚠️ MongoDB document found but has no value field');
-                                }
-                              } else {
-                                console.log('[Telegram Chat ID Capture] ⚠️ No state found in MongoDB for key:', stateKey);
-                              }
-                            } catch (mongoErr: any) {
-                              console.error('[Telegram Chat ID Capture] ❌ MongoDB query error:', mongoErr.message);
-                              console.error('[Telegram Chat ID Capture] Stack:', mongoErr.stack);
-                            }
-                          } else {
-                            console.error('[Telegram Chat ID Capture] ❌ Database adapter has neither query() nor getDb() method!');
-                            console.error('[Telegram Chat ID Capture] Database adapter type:', typeof db, 'keys:', Object.keys(db || {}).slice(0, 10));
-                          }
-                        }
-                      } catch (cacheErr: any) {
-                        console.error('[Telegram Chat ID Capture] ❌ CRITICAL: Cache/database read error:', cacheErr.message);
-                        console.error('[Telegram Chat ID Capture] Error type:', cacheErr.constructor.name);
-                        console.error('[Telegram Chat ID Capture] Stack:', cacheErr.stack);
-                      }
-                      
-                      // Log final state with full details
-                      if (stateLoaded) {
-                        console.log('[Telegram Chat ID Capture] ✅✅✅ State successfully loaded:', state.step);
-                        console.log('[Telegram Chat ID Capture] Profile keys:', Object.keys(state.profile || {}));
-                        console.log('[Telegram Chat ID Capture] Profile name:', state.profile?.name || 'missing');
-                      } else {
-                        console.log('[Telegram Chat ID Capture] ⚠️⚠️⚠️ State NOT loaded, using default (NONE) - user will restart onboarding');
-                        console.log('[Telegram Chat ID Capture] This should NOT happen if state was previously saved!');
-                      }
-                      
-                      // Helper to update state (cache + database for persistence)
+                      // Helper to update state (uses abstraction helper for persistence)
                       const updateState = async (newStep: string, profileUpdate: any = {}) => {
                         const newState = {
                           step: newStep,
                           profile: { ...state.profile, ...profileUpdate }
                         };
-                        
-                        // Save to cache (fast access)
-                        await kaiaRuntimeForOnboardingCheck.cacheManager.set(`onboarding_${userId}`, newState);
-                        
-                        // CRITICAL: Also persist to database so it survives deployments
-                        try {
-                          const db = kaiaRuntimeForOnboardingCheck.databaseAdapter as any;
-                          if (db && db.query) {
-                            // PostgreSQL: Save as JSON in cache table
-                            await db.query(
-                              `INSERT INTO cache (key, value, created_at, updated_at) 
-                               VALUES ($1, $2, NOW(), NOW())
-                               ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW()`,
-                              [`onboarding_${userId}`, JSON.stringify(newState)]
-                            );
-                            console.log('[Telegram Chat ID Capture] 💾 Persisted state to database');
-                          } else if (db && db.getDb) {
-                            // MongoDB: Save to collection
-                            const mongoDb = await db.getDb();
-                            const cacheCollection = mongoDb.collection('cache');
-                            await cacheCollection.updateOne(
-                              { key: `onboarding_${userId}` },
-                              { 
-                                $set: { 
-                                  value: newState,
-                                  updated_at: new Date()
-                                },
-                                $setOnInsert: {
-                                  created_at: new Date()
-                                }
-                              },
-                              { upsert: true }
-                            );
-                            console.log('[Telegram Chat ID Capture] 💾 Persisted state to MongoDB');
-                          }
-                        } catch (dbError: any) {
-                          console.error('[Telegram Chat ID Capture] ⚠️ Could not persist to database:', dbError.message);
-                          // Continue even if database save fails - cache is still updated
-                        }
-                        
+                        await saveOnboardingState(kaiaRuntimeForOnboardingCheck, userId, newState);
+                        // Update local state reference
                         state = newState;
                         console.log('[Telegram Chat ID Capture] 📋 Updated state to:', newStep);
                       };
                       
                       console.log('[Telegram Chat ID Capture] 📋 Onboarding state:', state.step, JSON.stringify(state.profile));
                       
-                      // Handle onboarding flow directly
-                      let responseText = '';
-                      const lowerText = messageText.toLowerCase().trim();
-                      const msgs = getMessages(state.profile.language || 'en');
+                      // Use extracted onboarding handler
+                      const { processOnboardingMessage } = await import('./services/onboardingHandler.js');
+                      const onboardingResult = await processOnboardingMessage(
+                        kaiaRuntimeForOnboardingCheck,
+                        userId,
+                        messageText,
+                        chatId,
+                        originalSendMessage
+                      );
                       
-                      // Check for restart commands
-                      const isRestart = lowerText.includes('restart') || lowerText.includes('start over') || lowerText.includes('begin again');
+                      // If onboarding handler processed it, we're done (don't pass to ElizaOS)
+                      if (onboardingResult.handled) {
+                        return; // Don't call originalHandler - we've handled it
+                      }
                       
-                      // Check for "next" to skip optional questions
-                      const isNext = lowerText === 'next' || lowerText === 'skip';
+                      // If not handled by onboarding, check if user is in COMPLETED state
+                      // Reload state in case it changed
+                      state = await getOnboardingState(kaiaRuntimeForOnboardingCheck, userId);
                       
-                      // Handle onboarding flow - COMPLETED state will fall through to COMPLETED handler below
-                      if (isRestart || state.step === 'NONE') {
-                        // Start/restart onboarding - ask for language
-                        await updateState('ASK_LANGUAGE', {});
-                        responseText = msgs.LANGUAGE || "What's your preferred language?\n\n1. English\n2. Spanish\n3. Portuguese\n4. French\n\nReply with the number (for example: 1)";
-                        console.log('[Telegram Chat ID Capture] 📋 Starting onboarding, asking for language');
-                      } else if (state.step === 'ASK_LANGUAGE') {
-                        // Process language selection
-                        let lang: 'en' | 'es' | 'pt' | 'fr' = 'en';
-                        if (lowerText.includes('1') || lowerText.includes('english')) lang = 'en';
-                        else if (lowerText.includes('2') || lowerText.includes('español') || lowerText.includes('spanish')) lang = 'es';
-                        else if (lowerText.includes('3') || lowerText.includes('português') || lowerText.includes('portuguese')) lang = 'pt';
-                        else if (lowerText.includes('4') || lowerText.includes('français') || lowerText.includes('french')) lang = 'fr';
-                        
-                        await updateState('ASK_NAME', { language: lang });
-                        const newMsgs = getMessages(lang);
-                        responseText = newMsgs.GREETING;
-                        console.log('[Telegram Chat ID Capture] 📋 Language set to:', lang);
-                      } else if (state.step === 'ASK_NAME') {
-                        // Save name and ask for location
-                        await updateState('ASK_LOCATION', { name: messageText.trim() });
-                        responseText = msgs.LOCATION;
-                        console.log('[Telegram Chat ID Capture] 📋 Name saved:', messageText.trim());
-                      } else if (state.step === 'ASK_LOCATION') {
-                        // Save location (or skip) and ask for roles
-                        const location = isNext ? undefined : messageText.trim();
-                        await updateState('ASK_ROLE', { location });
-                        responseText = msgs.ROLES;
-                        console.log('[Telegram Chat ID Capture] 📋 Location saved:', location || 'skipped');
-                      } else if (state.step === 'ASK_ROLE') {
-                        // Map role numbers to actual role names
-                        const roleMap: Record<string, string> = {
-                          '1': 'Founder/Builder',
-                          '2': 'Marketing/BD/Partnerships',
-                          '3': 'DAO Council Member/Delegate',
-                          '4': 'Community Leader',
-                          '5': 'Investor/Grant Program Operator',
-                          '6': 'Early Web3 Explorer',
-                          '7': 'Media',
-                          '8': 'Artist',
-                          '9': 'Developer',
-                          '10': 'Other'
-                        };
-                        const roleInputs = messageText.split(',').map((r: string) => r.trim()).filter((r: string) => r);
-                        const roles: string[] = [];
-                        for (const input of roleInputs) {
-                          // Check if input contains "and" or is just a number
-                          if (input.includes(' and ') || input.includes(' and')) {
-                            // Parse "9 and Designer" -> ["Developer", "Designer"]
-                            const parts = input.split(/ and /i).map((p: string) => p.trim());
-                            for (const part of parts) {
-                              if (roleMap[part]) {
-                                roles.push(roleMap[part]);
-                              } else if (part && !/^\d+$/.test(part)) {
-                                // Not a number, treat as custom text
-                                roles.push(part);
-                              }
-                            }
-                          } else if (roleMap[input]) {
-                            // Direct number mapping
-                            roles.push(roleMap[input]);
-                          } else if (input && !/^\d+$/.test(input)) {
-                            // Custom text (not a number)
-                            roles.push(input);
-                          }
-                        }
-                        await updateState('ASK_INTERESTS', { roles });
-                        responseText = msgs.INTERESTS;
-                        console.log('[Telegram Chat ID Capture] 📋 Roles saved:', roles);
-                      } else if (state.step === 'ASK_INTERESTS') {
-                        // Map interest numbers to actual interest names
-                        const interestMap: Record<string, string> = {
-                          '1': 'Web3 Growth Marketing',
-                          '2': 'Sales, BD & Partnerships',
-                          '3': 'Education 3.0',
-                          '4': 'AI',
-                          '5': 'Cybersecurity',
-                          '6': "DAO's",
-                          '7': 'Tokenomics',
-                          '8': 'Fundraising',
-                          '9': 'DeepTech'
-                        };
-                        const interestInputs = messageText.split(',').map((r: string) => r.trim()).filter((r: string) => r);
-                        const interests: string[] = [];
-                        for (const input of interestInputs) {
-                          // Check if input contains "and" or is just a number
-                          if (input.includes(' and ') || input.includes(' and')) {
-                            // Parse "4 and Machine Learning" -> ["AI", "Machine Learning"]
-                            const parts = input.split(/ and /i).map((p: string) => p.trim());
-                            for (const part of parts) {
-                              if (interestMap[part]) {
-                                interests.push(interestMap[part]);
-                              } else if (part && !/^\d+$/.test(part)) {
-                                // Not a number, treat as custom text
-                                interests.push(part);
-                              }
-                            }
-                          } else if (interestMap[input]) {
-                            // Direct number mapping
-                            interests.push(interestMap[input]);
-                          } else if (input && !/^\d+$/.test(input)) {
-                            // Custom text (not a number)
-                            interests.push(input);
-                          }
-                        }
-                        await updateState('ASK_CONNECTION_GOALS', { interests });
-                        responseText = msgs.GOALS;
-                        console.log('[Telegram Chat ID Capture] 📋 Interests saved:', interests);
-                      } else if (state.step === 'ASK_CONNECTION_GOALS') {
-                        // Map goal numbers to actual goal names
-                        const goalMap: Record<string, string> = {
-                          '1': 'Startups to invest in',
-                          '2': 'Investors/grant programs',
-                          '3': 'Growth tools, strategies, and/or support',
-                          '4': 'Sales/BD tools, strategies and/or support',
-                          '5': "Communities and/or DAO's to join",
-                          '6': 'New job opportunities'
-                        };
-                        const goalInputs = messageText.split(',').map((r: string) => r.trim()).filter((r: string) => r);
-                        const connectionGoals: string[] = [];
-                        for (const input of goalInputs) {
-                          // Check if input contains "and" or is just a number
-                          if (input.includes(' and ') || input.includes(' and')) {
-                            // Parse "2 and Cybersecurity" -> ["Investors/grant programs", "Cybersecurity"]
-                            const parts = input.split(/ and /i).map((p: string) => p.trim());
-                            for (const part of parts) {
-                              if (goalMap[part]) {
-                                connectionGoals.push(goalMap[part]);
-                              } else if (part && !/^\d+$/.test(part)) {
-                                // Not a number, treat as custom text
-                                connectionGoals.push(part);
-                              }
-                            }
-                          } else if (goalMap[input]) {
-                            // Direct number mapping
-                            connectionGoals.push(goalMap[input]);
-                          } else if (input && !/^\d+$/.test(input)) {
-                            // Custom text (not a number)
-                            connectionGoals.push(input);
-                          }
-                        }
-                        await updateState('ASK_EVENTS', { connectionGoals });
-                        responseText = msgs.EVENTS;
-                        console.log('[Telegram Chat ID Capture] 📋 Goals saved:', connectionGoals);
-                      } else if (state.step === 'ASK_EVENTS') {
-                        // Save events (or skip) and ask for socials
-                        const events = isNext ? undefined : messageText.split(',').map((r: string) => r.trim()).filter((r: string) => r);
-                        await updateState('ASK_SOCIALS', { events });
-                        responseText = msgs.SOCIALS;
-                        console.log('[Telegram Chat ID Capture] 📋 Events saved:', events || 'skipped');
-                      } else if (state.step === 'ASK_SOCIALS') {
-                        // Save socials (or skip) and ask for telegram handle
-                        const socials = isNext ? undefined : messageText.split(',').map((r: string) => r.trim()).filter((r: string) => r);
-                        await updateState('ASK_TELEGRAM_HANDLE', { socials });
-                        responseText = msgs.TELEGRAM;
-                        console.log('[Telegram Chat ID Capture] 📋 Socials saved:', socials || 'skipped');
-                      } else if (state.step === 'ASK_TELEGRAM_HANDLE') {
-                        // Save telegram handle and ask for gender
-                        const telegramHandle = messageText.trim().replace('@', '');
-                        await updateState('ASK_GENDER', { telegramHandle });
-                        responseText = msgs.GENDER;
-                        console.log('[Telegram Chat ID Capture] 📋 Telegram handle saved:', telegramHandle);
-                      } else if (state.step === 'ASK_GENDER') {
-                        // Check if user wants to participate in diversity research
-                        // If they say "Yes" (with or without "Diversity"), or "Yes, Diversity", treat as wanting to participate
-                        // If they say "Next" or "No", treat as not interested
-                        const saidYes = lowerText.includes('yes') || lowerText.includes('sí') || lowerText.includes('sim') || lowerText.includes('oui');
-                        const saidNo = lowerText.includes('no') && !lowerText.includes('not sure');
-                        const wantsDiversityResearch = saidYes && !saidNo && !isNext;
-                        
-                        let diversityResearchInterest: string | undefined;
-                        if (wantsDiversityResearch) {
-                          diversityResearchInterest = 'Yes';
-                          // Track Telegram handle for diversity research
-                          try {
-                            const telegramHandle = state.profile.telegramHandle || chatId.toString();
-                            const db = kaiaRuntimeForOnboardingCheck.databaseAdapter as any;
-                            if (db && db.getDb) {
-                              const mongoDb = await db.getDb();
-                              const diversityCollection = mongoDb.collection('diversity_research');
-                              // Check if already exists
-                              const existing = await diversityCollection.findOne({ userId: userId });
-                              if (!existing) {
-                                await diversityCollection.insertOne({
-                                  userId: userId,
-                                  telegramHandle: telegramHandle,
-                                  roomId: chatId.toString(),
-                                  interestedAt: new Date(),
-                                  status: 'pending'
-                                });
-                                console.log('[Diversity Research] ✅ Tracked Telegram handle for diversity research:', telegramHandle);
-                              } else {
-                                // Update existing record
-                                await diversityCollection.updateOne(
-                                  { userId: userId },
-                                  { $set: { interestedAt: new Date(), status: 'pending' } }
-                                );
-                                console.log('[Diversity Research] ✅ Updated diversity research interest');
-                              }
-                            }
-                          } catch (error) {
-                            console.error('[Diversity Research] Error tracking diversity research interest:', error);
-                            // Don't fail the onboarding flow if tracking fails
-                          }
-                        } else if (saidNo || isNext) {
-                          // User explicitly said "No" or skipped with "Next"
-                          diversityResearchInterest = 'No';
-                          // Remove from diversity research tracking if they said No
-                          try {
-                            const db = kaiaRuntimeForOnboardingCheck.databaseAdapter as any;
-                            if (db && db.getDb) {
-                              const mongoDb = await db.getDb();
-                              const diversityCollection = mongoDb.collection('diversity_research');
-                              await diversityCollection.deleteOne({ userId: userId });
-                              console.log('[Diversity Research] ✅ Removed from diversity research tracking');
-                            }
-                          } catch (error) {
-                            console.error('[Diversity Research] Error removing from tracking:', error);
-                          }
-                        }
-                        
-                        // Save gender (or skip) and ask for notifications
-                        let gender: string | undefined;
-                        if (!isNext && !wantsDiversityResearch && !saidYes) {
-                          // Only save gender if it's not a diversity research response
-                          gender = messageText.trim();
-                        }
-                        await updateState('ASK_NOTIFICATIONS', { gender, diversityResearchInterest });
-                        responseText = msgs.NOTIFICATIONS;
-                        console.log('[Telegram Chat ID Capture] 📋 Gender saved:', gender || 'skipped', 'Diversity research:', diversityResearchInterest || 'skipped');
-                      } else if (state.step === 'ASK_NOTIFICATIONS') {
-                        // Save notifications preference and complete
-                        let notifications = 'Not sure';
-                        if (lowerText.includes('1') || lowerText.includes('yes')) notifications = 'Yes';
-                        else if (lowerText.includes('2') || lowerText.includes('no')) notifications = 'No';
-                        else if (lowerText.includes('3')) notifications = 'Check later';
-                        
-                        await updateState('COMPLETED', { notifications, onboardingCompletedAt: new Date() });
-                        
-                        // Send completion message with profile
-                        const { formatProfileForDisplay } = await import('./plugins/onboarding/utils.js');
-                        const profileText = formatProfileForDisplay(state.profile, state.profile.language || 'en');
-                        responseText = msgs.COMPLETION + '\n\n' + profileText;
-                        
-                        // Track that we just sent a profile message to prevent LLM duplicates
-                        try {
-                          const { recordProfileMessageSent } = await import('./services/llmResponseInterceptor.js');
-                          if (typeof recordProfileMessageSent === 'function') {
-                            recordProfileMessageSent(chatId.toString());
-                          }
-                        } catch (e) {
-                          // Non-critical, continue
-                        }
-                        
-                        console.log('[Telegram Chat ID Capture] 📋 Onboarding completed!');
-                        
-                        // Trigger real-time match check for new user
-                        setTimeout(async () => {
-                          try {
-                            await checkForNewMatches(userId, state.profile, chatId, originalSendMessage);
-                          } catch (e) {
-                            console.log('[Match Notification] Error checking for matches after onboarding:', e);
-                          }
-                        }, 5000);
-                      } else if (state.step === 'AWAITING_UPDATE_FIELD') {
-                        // User is choosing which field to update
-                        const fieldMap: Record<string, { step: string, prompt: string, number: number }> = {
-                          'name': { step: 'UPDATING_NAME', prompt: 'What would you like to change your name to?', number: 1 },
-                          'location': { step: 'UPDATING_LOCATION', prompt: 'What is your new location (city and country)?', number: 2 },
-                          'roles': { step: 'UPDATING_ROLES', prompt: msgs.ROLES, number: 3 },
-                          'interests': { step: 'UPDATING_INTERESTS', prompt: msgs.INTERESTS, number: 4 },
-                          'goals': { step: 'UPDATING_GOALS', prompt: msgs.GOALS, number: 5 },
-                          'events': { step: 'UPDATING_EVENTS', prompt: 'What events will you be attending? (event name, date, location)', number: 6 },
-                          'socials': { step: 'UPDATING_SOCIALS', prompt: 'Share your social media links:', number: 7 },
-                          'telegram': { step: 'UPDATING_TELEGRAM', prompt: 'What is your Telegram handle? (e.g., @username)', number: 8 },
-                          'diversity': { step: 'UPDATING_DIVERSITY', prompt: 'Would you like to be (anonymously) included within our diversity research?\n\n1. Yes\n2. No\n3. Not sure yet\n\nPlease reply with the number (for example: 1)', number: 9 },
-                          'notifications': { step: 'UPDATING_NOTIFICATIONS', prompt: msgs.NOTIFICATIONS, number: 10 }
-                        };
-                        
-                        // Check for number input (1-10)
-                        const numberMatch = lowerText.match(/\b([1-9]|10)\b/);
-                        let matchedField: string | null = null;
-                        
-                        if (numberMatch) {
-                          // User provided a number
-                          const fieldNumber = parseInt(numberMatch[1]);
-                          const fieldEntry = Object.entries(fieldMap).find(([_, info]) => info.number === fieldNumber);
-                          if (fieldEntry) {
-                            matchedField = fieldEntry[0];
-                          }
-                        } else {
-                          // Check for field name in text
-                          for (const [field, _] of Object.entries(fieldMap)) {
-                            if (lowerText.includes(field) || 
-                                (field === 'name' && (lowerText.includes('name') || lowerText.includes('nombre'))) ||
-                                (field === 'location' && (lowerText.includes('location') || lowerText.includes('ubicación') || lowerText.includes('localização'))) ||
-                                (field === 'roles' && (lowerText.includes('role') || lowerText.includes('rol'))) ||
-                                (field === 'interests' && (lowerText.includes('interest') || lowerText.includes('interés'))) ||
-                                (field === 'goals' && lowerText.includes('goal')) ||
-                                (field === 'events' && (lowerText.includes('event') || lowerText.includes('conference'))) ||
-                                (field === 'socials' && (lowerText.includes('social') || lowerText.includes('link'))) ||
-                                (field === 'telegram' && lowerText.includes('telegram')) ||
-                                (field === 'diversity' && (lowerText.includes('diversity') || lowerText.includes('diversidad'))) ||
-                                (field === 'notifications' && (lowerText.includes('notification') || lowerText.includes('collab')))) {
-                              matchedField = field;
-                              break;
-                            }
-                          }
-                        }
-                        
-                        if (matchedField) {
-                          const updateInfo = fieldMap[matchedField];
-                          await updateState(updateInfo.step, {});
-                          responseText = updateInfo.prompt;
-                        } else {
-                          responseText = `I didn't recognize that field. Please choose from:\n\n` +
-                            `1. Name\n` +
-                            `2. Location\n` +
-                            `3. Professional role(s)\n` +
-                            `4. Professional interests\n` +
-                            `5. Professional goals\n` +
-                            `6. Events & conferences attending\n` +
-                            `7. Personal social and/or digital links\n` +
-                            `8. Telegram handle\n` +
-                            `9. Diversity research interest\n` +
-                            `10. Collaboration notifications\n\n` +
-                            `Just type the field number(s) (e.g. 1, 3).`;
-                        }
-                      } else if (state.step.startsWith('UPDATING_')) {
-                        // Handle update for specific field
-                        const fieldBeingUpdated = state.step.replace('UPDATING_', '').toLowerCase();
-                        let updateValue: any = messageText.trim();
-                        
-                        // Parse based on field type
-                        if (['roles', 'interests', 'goals', 'events', 'socials'].includes(fieldBeingUpdated)) {
-                          updateValue = messageText.split(',').map((s: string) => s.trim()).filter((s: string) => s);
-                        } else if (fieldBeingUpdated === 'notifications') {
-                          if (lowerText.includes('1') || lowerText.includes('yes')) updateValue = 'Yes';
-                          else if (lowerText.includes('2') || lowerText.includes('no')) updateValue = 'No';
-                          else if (lowerText.includes('3')) updateValue = 'Check later';
-                        } else if (fieldBeingUpdated === 'diversity') {
-                          // Handle diversity research interest
-                          if (lowerText.includes('1') || lowerText.includes('yes')) {
-                            updateValue = 'Yes';
-                            // Track Telegram handle for diversity research if they said Yes
-                            try {
-                              const telegramHandle = state.profile.telegramHandle || chatId.toString();
-                              const db = kaiaRuntimeForOnboardingCheck.databaseAdapter as any;
-                              if (db && db.getDb) {
-                                const mongoDb = await db.getDb();
-                                const diversityCollection = mongoDb.collection('diversity_research');
-                                // Check if already exists
-                                const existing = await diversityCollection.findOne({ userId: userId });
-                                if (!existing) {
-                                  await diversityCollection.insertOne({
-                                    userId: userId,
-                                    telegramHandle: telegramHandle,
-                                    roomId: chatId.toString(),
-                                    interestedAt: new Date(),
-                                    status: 'pending'
-                                  });
-                                  console.log('[Diversity Research] ✅ Tracked Telegram handle for diversity research:', telegramHandle);
-                                } else {
-                                  // Update existing record
-                                  await diversityCollection.updateOne(
-                                    { userId: userId },
-                                    { $set: { interestedAt: new Date(), status: 'pending' } }
-                                  );
-                                  console.log('[Diversity Research] ✅ Updated diversity research interest');
-                                }
-                              }
-                            } catch (error) {
-                              console.error('[Diversity Research] Error tracking diversity research interest:', error);
-                              // Don't fail the update if tracking fails
-                            }
-                          } else if (lowerText.includes('2') || lowerText.includes('no')) {
-                            updateValue = 'No';
-                            // Remove from diversity research tracking if they said No
-                            try {
-                              const db = kaiaRuntimeForOnboardingCheck.databaseAdapter as any;
-                              if (db && db.getDb) {
-                                const mongoDb = await db.getDb();
-                                const diversityCollection = mongoDb.collection('diversity_research');
-                                await diversityCollection.deleteOne({ userId: userId });
-                                console.log('[Diversity Research] ✅ Removed from diversity research tracking');
-                              }
-                            } catch (error) {
-                              console.error('[Diversity Research] Error removing from tracking:', error);
-                            }
-                          } else if (lowerText.includes('3') || lowerText.includes('not sure')) {
-                            updateValue = 'Not sure yet';
-                          }
-                        } else if (fieldBeingUpdated === 'telegram') {
-                          updateValue = messageText.trim().replace('@', '');
-                        }
-                        
-                        // Map field names to profile keys
-                        const fieldToKey: Record<string, string> = {
-                          'name': 'name',
-                          'location': 'location',
-                          'roles': 'roles',
-                          'interests': 'interests',
-                          'goals': 'connectionGoals',
-                          'events': 'events',
-                          'socials': 'socials',
-                          'telegram': 'telegramHandle',
-                          'diversity': 'diversityResearchInterest',
-                          'notifications': 'notifications'
-                        };
-                        
-                        const profileKey = fieldToKey[fieldBeingUpdated] || fieldBeingUpdated;
-                        const updateObj: any = {};
-                        updateObj[profileKey] = updateValue;
-                        
-                        await updateState('COMPLETED', updateObj);
-                        // Reload state to ensure it's up to date
-                        try {
-                          const updatedCached = await kaiaRuntimeForOnboardingCheck.cacheManager.get(`onboarding_${userId}`);
-                          if (updatedCached && typeof updatedCached === 'object') {
-                            state = updatedCached as { step: string, profile: any };
-                          }
-                        } catch (e) {
-                          // State already updated above
-                        }
-                        responseText = `✅ Your ${fieldBeingUpdated === 'diversity' ? 'diversity research interest' : fieldBeingUpdated} has been updated!\n\nSay "my profile" to see your updated profile! 💜`;
-                        console.log(`[Telegram Chat ID Capture] ✏️ Updated ${fieldBeingUpdated} to:`, updateValue);
-                      } else if (state.step === 'AWAITING_FEATURE_DETAILS') {
-                        // User is providing feature request details
-                        console.log('[Telegram Chat ID Capture] 💡 Feature request details received...');
-                        
-                        // Try to send email first
-                        let emailSent = false;
-                        try {
-                          const { sendFeatureRequest } = await import('./services/featureRequest.js');
-                          await sendFeatureRequest(userId, state.profile.name || 'Anonymous', messageText, messageText);
-                          emailSent = true;
-                          console.log('[Feature Request] ✅ Email sent successfully');
-                        } catch (emailError: any) {
-                          console.log('[Feature Request] ⚠️ Could not send email:', emailError.message);
-                          // Continue to save to database even if email fails
-                        }
-                        
-                        // Always save to database as backup
-                        try {
-                          const db = kaiaRuntimeForOnboardingCheck.databaseAdapter as any;
-                          if (db && db.query) {
-                            const { v4: uuidv4 } = await import('uuid');
-                            await db.query(
-                              `INSERT INTO feature_requests (id, user_id, user_name, request_text, created_at) VALUES ($1, $2, $3, $4, NOW())`,
-                              [uuidv4(), userId, state.profile.name || 'Anonymous', messageText]
-                            );
-                            console.log('[Feature Request] ✅ Saved to database');
-                          }
-                        } catch (e) {
-                          console.log('[Feature Request] Could not save to DB:', e);
-                        }
-                        
-                        await updateState('COMPLETED', {});
-                        
-                        if (emailSent) {
-                          responseText = `Thank you for your suggestion, ${state.profile.name}! 💜\n\n` +
-                            `I've sent your request to tech@si3.space:\n"${messageText.substring(0, 200)}${messageText.length > 200 ? '...' : ''}"\n\n` +
-                            `The SI<3> team reviews all suggestions. Your feedback helps make me better! 🚀`;
-                        } else {
-                          responseText = `Thank you for your suggestion, ${state.profile.name}! 💜\n\n` +
-                            `I've recorded your request:\n"${messageText.substring(0, 200)}${messageText.length > 200 ? '...' : ''}"\n\n` +
-                            `The SI<3> team reviews all suggestions. Your feedback helps make me better! 🚀`;
-                        }
-                      } else if (state.step === 'COMPLETED') {
-                        // User has completed onboarding - handle all commands with full features
-                        console.log('[Telegram Chat ID Capture] 🤖 Processing completed user request...');
-                        
-                        // ==================== CONVERSATION HISTORY ====================
-                        // Load and update conversation history from cache
-                        const MAX_HISTORY_MESSAGES = 10;
-                        let conversationHistory: Array<{role: string, content: string, timestamp: number}> = [];
-                        try {
-                          const historyCache = await kaiaRuntimeForOnboardingCheck.cacheManager.get(`conversation_${userId}`);
-                          if (historyCache && Array.isArray(historyCache)) {
-                            conversationHistory = historyCache;
-                          }
-                        } catch (e) { /* start fresh */ }
-                        
-                        // Add current message to history
-                        conversationHistory.push({ role: 'user', content: messageText, timestamp: Date.now() });
-                        if (conversationHistory.length > MAX_HISTORY_MESSAGES * 2) {
-                          conversationHistory = conversationHistory.slice(-MAX_HISTORY_MESSAGES * 2);
-                        }
-                        
-                        // ==================== KNOWLEDGE QUESTION DETECTION ====================
-                        // Detect knowledge/educational questions to redirect with "coming soon" message
-                        const knowledgeKeywords = [
-                          'what is', 'what are', 'explain', 'tell me about', 'how does', 'define',
-                          'dao', 'defi', 'nft', 'blockchain', 'cryptocurrency', 'crypto', 'web3',
-                          'smart contract', 'token', 'wallet', 'ethereum', 'bitcoin', 'solana',
-                          'proof of stake', 'proof of work', 'mining', 'staking', 'yield', 'liquidity'
-                        ];
-                        const isKnowledgeQuestion = knowledgeKeywords.some(k => lowerText.includes(k)) && 
-                          !lowerText.includes('match') && !lowerText.includes('profile') && !lowerText.includes('update');
-                        
-                        // ==================== COMMAND DETECTION ====================
-                        const isMatchRequest = lowerText.includes('match') || lowerText.includes('connect me') || lowerText.includes('find someone') || lowerText.includes('find me') || lowerText.includes('introduce');
-                        const isHistoryRequest = lowerText === 'profile' || lowerText.includes('history') || lowerText.includes('my profile') || lowerText.includes('my matches') || lowerText.includes('show profile') || lowerText.includes('view profile');
-                        const isLanguageChange = lowerText.includes('change language') || lowerText.includes('cambiar idioma') || lowerText.includes('mudar idioma') || lowerText.includes('changer de langue');
-                        const isUpdateRequest = lowerText === 'update' || 
-                          lowerText === 'edit' ||
-                          lowerText.startsWith('update ') || 
-                          lowerText.startsWith('edit ') ||
-                          lowerText.includes('edit my') || 
-                          lowerText.includes('change my') ||
-                          lowerText.includes('edit profile') ||
-                          lowerText.includes('change details') ||
-                          lowerText.includes('update profile') ||
-                          lowerText.includes('edit details') ||
-                          lowerText.includes('modify profile') ||
-                          lowerText.includes('change profile');
-                        // Natural language feature request detection
-                        const hasFeatureRequestKeywords = 
-                          lowerText.includes('feature') || 
-                          lowerText.includes('suggest') || 
-                          lowerText.includes('idea') ||
-                          lowerText.includes('request') ||
-                          lowerText.includes('want') ||
-                          lowerText.includes('wish') ||
-                          lowerText.includes('would like') ||
-                          lowerText.includes('can you add') ||
-                          lowerText.includes('could you add') ||
-                          lowerText.includes('it would be') ||
-                          lowerText.includes('itd be') ||
-                          lowerText.includes('should have') ||
-                          lowerText.includes('need') ||
-                          lowerText.includes('would be cool') ||
-                          lowerText.includes('would be great');
-                        
-                        // Check if message has actual details (more than just keywords)
-                        // Exclude cases where user just says keywords without details
-                        const isJustKeyword = 
-                          lowerText.trim() === 'feature request' || 
-                          lowerText.trim() === 'feature' || 
-                          lowerText.trim() === 'suggestion' || 
-                          lowerText.trim() === 'suggest' ||
-                          lowerText.trim() === 'idea' ||
-                          lowerText.trim() === 'i want' ||
-                          (lowerText.startsWith('i want') && messageText.trim().length < 50) ||
-                          (lowerText.startsWith('can you add') && messageText.trim().length < 50) ||
-                          (lowerText.startsWith('could you add') && messageText.trim().length < 50);
-                        
-                        const hasDetails = messageText.trim().length > 30 && !isJustKeyword;
-                        
-                        const isFeatureRequest = hasFeatureRequestKeywords;
-                        const isHelpRequest = lowerText === 'help' || lowerText === '?' || lowerText.includes('what can you do');
-                        
-                        if (isHelpRequest) {
-                          // HELP MENU
-                          const langPhrases: Record<string, any> = {
-                            en: { title: 'Here\'s what I can help you with', match: 'Find a match', profile: 'Show my profile', lang: 'Change language', feature: 'Suggest a feature', update: 'Update profile' },
-                            es: { title: 'Esto es lo que puedo hacer por ti', match: 'Encontrar una conexión', profile: 'Mostrar mi perfil', lang: 'Cambiar idioma', feature: 'Sugerir una función', update: 'Actualizar perfil' },
-                            pt: { title: 'Aqui está o que posso fazer por você', match: 'Encontrar uma conexão', profile: 'Mostrar meu perfil', lang: 'Mudar idioma', feature: 'Sugerir uma função', update: 'Atualizar perfil' },
-                            fr: { title: 'Voici ce que je peux faire pour vous', match: 'Trouver une connexion', profile: 'Afficher mon profil', lang: 'Changer de langue', feature: 'Suggérer une fonctionnalité', update: 'Mettre à jour le profil' }
-                          };
-                          const phrases = langPhrases[state.profile.language || 'en'] || langPhrases.en;
-                          responseText = `💜 ${phrases.title}:\n\n` +
-                            `🤝 "${phrases.match}" - I'll connect you with someone who shares your interests\n` +
-                            `📋 "${phrases.profile}" - View your Grow3dge profile\n` +
-                            `✏️ "${phrases.update}" - Edit a specific field in your profile\n` +
-                            `🌍 "${phrases.lang}" - Switch to another language\n` +
-                            `💡 "${phrases.feature}" - Tell me what features you'd like`;
-                        } else if (isMatchRequest) {
-                          // ==================== MATCHING WITH TRACKING ====================
-                          console.log('[Telegram Chat ID Capture] 🤝 Processing match request...');
-                          try {
-                            const myInterests = state.profile.interests || [];
-                            const myRoles = state.profile.roles || [];
-                            
-                            if (myInterests.length === 0 && myRoles.length === 0) {
-                              responseText = "I don't have enough info about your interests yet to match you. Try 'restart' to update your profile! 💜";
-                            } else {
-                              let candidates: any[] = [];
-                              let matchedUserId: string | null = null;
-                              
-                              // Query database for other completed profiles
-                              try {
-                                const db = kaiaRuntimeForOnboardingCheck.databaseAdapter as any;
-                                if (db && db.query) {
-                                  // Check for previous matches to avoid duplicates
-                                  let previousMatchIds: string[] = [];
-                                  try {
-                                    const prevMatches = await db.query(
-                                      `SELECT matched_user_id FROM matches WHERE user_id = $1`,
-                                      [userId]
-                                    );
-                                    previousMatchIds = (prevMatches.rows || []).map((r: any) => r.matched_user_id);
-                                  } catch (e) { /* no previous matches */ }
-                                  
-                                  const res = await db.query(`SELECT key, value FROM cache WHERE key LIKE 'onboarding_%'`);
-                                  for (const row of (res.rows || [])) {
-                                    const otherUserId = row.key.replace('onboarding_', '');
-                                    if (otherUserId === userId) continue;
-                                    if (previousMatchIds.includes(otherUserId)) continue; // Skip previous matches
-                                    
-                                    try {
-                                      const otherState = typeof row.value === 'string' ? JSON.parse(row.value) : row.value;
-                                      if (otherState.step !== 'COMPLETED' || !otherState.profile) continue;
-                                      
-                                      const otherInterests = otherState.profile.interests || [];
-                                      const otherRoles = otherState.profile.roles || [];
-                                      const common = myInterests.filter((i: string) => 
-                                        otherInterests.some((oi: string) => oi.toLowerCase().includes(i.toLowerCase())) ||
-                                        otherRoles.some((or: string) => or.toLowerCase().includes(i.toLowerCase()))
-                                      );
-                                      
-                                      if (common.length > 0) {
-                                        candidates.push({
-                                          id: otherUserId,
-                                          profile: otherState.profile,
-                                          score: common.length,
-                                          reason: `Shared interests: ${common.join(', ')}`
-                                        });
-                                      }
-                                    } catch (e) { /* skip invalid entries */ }
-                                  }
-                                }
-                              } catch (dbErr) {
-                                console.log('[Telegram Chat ID Capture] Database query error:', dbErr);
-                              }
-                              
-                              if (candidates.length === 0) {
-                                // Send email notification to members@si3.space with user info
-                                try {
-                                  const { sendNoMatchNotification } = await import('./services/featureRequest.js');
-                                  await sendNoMatchNotification(userId, state.profile, kaiaRuntimeForOnboardingCheck);
-                                  console.log('[No Match] ✅ Sent no-match notification email');
-                                } catch (emailError: any) {
-                                  console.log('[No Match] ⚠️ Could not send no-match notification email:', emailError.message);
-                                  // Continue even if email fails
-                                }
-                                
-                                responseText = "I couldn't find a match within the current pool, but don't worry! 💜\n\nSI<3> will explore potential matches within its broader network and reach out if we find someone great for you.\n\nIn the meantime, feel free to share any specific connection requests with us at members@si3.space. 🚀";
-                              } else {
-                                const topMatch = candidates.sort((a, b) => b.score - a.score)[0];
-                                matchedUserId = topMatch.id;
-                                
-                                // ==================== RECORD MATCH IN DATABASE ====================
-                                try {
-                                  const { v4: uuidv4 } = await import('uuid');
-                                  const matchId = uuidv4();
-                                  const db = kaiaRuntimeForOnboardingCheck.databaseAdapter as any;
-                                  if (db && db.query) {
-                                    // Record the match
-                                    await db.query(
-                                      `INSERT INTO matches (id, user_id, matched_user_id, room_id, match_date, status) VALUES ($1, $2, $3, $4, NOW(), 'pending')`,
-                                      [matchId, userId, matchedUserId, chatId.toString()]
-                                    );
-                                    
-                                    // Schedule 3-day follow-up
-                                    const followUpDate = new Date();
-                                    followUpDate.setDate(followUpDate.getDate() + 3);
-                                    await db.query(
-                                      `INSERT INTO follow_ups (id, match_id, user_id, type, scheduled_for, status) VALUES ($1, $2, $3, '3_day_checkin', $4, 'pending')`,
-                                      [uuidv4(), matchId, userId, followUpDate]
-                                    );
-                                    console.log('[Match Tracker] ✅ Match recorded and follow-up scheduled');
-                                  }
-                                } catch (trackErr) {
-                                  console.log('[Match Tracker] Could not record match:', trackErr);
-                                }
-                                
-                                responseText = `🚀 I found a match for you!\n\n` +
-                                  `Meet ${topMatch.profile.name || 'Anonymous'} from ${topMatch.profile.location || 'Earth'}.\n` +
-                                  `Roles: ${topMatch.profile.roles?.join(', ') || 'Not specified'}\n` +
-                                  `Interests: ${topMatch.profile.interests?.join(', ') || 'Not specified'}\n` +
-                                  (topMatch.profile.telegramHandle ? `Telegram: @${topMatch.profile.telegramHandle}\n` : '') +
-                                  `\n💡 Why: ${topMatch.reason}\n\n` +
-                                  `I've saved this match. I'll check in with you in 3 days to see if you connected! 🤝`;
-                              }
-                            }
-                          } catch (matchErr: any) {
-                            console.error('[Telegram Chat ID Capture] Match error:', matchErr);
-                            responseText = "I had trouble finding matches right now. Please try again later! 💜";
-                          }
-                        } else if (isHistoryRequest) {
-                          // ==================== PROFILE WITH MATCH HISTORY ====================
-                          console.log('[Telegram Chat ID Capture] 📋 Showing profile with match history...');
-                          const p = state.profile;
-                          
-                          // Fetch match history
-                          let matchCount = 0;
-                          let matchList = '';
-                          try {
-                            const db = kaiaRuntimeForOnboardingCheck.databaseAdapter as any;
-                            if (db && db.query) {
-                              const matchRes = await db.query(
-                                `SELECT * FROM matches WHERE user_id = $1 ORDER BY match_date DESC LIMIT 5`,
-                                [userId]
-                              );
-                              matchCount = matchRes.rows?.length || 0;
-                              if (matchCount > 0) {
-                                matchList = '\n\nRecent Matches:\n';
-                                for (const match of matchRes.rows) {
-                                  const statusEmoji = match.status === 'connected' ? '✅' : match.status === 'not_interested' ? '❌' : '⏳';
-                                  const date = new Date(match.match_date).toLocaleDateString();
-                                  matchList += `${statusEmoji} ${date} - ${match.status}\n`;
-                                }
-                              }
-                            }
-                          } catch (e) { /* no matches */ }
-                          
-                          // Use formatProfileForDisplay to ensure actual values are shown
-                          const { formatProfileForDisplay } = await import('./plugins/onboarding/utils.js');
-                          const profileText = formatProfileForDisplay(p, p.language || 'en');
-                          responseText = profileText +
-                            `\n\nTotal Matches: ${matchCount}` +
-                            matchList +
-                            `\n\n✅ Onboarding: Completed\n\nTo update any field, say "update" or "update [field name]".`;
-                          
-                          // Record that we sent a profile message to prevent LLM duplicates
-                          try {
-                            const { recordProfileMessageSent } = await import('./services/llmResponseInterceptor.js');
-                            if (typeof recordProfileMessageSent === 'function') {
-                              recordProfileMessageSent(chatId.toString());
-                            }
-                          } catch (e) {
-                            // Non-critical, continue
-                          }
-                        } else if (isUpdateRequest) {
-                          // ==================== PROFILE UPDATE FEATURE ====================
-                          console.log('[Telegram Chat ID Capture] ✏️ Update request...');
-                          
-                          // Check if they specified what to update by number or name
-                          const updateFields: Record<string, { step: string, prompt: string, number: number }> = {
-                            'name': { step: 'UPDATING_NAME', prompt: 'What would you like to change your name to?', number: 1 },
-                            'location': { step: 'UPDATING_LOCATION', prompt: 'What is your new location (city and country)?', number: 2 },
-                            'roles': { step: 'UPDATING_ROLES', prompt: msgs.ROLES, number: 3 },
-                            'interests': { step: 'UPDATING_INTERESTS', prompt: msgs.INTERESTS, number: 4 },
-                            'goals': { step: 'UPDATING_GOALS', prompt: msgs.GOALS, number: 5 },
-                            'events': { step: 'UPDATING_EVENTS', prompt: 'What events will you be attending? (event name, date, location)', number: 6 },
-                            'socials': { step: 'UPDATING_SOCIALS', prompt: 'Share your social media links:', number: 7 },
-                            'telegram': { step: 'UPDATING_TELEGRAM', prompt: 'What is your Telegram handle? (e.g., @username)', number: 8 },
-                            'diversity': { step: 'UPDATING_DIVERSITY', prompt: 'Would you like to be (anonymously) included within our diversity research?\n\n1. Yes\n2. No\n3. Not sure yet\n\nPlease reply with the number (for example: 1)', number: 9 },
-                            'notifications': { step: 'UPDATING_NOTIFICATIONS', prompt: msgs.NOTIFICATIONS, number: 10 }
-                          };
-                          
-                          // Check for number input (1-10)
-                          const numberMatch = lowerText.match(/\b([1-9]|10)\b/);
-                          let fieldToUpdate: string | null = null;
-                          
-                          if (numberMatch) {
-                            // User provided a number
-                            const fieldNumber = parseInt(numberMatch[1]);
-                            const fieldEntry = Object.entries(updateFields).find(([_, info]) => info.number === fieldNumber);
-                            if (fieldEntry) {
-                              fieldToUpdate = fieldEntry[0];
-                            }
-                          } else {
-                            // Check for field name in text
-                            for (const [field, _] of Object.entries(updateFields)) {
-                              if (lowerText.includes(field) || 
-                                  (field === 'name' && (lowerText.includes('name') || lowerText.includes('nombre'))) ||
-                                  (field === 'location' && (lowerText.includes('location') || lowerText.includes('ubicación') || lowerText.includes('localização'))) ||
-                                  (field === 'roles' && (lowerText.includes('role') || lowerText.includes('rol'))) ||
-                                  (field === 'interests' && (lowerText.includes('interest') || lowerText.includes('interés'))) ||
-                                  (field === 'goals' && lowerText.includes('goal')) ||
-                                  (field === 'events' && (lowerText.includes('event') || lowerText.includes('conference'))) ||
-                                  (field === 'socials' && (lowerText.includes('social') || lowerText.includes('link'))) ||
-                                  (field === 'telegram' && lowerText.includes('telegram')) ||
-                                  (field === 'diversity' && (lowerText.includes('diversity') || lowerText.includes('diversidad'))) ||
-                                  (field === 'notifications' && (lowerText.includes('notification') || lowerText.includes('collab')))) {
-                                fieldToUpdate = field;
-                                break;
-                              }
-                            }
-                          }
-                          
-                          if (fieldToUpdate) {
-                            // They specified a field - go directly to updating it
-                            const updateInfo = updateFields[fieldToUpdate];
-                            await updateState(updateInfo.step, {});
-                            responseText = updateInfo.prompt;
-                          } else {
-                            // They just said "update" - ask what they want to update with numbered list
-                            await updateState('AWAITING_UPDATE_FIELD', {});
-                            responseText = `What would you like to update? 📝\n\n` +
-                              `1. Name\n` +
-                              `2. Location\n` +
-                              `3. Professional role(s)\n` +
-                              `4. Professional interests\n` +
-                              `5. Professional goals\n` +
-                              `6. Events & conferences attending\n` +
-                              `7. Personal social and/or digital links\n` +
-                              `8. Telegram handle\n` +
-                              `9. Diversity research interest\n` +
-                              `10. Collaboration notifications\n\n` +
-                              `Just type the field number(s) (e.g. 1, 3).`;
-                          }
-                        } else if (isLanguageChange) {
-                          // LANGUAGE CHANGE
-                          console.log('[Telegram Chat ID Capture] 🌍 Language change requested...');
-                          let newLang: 'en' | 'es' | 'pt' | 'fr' | null = null;
-                          if (lowerText.includes('english') || lowerText.includes('inglés') || lowerText.includes('inglês')) newLang = 'en';
-                          else if (lowerText.includes('spanish') || lowerText.includes('español') || lowerText.includes('espanhol')) newLang = 'es';
-                          else if (lowerText.includes('portuguese') || lowerText.includes('português') || lowerText.includes('portugués')) newLang = 'pt';
-                          else if (lowerText.includes('french') || lowerText.includes('français') || lowerText.includes('francés')) newLang = 'fr';
-                          
-                          if (newLang) {
-                            await updateState('COMPLETED', { language: newLang });
-                            const langNames: Record<string, string> = { en: 'English', es: 'Español', pt: 'Português', fr: 'Français' };
-                            responseText = `✅ Language changed to ${langNames[newLang]}! I'll respond in ${langNames[newLang]} from now on. 💜`;
-                          } else {
-                            responseText = "Which language would you like?\n\n• English\n• Español\n• Português\n• Français\n\nJust say 'change language to [language]'";
-                          }
-                        } else if (isFeatureRequest) {
-                          // FEATURE REQUEST - Check if details are included
-                          console.log('[Telegram Chat ID Capture] 💡 Feature request detected...');
-                          
-                          if (hasDetails) {
-                            // User provided details in the same message - send directly
-                            let emailSent = false;
-                            try {
-                              const { sendFeatureRequest } = await import('./services/featureRequest.js');
-                              await sendFeatureRequest(userId, state.profile.name || 'Anonymous', messageText, messageText);
-                              emailSent = true;
-                              console.log('[Feature Request] ✅ Email sent successfully');
-                            } catch (emailError: any) {
-                              console.log('[Feature Request] ⚠️ Could not send email:', emailError.message);
-                              // Continue to save to database even if email fails
-                            }
-                            
-                            // Always save to database as backup
-                            try {
-                              const db = kaiaRuntimeForOnboardingCheck.databaseAdapter as any;
-                              if (db && db.query) {
-                                const { v4: uuidv4 } = await import('uuid');
-                                await db.query(
-                                  `INSERT INTO feature_requests (id, user_id, user_name, request_text, created_at) VALUES ($1, $2, $3, $4, NOW())`,
-                                  [uuidv4(), userId, state.profile.name || 'Anonymous', messageText]
-                                );
-                                console.log('[Feature Request] ✅ Saved to database');
-                              }
-                            } catch (e) {
-                              console.log('[Feature Request] Could not save to DB:', e);
-                            }
-                            
-                            if (emailSent) {
-                              responseText = `Thank you for your suggestion, ${state.profile.name}! 💜\n\n` +
-                                `I've sent your request to tech@si3.space:\n"${messageText.substring(0, 200)}${messageText.length > 200 ? '...' : ''}"\n\n` +
-                                `The SI<3> team reviews all suggestions. Your feedback helps make me better! 🚀`;
-                            } else {
-                              responseText = `Thank you for your suggestion, ${state.profile.name}! 💜\n\n` +
-                                `I've recorded your request:\n"${messageText.substring(0, 200)}${messageText.length > 200 ? '...' : ''}"\n\n` +
-                                `The SI<3> team reviews all suggestions. Your feedback helps make me better! 🚀`;
-                            }
-                          } else {
-                            // User just mentioned feature request without details - ask for details
-                            await updateState('AWAITING_FEATURE_DETAILS', {});
-                            const langPrompts: Record<string, string> = {
-                              en: `Great! I'd love to hear your suggestion. 💡\n\nPlease tell me more about the feature you'd like to see. What would you like me to be able to do?`,
-                              es: `¡Genial! Me encantaría escuchar tu sugerencia. 💡\n\nPor favor, cuéntame más sobre la función que te gustaría ver. ¿Qué te gustaría que pudiera hacer?`,
-                              pt: `Ótimo! Adoraria ouvir sua sugestão. 💡\n\nPor favor, me conte mais sobre a função que você gostaria de ver. O que você gostaria que eu pudesse fazer?`,
-                              fr: `Excellent! J'aimerais entendre votre suggestion. 💡\n\nVeuillez me dire plus sur la fonctionnalité que vous aimeriez voir. Qu'aimeriez-vous que je puisse faire?`
-                            };
-                            responseText = langPrompts[state.profile.language || 'en'] || langPrompts.en;
-                          }
-                        } else if (isKnowledgeQuestion) {
-                          // ==================== KNOWLEDGE QUESTION - COMING SOON ====================
-                          console.log('[Telegram Chat ID Capture] 📚 Knowledge question detected - showing coming soon message');
-                          const langResponses: Record<string, string> = {
-                            en: `Great question! 🧠\n\nI'm activating my peer-to-peer knowledge-sharing capabilities soon, where you'll be able to learn from other community members who are experts in these topics.\n\nFor now, I'm focused on making meaningful connections within the SI<3> community. Would you like me to find you a match? Just say "find me a match"! 🤝💜`,
-                            es: `¡Gran pregunta! 🧠\n\nPronto activaré mis capacidades de intercambio de conocimientos entre pares, donde podrás aprender de otros miembros de la comunidad que son expertos en estos temas.\n\nPor ahora, estoy enfocada en hacer conexiones significativas dentro de la comunidad SI<3>. ¿Te gustaría que te encuentre una conexión? ¡Solo di "encuéntrame una conexión"! 🤝💜`,
-                            pt: `Ótima pergunta! 🧠\n\nEm breve ativarei minhas capacidades de compartilhamento de conhecimento entre pares, onde você poderá aprender com outros membros da comunidade que são especialistas nesses tópicos.\n\nPor enquanto, estou focada em fazer conexões significativas dentro da comunidade SI<3>. Gostaria que eu encontrasse uma conexão para você? Basta dizer "encontre uma conexão"! 🤝💜`,
-                            fr: `Excellente question! 🧠\n\nJ'activerai bientôt mes capacités de partage de connaissances entre pairs, où vous pourrez apprendre d'autres membres de la communauté qui sont experts dans ces sujets.\n\nPour l'instant, je me concentre sur la création de connexions significatives au sein de la communauté SI<3>. Voulez-vous que je vous trouve une connexion? Dites simplement "trouve-moi une connexion"! 🤝💜`
-                          };
-                          responseText = langResponses[state.profile.language || 'en'] || langResponses.en;
-                        } else {
-                          // ==================== GENERAL CHAT (MATCHMAKING FOCUSED) ====================
-                          console.log('[Telegram Chat ID Capture] 🤖 Calling OpenAI (matchmaking focused)...');
-                          
-                          // Build system prompt (matchmaking focused)
-                          let systemPrompt = `You are Kaia, the SI<3> community matchmaker assistant. 
-
-USER PROFILE:
-- Name: ${state.profile.name}
-- Location: ${state.profile.location || 'Not specified'}
-- Roles: ${state.profile.roles?.join(', ') || 'Not specified'}
-- Interests: ${state.profile.interests?.join(', ') || 'Not specified'}
-- Connection Goals: ${state.profile.connectionGoals?.join(', ') || 'Not specified'}
-- Language: ${state.profile.language || 'en'}
-
-YOUR CAPABILITIES (MATCHMAKING FOCUSED):
-- Find matches for users (they can say "find me a match")
-- Show profile (they can say "show my profile" or "my history")
-- Take feature suggestions and direct them to tech@si3.space
-- Change language (they can say "change language to Spanish")
-- Provide help (they can say "help")
-
-IMPORTANT - KNOWLEDGE QUESTIONS:
-If users ask educational/knowledge questions (like "what is a DAO", "explain blockchain", "what is DeFi"), 
-respond that peer-to-peer knowledge-sharing capabilities will be activated soon, and for now you're focused 
-on making great connections within the SI<3> community.
-
-PERSONALITY:
-- Be warm, friendly, and helpful
-- Use emojis naturally (💜, 🚀, 🤝, 🎉)
-- Be encouraging and supportive
-- Focus conversations on matchmaking and connections
-- Respond in ${state.profile.language === 'es' ? 'Spanish' : state.profile.language === 'pt' ? 'Portuguese' : state.profile.language === 'fr' ? 'French' : 'English'}`;
-                          
-                          // Build messages array with conversation history
-                          const messages: Array<{role: string, content: string}> = [
-                            { role: 'system', content: systemPrompt }
-                          ];
-                          
-                          // Add recent conversation history (last 6 messages for context)
-                          const recentHistory = conversationHistory.slice(-6);
-                          for (const msg of recentHistory) {
-                            if (msg.role === 'user' || msg.role === 'assistant') {
-                              messages.push({ role: msg.role, content: msg.content });
-                            }
-                          }
-                          
-                          // Ensure the last message is the current user message
-                          if (messages[messages.length - 1]?.content !== messageText) {
-                            messages.push({ role: 'user', content: messageText });
-                          }
-
+                      if (state.step === 'COMPLETED') {
+                        // Use extracted completed user handler
+                        const { processCompletedUserMessage } = await import('./services/completedUserHandler.js');
+                        await processCompletedUserMessage(
+                          kaiaRuntimeForOnboardingCheck,
+                          userId,
+                          messageText,
+                          chatId,
+                          state,
+                          originalSendMessage
+                        );
+                        return; // Don't call originalHandler - we've handled it
+                      } else {
+                        // Unknown step - use OpenAI
+                        console.log('[Telegram Chat ID Capture] 🤖 Unknown step, using OpenAI...');
+                        const openaiKey = process.env.OPENAI_API_KEY;
+                        if (openaiKey) {
                           const response = await fetch('https://api.openai.com/v1/chat/completions', {
                             method: 'POST',
                             headers: {
@@ -2105,65 +1303,31 @@ PERSONALITY:
                             },
                             body: JSON.stringify({
                               model: 'gpt-4o-mini',
-                              messages: messages,
-                              max_tokens: 1000,
-                              temperature: 0.7
+                              messages: [
+                                {
+                                  role: 'system',
+                                  content: `You are Kaia, the SI<3> assistant. Be warm, friendly, and helpful. Use emojis naturally (💜, 🚀, 🤝).`
+                                },
+                                {
+                                  role: 'user',
+                                  content: messageText
+                                }
+                              ],
+                              max_tokens: 1000
                             })
                           });
                           
                           if (response.ok) {
                             const data = await response.json();
-                            responseText = data.choices?.[0]?.message?.content || "I'm here to help! What would you like to know? 💜";
-                            
-                            // Save assistant response to history
-                            conversationHistory.push({ role: 'assistant', content: responseText, timestamp: Date.now() });
+                            const responseText = data.choices?.[0]?.message?.content || "How can I help you? 💜";
+                            await originalSendMessage(chatId, responseText);
                           } else {
-                            responseText = "I'm here to help! What would you like to know? 💜";
+                            await originalSendMessage(chatId, "How can I help you? 💜");
                           }
-                        }
-                        
-                        // ==================== SAVE CONVERSATION HISTORY ====================
-                        try {
-                          await kaiaRuntimeForOnboardingCheck.cacheManager.set(`conversation_${userId}`, conversationHistory);
-                        } catch (e) { /* ignore cache errors */ }
-                      } else {
-                        // Unknown step - use OpenAI
-                        console.log('[Telegram Chat ID Capture] 🤖 Unknown step, using OpenAI...');
-                        const response = await fetch('https://api.openai.com/v1/chat/completions', {
-                          method: 'POST',
-                          headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${openaiKey}`
-                          },
-                          body: JSON.stringify({
-                            model: 'gpt-4o-mini',
-                            messages: [
-                              {
-                                role: 'system',
-                                content: `You are Kaia, the SI<3> assistant. Be warm, friendly, and helpful. Use emojis naturally (💜, 🚀, 🤝).`
-                              },
-                              {
-                                role: 'user',
-                                content: messageText
-                              }
-                            ],
-                            max_tokens: 1000
-                          })
-                        });
-                        
-                        if (response.ok) {
-                          const data = await response.json();
-                          responseText = data.choices?.[0]?.message?.content || "How can I help you? 💜";
                         } else {
-                          responseText = "How can I help you? 💜";
+                          await originalSendMessage(chatId, "How can I help you? 💜");
                         }
-                      }
-                      
-                      // Send the response
-                      if (responseText) {
-                        console.log('[Telegram Chat ID Capture] 📤 Sending response:', responseText.substring(0, 100) + '...');
-                        await originalSendMessage(chatId, responseText);
-                        console.log('[Telegram Chat ID Capture] ✅ Sent fallback response');
+                        return; // Don't call originalHandler - we've handled it
                       }
                     } else if (openaiKey) {
                       // No runtime available - just use basic OpenAI
@@ -2215,6 +1379,8 @@ PERSONALITY:
                   }
               } else {
                 console.log('[Kaia Handler] ⚠️ No message text or chat ID, skipping');
+                // Still call original handler for non-text messages (callbacks, etc.)
+                return originalHandler(update);
               }
             };
             console.log('[Telegram Chat ID Capture] Patched bot.handler to capture chat IDs');

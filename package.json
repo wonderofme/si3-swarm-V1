@@ -9,7 +9,10 @@
     "dev": "node --loader ts-node/esm src/index.ts",
     "ingest-knowledge": "node --max-old-space-size=8192 --expose-gc --loader ts-node/esm scripts/ingest-si3-knowledge.ts",
     "clear-test-users": "node --loader ts-node/esm scripts/clear-test-users.ts",
-    "delete-ayoola-users": "node --loader ts-node/esm scripts/delete-ayoola-users.ts"
+    "delete-ayoola-users": "node --loader ts-node/esm scripts/delete-ayoola-users.ts",
+    "list-matches": "node --loader ts-node/esm scripts/list-matches.ts",
+    "test-matching": "node --loader ts-node/esm scripts/test-matching-logic.ts",
+    "test-matching-simple": "node --loader ts-node/esm scripts/test-matching-simple.ts"
   },
   "dependencies": {
     "@elizaos/adapter-postgres": "^0.1.0",

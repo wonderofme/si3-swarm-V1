@@ -3,7 +3,7 @@ version: "2.0"
 services:
   kaia-swarm:
     # Update version after each GitHub push (github.run_number in workflow)
-    image: ghcr.io/wonderofme/kaia-swarm:v306
+    image: ghcr.io/wonderofme/kaia-swarm:v307
     env:
       - DATABASE_URL=${DATABASE_URL}
       - DATABASE_TYPE=mongodb
