@@ -539,14 +539,17 @@ async function startAgents() {
     si3: si3Runtime
   };
 
-  // Direct Client
+  // REST API (History + Chat) - Create Express app first
+  const app = express();
+  const directPort = Number(process.env.DIRECT_PORT || 3000);
+  
+  // Direct Client - start on internal port (not exposed via ingress)
+  // We'll run Express on port 3000 (exposed via ingress) for REST API
   const directClient = new DirectClient();
   directClient.registerAgent(kaiaRuntime);
-  const directPort = Number(process.env.DIRECT_PORT || 3000);
-  directClient.start(directPort);
-
-  // REST API (History + Chat)
-  const app = express();
+  // Start DirectClient on internal port 3002 (not exposed, for internal use only)
+  directClient.start(3002);
+  console.log('[DirectClient] ✅ Started on internal port 3002 (not exposed via ingress)');
   
   // CORS middleware - Allow cross-origin requests for web integration
   const corsOrigins = (process.env.CORS_ORIGINS || '*').split(',').map(o => o.trim());
@@ -566,6 +569,11 @@ async function startAgents() {
   });
   
   app.use(express.json());
+  
+  // Root route
+  app.get('/', (req, res) => {
+    res.send('Welcome, this is the REST API!');
+  });
   
   // Web Chat API - POST /api/chat
   // Allows web applications to interact with Kaia
@@ -726,12 +734,17 @@ async function startAgents() {
     }
   });
   
-  app.listen(directPort + 1, () => {
-      console.log(`[API] REST API available at http://localhost:${directPort + 1}`);
+  // Start Express server on port 3000 (same as DirectClient, or integrated)
+  app.listen(directPort, () => {
+      console.log(`[API] REST API available at http://localhost:${directPort}`);
       console.log(`[API] Endpoints:`);
       console.log(`[API]   POST /api/chat - Web chat interface`);
       console.log(`[API]   GET /api/history/:userId - User profile & matches`);
       console.log(`[API]   GET /api/health - Health check`);
+      console.log(`[API]   GET /api/metrics - Agent analytics & metrics`);
+      if ((directClient as any).attachRoutes) {
+        console.log(`[API]   DirectClient routes available at /direct/*`);
+      }
   });
 
   // Telegram Client
