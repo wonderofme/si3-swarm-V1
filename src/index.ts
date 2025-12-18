@@ -622,9 +622,51 @@ async function startAgents() {
       endpoints: {
         chat: 'POST /api/chat',
         history: 'GET /api/history/:userId',
-        health: 'GET /api/health'
+        health: 'GET /api/health',
+        metrics: 'GET /api/metrics'
       }
     });
+  });
+  
+  // Metrics API - Agent analytics for dashboard integration
+  app.get('/api/metrics', async (req, res) => {
+    try {
+      // Optional API key authentication
+      const apiKey = process.env.WEB_API_KEY;
+      if (apiKey && apiKey !== 'disabled') {
+        const providedKey = req.headers['x-api-key'] || 
+                           req.headers['authorization']?.replace('Bearer ', '');
+        if (providedKey !== apiKey) {
+          return res.status(401).json({ error: 'Unauthorized' });
+        }
+      }
+      
+      // Optional date range filtering
+      const startDate = req.query.startDate 
+        ? new Date(req.query.startDate as string)
+        : undefined;
+      const endDate = req.query.endDate
+        ? new Date(req.query.endDate as string)
+        : undefined;
+      
+      if (startDate && isNaN(startDate.getTime())) {
+        return res.status(400).json({ error: 'Invalid startDate format. Use ISO 8601 (YYYY-MM-DD)' });
+      }
+      if (endDate && isNaN(endDate.getTime())) {
+        return res.status(400).json({ error: 'Invalid endDate format. Use ISO 8601 (YYYY-MM-DD)' });
+      }
+      
+      const { getAgentMetrics } = await import('./services/metricsApi.js');
+      const metrics = await getAgentMetrics(kaiaRuntime, startDate, endDate);
+      
+      res.json(metrics);
+    } catch (error: any) {
+      console.error('[Metrics API] Error:', error);
+      res.status(500).json({ 
+        error: 'Failed to fetch metrics',
+        message: error.message 
+      });
+    }
   });
   
   app.get('/api/history/:userId', async (req, res) => {

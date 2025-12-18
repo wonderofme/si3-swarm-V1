@@ -154,5 +154,4 @@ docker run -p 3000:3000 --env-file .env kaia-swarm
 
 *For detailed information, see [TECH_STACK.md](./TECH_STACK.md)*
 
-*Last Updated: December 2024*
 

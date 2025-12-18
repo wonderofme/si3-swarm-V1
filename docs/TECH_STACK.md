@@ -392,6 +392,3 @@ docker run -p 3000:3000 --env-file .env kaia-swarm
    - `src/adapters/mongoAdapter.ts` - MongoDB adapter
    - `characters/kaia.character.json` - Agent personality
 
----
-
-*Last Updated: December 2024*
