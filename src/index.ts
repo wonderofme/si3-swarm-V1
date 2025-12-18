@@ -967,26 +967,11 @@ async function startAgents() {
                 console.error('[Telegram Client] ⚠️ Could not verify bot connection:', error.message);
               }
               
-              // CRITICAL: Stop any polling that ElizaOS might have started
-              // We need to stop it so we can start our own polling after middleware is set up
+              // Check polling status (but don't stop it - let ElizaOS handle it)
               if (bot.polling?.isRunning) {
-                console.log('[Telegram Client] ⚠️ ElizaOS started polling - stopping it so we can start our own after middleware setup');
-                try {
-                  if (typeof bot.stop === 'function') {
-                    await bot.stop();
-                    console.log('[Telegram Client] ✅ Stopped ElizaOS polling');
-                  } else if (typeof bot.stopPolling === 'function') {
-                    await bot.stopPolling();
-                    console.log('[Telegram Client] ✅ Stopped ElizaOS polling (via stopPolling)');
-                  } else {
-                    console.warn('[Telegram Client] ⚠️ Could not stop polling - no stop() or stopPolling() method');
-                  }
-                } catch (stopError: any) {
-                  console.warn('[Telegram Client] ⚠️ Error stopping polling:', stopError.message);
-                  // Continue anyway - we'll try to start our own
-                }
+                console.log('[Telegram Client] ✅ ElizaOS started polling - our middleware will intercept messages');
               } else {
-                console.log('[Telegram Client] ✅ No polling running (ElizaOS did not start it)');
+                console.log('[Telegram Client] ⚠️ Polling not running - ElizaOS may start it later, or another instance is polling');
               }
             }
             
@@ -1203,57 +1188,13 @@ async function startAgents() {
             });
             console.log('[Telegram Middleware] ✅ Middleware installed successfully');
             
-            // CRITICAL: Start polling after middleware is set up
-            // We stopped any ElizaOS polling earlier, so now we start our own
-            if (bot && typeof bot.launch === 'function') {
-              try {
-                // Check if polling is already running (shouldn't be, but check anyway)
-                if (bot.polling?.isRunning) {
-                  console.log('[Telegram Middleware] ⚠️ Polling already running - this should not happen after we stopped it');
-                  console.log('[Telegram Middleware] ⚠️ Stopping it again...');
-                  try {
-                    if (typeof bot.stop === 'function') {
-                      await bot.stop();
-                    } else if (typeof bot.stopPolling === 'function') {
-                      await bot.stopPolling();
-                    }
-                    // Wait a moment for it to fully stop
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                  } catch (stopError: any) {
-                    console.warn('[Telegram Middleware] ⚠️ Error stopping existing polling:', stopError.message);
-                  }
-                }
-                
-                // Now start our own polling
-                console.log('[Telegram Middleware] 🚀 Starting polling with our middleware...');
-                try {
-                  await bot.launch();
-                  console.log('[Telegram Middleware] ✅ Polling started successfully');
-                  
-                  // Verify polling started
-                  setTimeout(() => {
-                    if (bot.polling?.isRunning) {
-                      console.log('[Telegram Middleware] ✅ Polling confirmed running');
-                    } else {
-                      console.error('[Telegram Middleware] ❌ Polling still not running after launch');
-                    }
-                  }, 2000);
-                } catch (launchError: any) {
-                  // Handle 409 conflict gracefully
-                  if (launchError.message?.includes('409') || launchError.message?.includes('Conflict')) {
-                    console.warn('[Telegram Middleware] ⚠️ 409 Conflict: Another bot instance is polling');
-                    console.warn('[Telegram Middleware] ⚠️ This usually means another instance is running');
-                    console.warn('[Telegram Middleware] ⚠️ For production, ensure only ONE instance is running');
-                    // Don't crash - the other instance will handle messages
-                  } else {
-                    console.error('[Telegram Middleware] ⚠️ Error starting polling:', launchError.message);
-                  }
-                }
-              } catch (error: any) {
-                console.error('[Telegram Middleware] ⚠️ Error checking/starting polling:', error.message);
-              }
+            // Don't try to start polling - let ElizaOS handle it
+            // Our middleware will intercept messages from ElizaOS's polling
+            if (bot.polling?.isRunning) {
+              console.log('[Telegram Middleware] ✅ Polling is running - middleware will intercept messages');
             } else {
-              console.warn('[Telegram Middleware] ⚠️ bot.launch() not available, cannot start polling');
+              console.log('[Telegram Middleware] ⚠️ Polling not running - ElizaOS should start it, or another instance is polling');
+              console.log('[Telegram Middleware] ℹ️  Middleware is set up and ready to handle messages when polling starts');
             }
           } else if (bot && bot.handler) {
             // Fallback: If bot.use() not available, use handler patching (legacy)
