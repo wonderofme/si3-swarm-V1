@@ -993,46 +993,80 @@ async function startAgents() {
                       
                       // Get state from cache first, then database (for persistence across deployments)
                       let state: { step: string, profile: any } = { step: 'NONE', profile: {} };
+                      let stateLoaded = false;
                       try {
                         const cached = await kaiaRuntimeForOnboardingCheck.cacheManager.get(`onboarding_${userId}`);
-                        if (cached && typeof cached === 'object') {
+                        if (cached && typeof cached === 'object' && cached.step && cached.step !== 'NONE') {
                           state = cached as { step: string, profile: any };
-                          console.log('[Telegram Chat ID Capture] 📋 Loaded state from cache');
+                          stateLoaded = true;
+                          console.log('[Telegram Chat ID Capture] 📋 Loaded state from cache:', state.step);
                         } else {
-                          // Cache miss - try database
+                          // Cache miss or invalid - try database
+                          console.log('[Telegram Chat ID Capture] 🔍 Cache miss, trying database...');
                           const db = kaiaRuntimeForOnboardingCheck.databaseAdapter as any;
                           if (db && db.query) {
                             // PostgreSQL
-                            const result = await db.query(
-                              `SELECT value FROM cache WHERE key = $1`,
-                              [`onboarding_${userId}`]
-                            );
-                            if (result.rows && result.rows.length > 0) {
-                              const dbValue = typeof result.rows[0].value === 'string' 
-                                ? JSON.parse(result.rows[0].value) 
-                                : result.rows[0].value;
-                              if (dbValue && typeof dbValue === 'object') {
-                                state = dbValue;
-                                // Restore to cache for faster access
-                                await kaiaRuntimeForOnboardingCheck.cacheManager.set(`onboarding_${userId}`, state);
-                                console.log('[Telegram Chat ID Capture] 💾 Loaded state from database and restored to cache');
+                            try {
+                              const result = await db.query(
+                                `SELECT value FROM cache WHERE key = $1`,
+                                [`onboarding_${userId}`]
+                              );
+                              if (result.rows && result.rows.length > 0) {
+                                const dbValue = typeof result.rows[0].value === 'string' 
+                                  ? JSON.parse(result.rows[0].value) 
+                                  : result.rows[0].value;
+                                if (dbValue && typeof dbValue === 'object' && dbValue.step) {
+                                  state = dbValue;
+                                  stateLoaded = true;
+                                  // Restore to cache for faster access
+                                  await kaiaRuntimeForOnboardingCheck.cacheManager.set(`onboarding_${userId}`, state);
+                                  console.log('[Telegram Chat ID Capture] 💾 Loaded state from PostgreSQL and restored to cache:', state.step);
+                                } else {
+                                  console.log('[Telegram Chat ID Capture] ⚠️ Database value found but invalid:', dbValue);
+                                }
+                              } else {
+                                console.log('[Telegram Chat ID Capture] ⚠️ No state found in PostgreSQL for user:', userId);
                               }
+                            } catch (pgErr: any) {
+                              console.error('[Telegram Chat ID Capture] ❌ PostgreSQL query error:', pgErr.message);
                             }
                           } else if (db && db.getDb) {
                             // MongoDB
-                            const mongoDb = await db.getDb();
-                            const cacheCollection = mongoDb.collection('cache');
-                            const dbDoc = await cacheCollection.findOne({ key: `onboarding_${userId}` });
-                            if (dbDoc && dbDoc.value) {
-                              state = typeof dbDoc.value === 'string' ? JSON.parse(dbDoc.value) : dbDoc.value;
-                              // Restore to cache for faster access
-                              await kaiaRuntimeForOnboardingCheck.cacheManager.set(`onboarding_${userId}`, state);
-                              console.log('[Telegram Chat ID Capture] 💾 Loaded state from MongoDB and restored to cache');
+                            try {
+                              const mongoDb = await db.getDb();
+                              const cacheCollection = mongoDb.collection('cache');
+                              const dbDoc = await cacheCollection.findOne({ key: `onboarding_${userId}` });
+                              if (dbDoc && dbDoc.value) {
+                                const parsedValue = typeof dbDoc.value === 'string' ? JSON.parse(dbDoc.value) : dbDoc.value;
+                                if (parsedValue && typeof parsedValue === 'object' && parsedValue.step) {
+                                  state = parsedValue;
+                                  stateLoaded = true;
+                                  // Restore to cache for faster access
+                                  await kaiaRuntimeForOnboardingCheck.cacheManager.set(`onboarding_${userId}`, state);
+                                  console.log('[Telegram Chat ID Capture] 💾 Loaded state from MongoDB and restored to cache:', state.step);
+                                } else {
+                                  console.log('[Telegram Chat ID Capture] ⚠️ MongoDB value found but invalid:', parsedValue);
+                                }
+                              } else {
+                                console.log('[Telegram Chat ID Capture] ⚠️ No state found in MongoDB for user:', userId);
+                              }
+                            } catch (mongoErr: any) {
+                              console.error('[Telegram Chat ID Capture] ❌ MongoDB query error:', mongoErr.message);
                             }
+                          } else {
+                            console.log('[Telegram Chat ID Capture] ⚠️ Database adapter not available');
                           }
                         }
-                      } catch (cacheErr) {
-                        console.log('[Telegram Chat ID Capture] Cache/database read error, using default state:', cacheErr);
+                      } catch (cacheErr: any) {
+                        console.error('[Telegram Chat ID Capture] ❌ Cache/database read error:', cacheErr.message);
+                        console.error('[Telegram Chat ID Capture] Stack:', cacheErr.stack);
+                      }
+                      
+                      // Log final state
+                      if (stateLoaded) {
+                        console.log('[Telegram Chat ID Capture] ✅ State successfully loaded:', state.step, 'Profile keys:', Object.keys(state.profile || {}));
+                      } else {
+                        console.log('[Telegram Chat ID Capture] ⚠️ State NOT loaded, using default (NONE)');
                       }
                       
                       // Helper to update state (cache + database for persistence)
@@ -1098,6 +1132,7 @@ async function startAgents() {
                       // Check for "next" to skip optional questions
                       const isNext = lowerText === 'next' || lowerText === 'skip';
                       
+                      // Handle onboarding flow - COMPLETED state will fall through to COMPLETED handler below
                       if (isRestart || state.step === 'NONE') {
                         // Start/restart onboarding - ask for language
                         await updateState('ASK_LANGUAGE', {});
