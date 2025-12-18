@@ -1146,7 +1146,7 @@ async function startAgents() {
                           // Check if input contains "and" or is just a number
                           if (input.includes(' and ') || input.includes(' and')) {
                             // Parse "9 and Designer" -> ["Developer", "Designer"]
-                            const parts = input.split(/ and /i).map(p => p.trim());
+                            const parts = input.split(/ and /i).map((p: string) => p.trim());
                             for (const part of parts) {
                               if (roleMap[part]) {
                                 roles.push(roleMap[part]);
@@ -1185,7 +1185,7 @@ async function startAgents() {
                           // Check if input contains "and" or is just a number
                           if (input.includes(' and ') || input.includes(' and')) {
                             // Parse "4 and Machine Learning" -> ["AI", "Machine Learning"]
-                            const parts = input.split(/ and /i).map(p => p.trim());
+                            const parts = input.split(/ and /i).map((p: string) => p.trim());
                             for (const part of parts) {
                               if (interestMap[part]) {
                                 interests.push(interestMap[part]);
@@ -1221,7 +1221,7 @@ async function startAgents() {
                           // Check if input contains "and" or is just a number
                           if (input.includes(' and ') || input.includes(' and')) {
                             // Parse "2 and Cybersecurity" -> ["Investors/grant programs", "Cybersecurity"]
-                            const parts = input.split(/ and /i).map(p => p.trim());
+                            const parts = input.split(/ and /i).map((p: string) => p.trim());
                             for (const part of parts) {
                               if (goalMap[part]) {
                                 connectionGoals.push(goalMap[part]);
