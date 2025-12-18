@@ -1,6 +1,6 @@
 import { AgentRuntime } from '@elizaos/core';
 import { getMessages } from '../plugins/onboarding/translations.js';
-import { getOnboardingState, saveOnboardingState } from './onboardingHandler.js';
+import { getOnboardingState, saveOnboardingState } from '../index.js';
 
 /**
  * Process messages from users who have completed onboarding
