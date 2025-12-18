@@ -862,16 +862,23 @@ export async function setupLLMResponseInterceptor(runtime: IAgentRuntime) {
       }
       
       // Block LLM from generating duplicate profile messages after completion
-      if (memory.content.text && 
-          (memory.content.text.includes("Here's your profile") || 
-           memory.content.text.includes("profile again") ||
-           memory.content.text.includes("Your Grow3dge Profile"))) {
-        const cachedStep = getOnboardingStepFromCache(memory.userId);
-        if (cachedStep === 'COMPLETED') {
-          // Check if we just sent a profile message (within last 5 seconds)
-          const recentProfileMessage = recentProfileMessages.get(memory.roomId);
-          if (recentProfileMessage && Date.now() - recentProfileMessage < 5000) {
-            console.log('[LLM Response Interceptor] 🚫 BLOCKING duplicate profile message from LLM');
+      // Also block messages that show numbers instead of actual values (e.g., "Roles: 9")
+      if (memory.content.text) {
+        const text = memory.content.text;
+        const isProfileMessage = 
+          text.includes("Here's your profile") || 
+          text.includes("profile again") ||
+          text.includes("Your Grow3dge Profile") ||
+          (text.includes("Roles:") && text.includes("Interests:") && text.includes("Connection Goals:"));
+        
+        // Check if it's showing numbers instead of actual values (bad format)
+        const hasNumberFormat = /\*\*Roles:\*\*\s*\d+|\*\*Interests:\*\*\s*\d+|\*\*Connection Goals:\*\*\s*\d+|Roles:\s*\d+\s*$/m.test(text);
+        
+        if (isProfileMessage || hasNumberFormat) {
+          const cachedStep = getOnboardingStepFromCache(memory.userId);
+          if (cachedStep === 'COMPLETED') {
+            console.log('[LLM Response Interceptor] 🚫 BLOCKING LLM-generated profile message (duplicate or bad format)');
+            console.log('[LLM Response Interceptor] Blocked text preview:', text.substring(0, 100));
             return await originalCreateMemory({
               ...memory,
               content: {
