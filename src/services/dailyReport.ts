@@ -189,10 +189,14 @@ function formatMetricsAsHTML(metrics: AgentMetrics): string {
         <div class="metric-value">${metrics.matches.today}</div>
       </div>
       <div class="metric-card">
-        <div class="metric-label">This Week</div>
-        <div class="metric-value">${metrics.matches.thisWeek}</div>
+        <div class="metric-label">Feature Requests</div>
+        <div class="metric-value">${metrics.engagement.featureRequests.total}</div>
       </div>
       <div class="metric-card warning">
+        <div class="metric-label">Manual Connections</div>
+        <div class="metric-value">${metrics.engagement.manualConnectionRequests.total}</div>
+      </div>
+      <div class="metric-card">
         <div class="metric-label">Total Users</div>
         <div class="metric-value">${metrics.users.total}</div>
       </div>
@@ -255,6 +259,14 @@ function formatMetricsAsHTML(metrics: AgentMetrics): string {
       <div class="stat-row">
         <span class="stat-label">Feature Requests (This Week)</span>
         <span class="stat-value">${metrics.engagement.featureRequests.thisWeek}</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Manual Connection Requests (Total)</span>
+        <span class="stat-value">${metrics.engagement.manualConnectionRequests.total}</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Manual Connection Requests (This Week)</span>
+        <span class="stat-value">${metrics.engagement.manualConnectionRequests.thisWeek}</span>
       </div>
       <div class="stat-row">
         <span class="stat-label">Diversity Research Interest (Total)</span>
@@ -371,10 +383,12 @@ Active (30 Days):     ${metrics.users.activeLast30Days}
 
 💬 ENGAGEMENT
 ───────────────────────────────────────────────────────
-Feature Requests (Total):     ${metrics.engagement.featureRequests.total}
-Feature Requests (This Week): ${metrics.engagement.featureRequests.thisWeek}
-Diversity Research (Total):   ${metrics.engagement.diversityResearchInterest.total}
-Diversity Research (This Week): ${metrics.engagement.diversityResearchInterest.thisWeek}
+Feature Requests (Total):           ${metrics.engagement.featureRequests.total}
+Feature Requests (This Week):       ${metrics.engagement.featureRequests.thisWeek}
+Manual Connection Requests (Total): ${metrics.engagement.manualConnectionRequests.total}
+Manual Connection Requests (Week):  ${metrics.engagement.manualConnectionRequests.thisWeek}
+Diversity Research (Total):         ${metrics.engagement.diversityResearchInterest.total}
+Diversity Research (This Week):     ${metrics.engagement.diversityResearchInterest.thisWeek}
 
 📅 FOLLOW-UP METRICS
 ───────────────────────────────────────────────────────

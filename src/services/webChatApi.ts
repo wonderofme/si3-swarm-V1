@@ -250,7 +250,7 @@ export async function processWebChatMessage(
                 try {
                   const { sendNoMatchNotification } = await import('./featureRequest.js');
                   const profile = state.profile || {};
-                  await sendNoMatchNotification(userId, profile);
+                  await sendNoMatchNotification(userId, profile, runtime);
                   console.log('[Web Chat No Match] ✅ Sent no-match notification email');
                 } catch (emailError: any) {
                   console.log('[Web Chat No Match] ⚠️ Could not send no-match notification email:', emailError.message);

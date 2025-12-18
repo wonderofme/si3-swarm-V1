@@ -992,81 +992,122 @@ async function startAgents() {
                       const userId = update.message?.from?.id?.toString() || chatId;
                       
                       // Get state from cache first, then database (for persistence across deployments)
+                      // CRITICAL: This must work correctly after deployments when cache is empty
                       let state: { step: string, profile: any } = { step: 'NONE', profile: {} };
                       let stateLoaded = false;
+                      const stateKey = `onboarding_${userId}`;
+                      
+                      console.log('[Telegram Chat ID Capture] 🔍 Loading state for user:', userId, 'key:', stateKey);
+                      
                       try {
-                        const cached = await kaiaRuntimeForOnboardingCheck.cacheManager.get(`onboarding_${userId}`);
-                        if (cached && typeof cached === 'object' && cached.step && cached.step !== 'NONE') {
+                        // Step 1: Try cache manager (which checks local cache, then database)
+                        const cached = await kaiaRuntimeForOnboardingCheck.cacheManager.get(stateKey);
+                        console.log('[Telegram Chat ID Capture] Cache manager returned:', cached ? `object with step: ${(cached as any)?.step || 'missing'}` : 'undefined/null');
+                        
+                        if (cached && typeof cached === 'object' && (cached as any).step && (cached as any).step !== 'NONE') {
                           state = cached as { step: string, profile: any };
                           stateLoaded = true;
-                          console.log('[Telegram Chat ID Capture] 📋 Loaded state from cache:', state.step);
+                          console.log('[Telegram Chat ID Capture] ✅ Loaded state from cache manager:', state.step, 'Profile has', Object.keys(state.profile || {}).length, 'keys');
                         } else {
-                          // Cache miss or invalid - try database
-                          console.log('[Telegram Chat ID Capture] 🔍 Cache miss, trying database...');
+                          // Cache miss or invalid - try direct database access as fallback
+                          console.log('[Telegram Chat ID Capture] 🔍 Cache manager miss/invalid, trying direct database access...');
                           const db = kaiaRuntimeForOnboardingCheck.databaseAdapter as any;
-                          if (db && db.query) {
-                            // PostgreSQL
+                          
+                          if (!db) {
+                            console.error('[Telegram Chat ID Capture] ❌ No database adapter available!');
+                          } else if (db.query) {
+                            // PostgreSQL - direct query
                             try {
+                              console.log('[Telegram Chat ID Capture] Querying PostgreSQL for key:', stateKey);
                               const result = await db.query(
                                 `SELECT value FROM cache WHERE key = $1`,
-                                [`onboarding_${userId}`]
+                                [stateKey]
                               );
+                              console.log('[Telegram Chat ID Capture] PostgreSQL query result:', result.rows ? `${result.rows.length} rows` : 'no rows');
+                              
                               if (result.rows && result.rows.length > 0) {
-                                const dbValue = typeof result.rows[0].value === 'string' 
-                                  ? JSON.parse(result.rows[0].value) 
-                                  : result.rows[0].value;
-                                if (dbValue && typeof dbValue === 'object' && dbValue.step) {
+                                const rawValue = result.rows[0].value;
+                                console.log('[Telegram Chat ID Capture] Raw value type:', typeof rawValue, 'is string:', typeof rawValue === 'string');
+                                
+                                const dbValue = typeof rawValue === 'string' 
+                                  ? JSON.parse(rawValue) 
+                                  : rawValue;
+                                
+                                console.log('[Telegram Chat ID Capture] Parsed value:', dbValue ? `object with step: ${dbValue.step || 'missing'}` : 'null/undefined');
+                                
+                                if (dbValue && typeof dbValue === 'object' && dbValue.step && dbValue.step !== 'NONE') {
                                   state = dbValue;
                                   stateLoaded = true;
-                                  // Restore to cache for faster access
-                                  await kaiaRuntimeForOnboardingCheck.cacheManager.set(`onboarding_${userId}`, state);
-                                  console.log('[Telegram Chat ID Capture] 💾 Loaded state from PostgreSQL and restored to cache:', state.step);
+                                  // CRITICAL: Restore to cache for faster access
+                                  await kaiaRuntimeForOnboardingCheck.cacheManager.set(stateKey, state);
+                                  console.log('[Telegram Chat ID Capture] ✅ Loaded state from PostgreSQL and restored to cache:', state.step);
                                 } else {
-                                  console.log('[Telegram Chat ID Capture] ⚠️ Database value found but invalid:', dbValue);
+                                  console.log('[Telegram Chat ID Capture] ⚠️ Database value found but invalid or NONE:', JSON.stringify(dbValue).substring(0, 200));
                                 }
                               } else {
-                                console.log('[Telegram Chat ID Capture] ⚠️ No state found in PostgreSQL for user:', userId);
+                                console.log('[Telegram Chat ID Capture] ⚠️ No state found in PostgreSQL for key:', stateKey);
                               }
                             } catch (pgErr: any) {
                               console.error('[Telegram Chat ID Capture] ❌ PostgreSQL query error:', pgErr.message);
+                              console.error('[Telegram Chat ID Capture] Stack:', pgErr.stack);
                             }
-                          } else if (db && db.getDb) {
-                            // MongoDB
+                          } else if (db.getDb) {
+                            // MongoDB - direct collection access
                             try {
+                              console.log('[Telegram Chat ID Capture] Querying MongoDB for key:', stateKey);
                               const mongoDb = await db.getDb();
                               const cacheCollection = mongoDb.collection('cache');
-                              const dbDoc = await cacheCollection.findOne({ key: `onboarding_${userId}` });
-                              if (dbDoc && dbDoc.value) {
-                                const parsedValue = typeof dbDoc.value === 'string' ? JSON.parse(dbDoc.value) : dbDoc.value;
-                                if (parsedValue && typeof parsedValue === 'object' && parsedValue.step) {
-                                  state = parsedValue;
-                                  stateLoaded = true;
-                                  // Restore to cache for faster access
-                                  await kaiaRuntimeForOnboardingCheck.cacheManager.set(`onboarding_${userId}`, state);
-                                  console.log('[Telegram Chat ID Capture] 💾 Loaded state from MongoDB and restored to cache:', state.step);
+                              const dbDoc = await cacheCollection.findOne({ key: stateKey });
+                              console.log('[Telegram Chat ID Capture] MongoDB query result:', dbDoc ? 'document found' : 'no document');
+                              
+                              if (dbDoc) {
+                                console.log('[Telegram Chat ID Capture] MongoDB doc has value:', !!dbDoc.value, 'value type:', typeof dbDoc.value);
+                                
+                                if (dbDoc.value) {
+                                  const parsedValue = typeof dbDoc.value === 'string' 
+                                    ? JSON.parse(dbDoc.value) 
+                                    : dbDoc.value;
+                                  
+                                  console.log('[Telegram Chat ID Capture] Parsed value:', parsedValue ? `object with step: ${parsedValue.step || 'missing'}` : 'null/undefined');
+                                  
+                                  if (parsedValue && typeof parsedValue === 'object' && parsedValue.step && parsedValue.step !== 'NONE') {
+                                    state = parsedValue;
+                                    stateLoaded = true;
+                                    // CRITICAL: Restore to cache for faster access
+                                    await kaiaRuntimeForOnboardingCheck.cacheManager.set(stateKey, state);
+                                    console.log('[Telegram Chat ID Capture] ✅ Loaded state from MongoDB and restored to cache:', state.step);
+                                  } else {
+                                    console.log('[Telegram Chat ID Capture] ⚠️ MongoDB value found but invalid or NONE:', JSON.stringify(parsedValue).substring(0, 200));
+                                  }
                                 } else {
-                                  console.log('[Telegram Chat ID Capture] ⚠️ MongoDB value found but invalid:', parsedValue);
+                                  console.log('[Telegram Chat ID Capture] ⚠️ MongoDB document found but has no value field');
                                 }
                               } else {
-                                console.log('[Telegram Chat ID Capture] ⚠️ No state found in MongoDB for user:', userId);
+                                console.log('[Telegram Chat ID Capture] ⚠️ No state found in MongoDB for key:', stateKey);
                               }
                             } catch (mongoErr: any) {
                               console.error('[Telegram Chat ID Capture] ❌ MongoDB query error:', mongoErr.message);
+                              console.error('[Telegram Chat ID Capture] Stack:', mongoErr.stack);
                             }
                           } else {
-                            console.log('[Telegram Chat ID Capture] ⚠️ Database adapter not available');
+                            console.error('[Telegram Chat ID Capture] ❌ Database adapter has neither query() nor getDb() method!');
+                            console.error('[Telegram Chat ID Capture] Database adapter type:', typeof db, 'keys:', Object.keys(db || {}).slice(0, 10));
                           }
                         }
                       } catch (cacheErr: any) {
-                        console.error('[Telegram Chat ID Capture] ❌ Cache/database read error:', cacheErr.message);
+                        console.error('[Telegram Chat ID Capture] ❌ CRITICAL: Cache/database read error:', cacheErr.message);
+                        console.error('[Telegram Chat ID Capture] Error type:', cacheErr.constructor.name);
                         console.error('[Telegram Chat ID Capture] Stack:', cacheErr.stack);
                       }
                       
-                      // Log final state
+                      // Log final state with full details
                       if (stateLoaded) {
-                        console.log('[Telegram Chat ID Capture] ✅ State successfully loaded:', state.step, 'Profile keys:', Object.keys(state.profile || {}));
+                        console.log('[Telegram Chat ID Capture] ✅✅✅ State successfully loaded:', state.step);
+                        console.log('[Telegram Chat ID Capture] Profile keys:', Object.keys(state.profile || {}));
+                        console.log('[Telegram Chat ID Capture] Profile name:', state.profile?.name || 'missing');
                       } else {
-                        console.log('[Telegram Chat ID Capture] ⚠️ State NOT loaded, using default (NONE)');
+                        console.log('[Telegram Chat ID Capture] ⚠️⚠️⚠️ State NOT loaded, using default (NONE) - user will restart onboarding');
+                        console.log('[Telegram Chat ID Capture] This should NOT happen if state was previously saved!');
                       }
                       
                       // Helper to update state (cache + database for persistence)
@@ -1762,7 +1803,7 @@ async function startAgents() {
                                 // Send email notification to members@si3.space with user info
                                 try {
                                   const { sendNoMatchNotification } = await import('./services/featureRequest.js');
-                                  await sendNoMatchNotification(userId, state.profile);
+                                  await sendNoMatchNotification(userId, state.profile, kaiaRuntimeForOnboardingCheck);
                                   console.log('[No Match] ✅ Sent no-match notification email');
                                 } catch (emailError: any) {
                                   console.log('[No Match] ⚠️ Could not send no-match notification email:', emailError.message);

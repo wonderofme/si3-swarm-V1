@@ -25,6 +25,11 @@ export interface EngagementMetrics {
     thisWeek: number;
     thisMonth: number;
   };
+  manualConnectionRequests: {
+    total: number;
+    thisWeek: number;
+    thisMonth: number;
+  };
   diversityResearchInterest: {
     total: number;
     thisWeek: number;
@@ -294,7 +299,7 @@ async function getEngagementMetrics(
   monthAgo: Date
 ): Promise<EngagementMetrics> {
   if (isMongo) {
-    // Feature requests - may not exist in MongoDB (currently only PostgreSQL)
+    // Feature requests
     let featureTotal = 0, featureWeek = 0, featureMonth = 0;
     try {
       const featureRequestsCollection = db.db.collection('feature_requests');
@@ -306,12 +311,26 @@ async function getEngagementMetrics(
         created_at: { $gte: monthAgo }
       });
     } catch (e) {
-      // Collection might not exist - feature requests may only be in PostgreSQL
       console.log('[Metrics] Feature requests collection not found in MongoDB');
     }
     
-    const diversityCollection = db.db.collection('diversity_research');
+    // Manual connection requests (no-match notifications)
+    let manualTotal = 0, manualWeek = 0, manualMonth = 0;
+    try {
+      const manualRequestsCollection = db.db.collection('manual_connection_requests');
+      manualTotal = await manualRequestsCollection.countDocuments();
+      manualWeek = await manualRequestsCollection.countDocuments({
+        created_at: { $gte: weekAgo }
+      });
+      manualMonth = await manualRequestsCollection.countDocuments({
+        created_at: { $gte: monthAgo }
+      });
+    } catch (e) {
+      console.log('[Metrics] Manual connection requests collection not found in MongoDB');
+    }
     
+    // Diversity research
+    const diversityCollection = db.db.collection('diversity_research');
     const diversityTotal = await diversityCollection.countDocuments();
     const diversityWeek = await diversityCollection.countDocuments({
       interestedAt: { $gte: weekAgo }
@@ -326,6 +345,11 @@ async function getEngagementMetrics(
         thisWeek: featureWeek,
         thisMonth: featureMonth
       },
+      manualConnectionRequests: {
+        total: manualTotal,
+        thisWeek: manualWeek,
+        thisMonth: manualMonth
+      },
       diversityResearchInterest: {
         total: diversityTotal,
         thisWeek: diversityWeek,
@@ -333,7 +357,8 @@ async function getEngagementMetrics(
       }
     };
   } else {
-    // PostgreSQL - feature_requests might not exist, handle gracefully
+    // PostgreSQL
+    // Feature requests
     let featureTotal = 0, featureWeek = 0, featureMonth = 0;
     try {
       const featureCounts = await db.query(`
@@ -352,8 +377,27 @@ async function getEngagementMetrics(
       // Table might not exist
     }
     
-    // Diversity research - stored in cache or separate table
-    // For now, we'll check cache for diversity research interest
+    // Manual connection requests (no-match notifications)
+    let manualTotal = 0, manualWeek = 0, manualMonth = 0;
+    try {
+      const manualCounts = await db.query(`
+        SELECT 
+          COUNT(*) FILTER (WHERE true) as total,
+          COUNT(*) FILTER (WHERE created_at >= $1) as week_count,
+          COUNT(*) FILTER (WHERE created_at >= $2) as month_count
+        FROM manual_connection_requests
+      `, [weekAgo, monthAgo]);
+      if (manualCounts.rows.length > 0) {
+        manualTotal = parseInt(manualCounts.rows[0].total || '0');
+        manualWeek = parseInt(manualCounts.rows[0].week_count || '0');
+        manualMonth = parseInt(manualCounts.rows[0].month_count || '0');
+      }
+    } catch (e) {
+      // Table might not exist yet
+      console.log('[Metrics] Manual connection requests table not found in PostgreSQL');
+    }
+    
+    // Diversity research
     let diversityTotal = 0, diversityWeek = 0, diversityMonth = 0;
     try {
       const diversityCounts = await db.query(`
@@ -384,6 +428,11 @@ async function getEngagementMetrics(
         total: featureTotal,
         thisWeek: featureWeek,
         thisMonth: featureMonth
+      },
+      manualConnectionRequests: {
+        total: manualTotal,
+        thisWeek: manualWeek,
+        thisMonth: manualMonth
       },
       diversityResearchInterest: {
         total: diversityTotal,
