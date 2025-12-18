@@ -2493,6 +2493,14 @@ PERSONALITY:
   setInterval(checkAndSendFollowUps, FOLLOW_UP_CHECK_INTERVAL);
   // Run once on startup after a short delay
   setTimeout(checkAndSendFollowUps, 10000);
+  
+  // Start daily report scheduler
+  try {
+    const { startDailyReportScheduler } = await import('./services/dailyReport.js');
+    startDailyReportScheduler(kaiaRuntimeForOnboardingCheck);
+  } catch (error) {
+    console.error('[Daily Report] Failed to start daily report scheduler:', error);
+  }
 }
 
 // Add global error handlers to catch unhandled promise rejections
