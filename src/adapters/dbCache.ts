@@ -47,18 +47,48 @@ export class DatabaseCacheAdapter implements ICacheAdapter {
     try {
       await this.ensureInitialized();
       
-      const result = await this.db.query(
-        `SELECT value FROM cache WHERE key = $1`,
-        [key]
-      );
+      const databaseType = (process.env.DATABASE_TYPE || 'postgres').toLowerCase();
       
-      if (result.rows && result.rows.length > 0) {
-        const value = result.rows[0].value;
-        // Parse if it's a string (PostgreSQL returns JSONB as object, but MongoDB might return string)
-        const parsed = typeof value === 'string' ? JSON.parse(value) : value;
-        // Store in local cache for faster future reads
-        this.localCache.set(key, parsed);
-        return parsed;
+      if (databaseType === 'mongodb' || databaseType === 'mongo') {
+        // MongoDB: Direct collection access for reliability
+        if (this.db && typeof this.db.getDb === 'function') {
+          const mongoDb = await this.db.getDb();
+          const cacheCollection = mongoDb.collection('cache');
+          const doc = await cacheCollection.findOne({ key: key });
+          if (doc && doc.value) {
+            const parsed = typeof doc.value === 'string' ? JSON.parse(doc.value) : doc.value;
+            // Store in local cache for faster future reads
+            this.localCache.set(key, parsed);
+            return parsed;
+          }
+        } else {
+          // Fallback to SQL query (through adapter)
+          const result = await this.db.query(
+            `SELECT value FROM cache WHERE key = $1`,
+            [key]
+          );
+          if (result.rows && result.rows.length > 0) {
+            const value = result.rows[0].value;
+            const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+            this.localCache.set(key, parsed);
+            return parsed;
+          }
+        }
+      } else {
+        // PostgreSQL: Use SQL query
+        const result = await this.db.query(
+          `SELECT value FROM cache WHERE key = $1`,
+          [key]
+        );
+        
+        if (result.rows && result.rows.length > 0) {
+          const value = result.rows[0].value;
+          // Parse if it's a string (PostgreSQL returns JSONB as object, but might be string in some cases)
+          const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+          // Store in local cache for faster future reads
+          this.localCache.set(key, parsed);
+          return parsed;
+        }
       }
       
       return undefined;
@@ -76,17 +106,37 @@ export class DatabaseCacheAdapter implements ICacheAdapter {
     try {
       await this.ensureInitialized();
       
-      const valueStr = JSON.stringify(value);
       const databaseType = (process.env.DATABASE_TYPE || 'postgres').toLowerCase();
       
       if (databaseType === 'mongodb' || databaseType === 'mongo') {
-        // MongoDB upsert
-        await this.db.query(
-          `INSERT INTO cache (key, value, updated_at) VALUES ($1, $2, NOW()) ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW()`,
-          [key, valueStr]
-        );
+        // MongoDB: Direct collection access for reliability
+        if (this.db && typeof this.db.getDb === 'function') {
+          const mongoDb = await this.db.getDb();
+          const cacheCollection = mongoDb.collection('cache');
+          await cacheCollection.updateOne(
+            { key: key },
+            { 
+              $set: { 
+                value: value, // Store as object, MongoDB will handle it
+                updated_at: new Date()
+              },
+              $setOnInsert: {
+                created_at: new Date()
+              }
+            },
+            { upsert: true }
+          );
+        } else {
+          // Fallback to SQL query (through adapter)
+          const valueStr = JSON.stringify(value);
+          await this.db.query(
+            `INSERT INTO cache (key, value, updated_at) VALUES ($1, $2, NOW()) ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW()`,
+            [key, valueStr]
+          );
+        }
       } else {
         // PostgreSQL upsert
+        const valueStr = JSON.stringify(value);
         await this.db.query(
           `INSERT INTO cache (key, value, updated_at) 
            VALUES ($1, $2::jsonb, NOW()) 
