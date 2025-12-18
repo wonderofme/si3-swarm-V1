@@ -82,9 +82,13 @@ function calculateInterestOverlap(interests1: string[], interests2: string[]): {
       // Check if interests match (either exact or substring)
       if (i1 === i2 || i1.includes(i2) || i2.includes(i1)) {
         // Use the shorter version as the common interest
-        const commonInterest = i1.length <= i2.length ? interests1[normalized1.indexOf(i1)] : interests2[normalized2.indexOf(i2)];
-        if (!common.includes(commonInterest)) {
-          common.push(commonInterest);
+        const idx1 = normalized1.indexOf(i1);
+        const idx2 = normalized2.indexOf(i2);
+        if (idx1 >= 0 && idx2 >= 0) {
+          const commonInterest = i1.length <= i2.length ? interests1[idx1] : interests2[idx2];
+          if (commonInterest && !common.includes(commonInterest)) {
+            common.push(commonInterest);
+          }
         }
       }
     }
