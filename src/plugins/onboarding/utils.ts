@@ -93,13 +93,35 @@ export async function getOnboardingStep(runtime: IAgentRuntime, userId: UUID): P
 export function formatProfileForDisplay(profile: UserProfile, lang: string = 'en'): string {
   const msgs = getMessages(lang as LanguageCode);
   
-  // Helper to ensure we show actual values, not counts
-  const formatArray = (arr: any): string => {
+  // Goal mapping: Convert numbers to actual goal text
+  const goalMap: Record<string, string> = {
+    '1': 'Startups to invest in',
+    '2': 'Investors/grant programs',
+    '3': 'Growth tools, strategies, and/or support',
+    '4': 'Sales/BD tools, strategies and/or support',
+    '5': "Communities and/or DAO's to join",
+    '6': 'New job opportunities'
+  };
+  
+  // Helper to ensure we show actual values, not counts or numbers
+  const formatArray = (arr: any, isGoals: boolean = false): string => {
     if (!arr) return msgs.SUMMARY_NOT_PROVIDED;
     if (Array.isArray(arr)) {
-      return arr.length > 0 ? arr.join(', ') : msgs.SUMMARY_NOT_PROVIDED;
+      if (arr.length === 0) return msgs.SUMMARY_NOT_PROVIDED;
+      // Map numbers to text for goals
+      if (isGoals) {
+        const mapped = arr.map((item: any) => {
+          const str = String(item);
+          return goalMap[str] || item; // Use mapped value if exists, otherwise use original
+        });
+        return mapped.join(', ');
+      }
+      return arr.join(', ');
     }
-    // If it's stored as a string/number, return as-is (shouldn't happen but handle gracefully)
+    // If it's stored as a string/number, map it if it's a goal
+    if (isGoals && goalMap[String(arr)]) {
+      return goalMap[String(arr)];
+    }
     return String(arr);
   };
   
@@ -108,7 +130,7 @@ export function formatProfileForDisplay(profile: UserProfile, lang: string = 'en
     `${msgs.SUMMARY_LOCATION} ${profile.location || msgs.SUMMARY_NOT_PROVIDED}\n` +
     `${msgs.SUMMARY_ROLES} ${formatArray(profile.roles)}\n` +
     `${msgs.SUMMARY_INTERESTS} ${formatArray(profile.interests)}\n` +
-    `${msgs.SUMMARY_GOALS} ${formatArray(profile.connectionGoals)}\n` +
+    `${msgs.SUMMARY_GOALS} ${formatArray(profile.connectionGoals, true)}\n` +
     `${msgs.SUMMARY_EVENTS} ${formatArray(profile.events)}\n` +
     `${msgs.SUMMARY_SOCIALS} ${formatArray(profile.socials)}\n` +
     `${msgs.SUMMARY_TELEGRAM} ${profile.telegramHandle ? '@' + profile.telegramHandle : msgs.SUMMARY_NOT_PROVIDED}\n` +

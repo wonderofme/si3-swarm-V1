@@ -408,8 +408,12 @@ export const continueOnboardingAction: Action = {
         const goalText = goalParts[1] || '';
         const connectionGoals = [...goalNumbers.map(n => {
           const goalMap: Record<string, string> = {
-            '1': 'Startups to invest in', '2': 'Investors/grant program operators', '3': 'Marketing support',
-            '4': 'BD & Partnerships', '5': 'Communities and/or DAOs to join', '6': 'Other'
+            '1': 'Startups to invest in',
+            '2': 'Investors/grant programs',
+            '3': 'Growth tools, strategies, and/or support',
+            '4': 'Sales/BD tools, strategies and/or support',
+            '5': "Communities and/or DAO's to join",
+            '6': 'New job opportunities'
           };
           return goalMap[n.trim()];
         }).filter(Boolean), ...(goalText ? [goalText.trim()] : [])];
