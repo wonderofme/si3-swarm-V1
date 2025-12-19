@@ -372,6 +372,13 @@ export async function findMatches(
     return [];
   }
   
+  console.log(`[Matching Engine] Found ${allUsers.length} potential candidate(s) in database`);
+  
+  if (allUsers.length === 0) {
+    console.log('[Matching Engine] No other users found in database - cannot match');
+    return [];
+  }
+  
   const candidates: MatchCandidate[] = [];
   
   for (const otherUser of allUsers) {
@@ -404,11 +411,19 @@ export async function findMatches(
     );
     
     if (isHighDemand && totalScore < finalConfig.highDemandThreshold) {
+      console.log(`[Matching Engine] ⚠️ Skipping high-demand role ${userBRoles.join(', ')} - score ${totalScore.toFixed(1)} below threshold ${finalConfig.highDemandThreshold}`);
       continue; // Skip high-demand roles that don't meet threshold
+    }
+    
+    // Log rejected candidates for debugging
+    if (totalScore < finalConfig.minScoreThreshold) {
+      console.log(`[Matching Engine] ❌ Score too low: ${userB.name || 'Anonymous'} (Score: ${totalScore.toFixed(1)} < ${finalConfig.minScoreThreshold}, Intent: ${intentScore}, Interest: ${interestScore.toFixed(1)}, Event: ${eventScore})`);
+      continue; // Skip candidates below threshold
     }
     
     // Only include if above minimum threshold
     if (totalScore >= finalConfig.minScoreThreshold) {
+      console.log(`[Matching Engine] ✅ Match found: ${userB.name || 'Anonymous'} (Score: ${totalScore.toFixed(1)}, Intent: ${intentScore}, Interest: ${interestScore.toFixed(1)}, Event: ${eventScore})`);
       // Generate match reason
       let reason = '';
       if (intentScore >= 80) {
@@ -443,6 +458,8 @@ export async function findMatches(
   
   // Sort by score (highest first)
   candidates.sort((a, b) => b.score - a.score);
+  
+  console.log(`[Matching Engine] Evaluated ${allUsers.length} user(s), found ${candidates.length} match(es) above threshold ${finalConfig.minScoreThreshold}`);
   
   // LIMITER: Only generate icebreakers for the Top 3 to save latency/tokens
   const topCandidates = candidates.slice(0, 3);

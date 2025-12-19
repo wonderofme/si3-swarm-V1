@@ -1860,6 +1860,7 @@ async function startAgents() {
                                   console.log('[Manual Match] Could not get previous matches:', e);
                                 }
                                 
+                                console.log('[Manual Match] 🔍 Calling matching engine...');
                                 const matchCandidates = await findMatches(
                                   kaiaRuntimeForOnboardingCheck,
                                   userId,
@@ -1867,6 +1868,7 @@ async function startAgents() {
                                   previousMatchIds,
                                   { minScoreThreshold: 70 } // Slightly lower threshold for manual requests
                                 );
+                                console.log(`[Manual Match] Matching engine returned ${matchCandidates.length} candidate(s)`);
                                 
                                 // Convert to old format for compatibility
                                 for (const match of matchCandidates) {
