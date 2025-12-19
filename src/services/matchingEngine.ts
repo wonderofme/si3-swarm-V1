@@ -290,8 +290,20 @@ export async function findMatches(
   const finalConfig = { ...DEFAULT_CONFIG, ...config };
   const db = runtime.databaseAdapter as any;
   
-  if (!db || !db.query) {
+  if (!db) {
     console.log('[Matching Engine] No database adapter');
+    return [];
+  }
+  
+  // Check if database adapter has required methods (query for PostgreSQL, getDb for MongoDB)
+  const databaseType = (process.env.DATABASE_TYPE || 'postgres').toLowerCase();
+  const isMongo = databaseType === 'mongodb' || databaseType === 'mongo';
+  if (!isMongo && !db.query) {
+    console.log('[Matching Engine] PostgreSQL adapter missing query method');
+    return [];
+  }
+  if (isMongo && !db.getDb) {
+    console.log('[Matching Engine] MongoDB adapter missing getDb method');
     return [];
   }
   
