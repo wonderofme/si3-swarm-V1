@@ -191,7 +191,7 @@ export async function processWebChatMessage(
               let previousMatchIds: string[] = [];
               try {
                 const prevMatches = await db.query(
-                  `SELECT matched_user_id FROM matches WHERE user_id = $1`,
+                  `SELECT matched_user_id FROM matches WHERE user_id = $1::text`,
                   [userId]
                 );
                 previousMatchIds = (prevMatches.rows || []).map((r: any) => r.matched_user_id);
@@ -234,7 +234,7 @@ export async function processWebChatMessage(
                 // Record match
                 const { v4: uuidv4 } = await import('uuid');
                 await db.query(
-                  `INSERT INTO matches (id, user_id, matched_user_id, room_id, match_date, status) VALUES ($1, $2, $3, $4, NOW(), 'pending')`,
+                  `INSERT INTO matches (id, user_id, matched_user_id, room_id, match_date, status) VALUES ($1, $2::text, $3::text, $4::text, NOW(), 'pending')`,
                   [uuidv4(), userId, topMatch.id, `web_${userId}`]
                 );
                 

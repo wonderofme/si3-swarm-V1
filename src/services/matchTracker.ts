@@ -32,29 +32,69 @@ export async function recordMatch(
   const adapter = runtime.databaseAdapter as any;
   
   // Insert match
-  await adapter.query(
-    `INSERT INTO matches (id, user_id, matched_user_id, room_id, match_date, status)
-     VALUES ($1, $2, $3, $4, NOW(), 'pending')`,
-    [matchId, userId, matchedUserId, roomId]
-  );
+  const databaseType = (process.env.DATABASE_TYPE || 'postgres').toLowerCase();
+  const isMongo = databaseType === 'mongodb' || databaseType === 'mongo';
+  
+  if (isMongo && adapter.getDb) {
+    const mongoDb = await adapter.getDb();
+    await mongoDb.collection('matches').insertOne({
+      id: matchId,
+      user_id: userId,
+      matched_user_id: matchedUserId,
+      room_id: roomId,
+      match_date: new Date(),
+      status: 'pending'
+    });
+    
+    // Schedule 3-day check-in
+    const checkInDate = new Date();
+    checkInDate.setDate(checkInDate.getDate() + 3);
+    await mongoDb.collection('follow_ups').insertOne({
+      id: uuidv4(),
+      match_id: matchId,
+      user_id: userId,
+      type: '3_day_checkin',
+      scheduled_for: checkInDate,
+      status: 'pending'
+    });
+    
+    // Schedule 7-day next match
+    const nextMatchDate = new Date();
+    nextMatchDate.setDate(nextMatchDate.getDate() + 7);
+    await mongoDb.collection('follow_ups').insertOne({
+      id: uuidv4(),
+      match_id: matchId,
+      user_id: userId,
+      type: '7_day_next_match',
+      scheduled_for: nextMatchDate,
+      status: 'pending'
+    });
+  } else if (adapter.query) {
+    // PostgreSQL
+    await adapter.query(
+      `INSERT INTO matches (id, user_id, matched_user_id, room_id, match_date, status)
+       VALUES ($1, $2::text, $3::text, $4::text, NOW(), 'pending')`,
+      [matchId, userId, matchedUserId, roomId]
+    );
 
-  // Schedule 3-day check-in
-  const checkInDate = new Date();
-  checkInDate.setDate(checkInDate.getDate() + 3);
-  await adapter.query(
-    `INSERT INTO follow_ups (match_id, user_id, type, scheduled_for, status)
-     VALUES ($1, $2, '3_day_checkin', $3, 'pending')`,
-    [matchId, userId, checkInDate]
-  );
+    // Schedule 3-day check-in
+    const checkInDate = new Date();
+    checkInDate.setDate(checkInDate.getDate() + 3);
+    await adapter.query(
+      `INSERT INTO follow_ups (id, match_id, user_id, type, scheduled_for, status)
+       VALUES ($1, $2, $3::text, '3_day_checkin', $4, 'pending')`,
+      [uuidv4(), matchId, userId, checkInDate]
+    );
 
-  // Schedule 7-day next match
-  const nextMatchDate = new Date();
-  nextMatchDate.setDate(nextMatchDate.getDate() + 7);
-  await adapter.query(
-    `INSERT INTO follow_ups (match_id, user_id, type, scheduled_for, status)
-     VALUES ($1, $2, '7_day_next_match', $3, 'pending')`,
-    [matchId, userId, nextMatchDate]
-  );
+    // Schedule 7-day next match
+    const nextMatchDate = new Date();
+    nextMatchDate.setDate(nextMatchDate.getDate() + 7);
+    await adapter.query(
+      `INSERT INTO follow_ups (id, match_id, user_id, type, scheduled_for, status)
+       VALUES ($1, $2, $3::text, '7_day_next_match', $4, 'pending')`,
+      [uuidv4(), matchId, userId, nextMatchDate]
+    );
+  }
 
   return matchId;
 }
@@ -122,12 +162,27 @@ export async function getRecentSentFollowUp(
   userId: string
 ): Promise<FollowUpRecord | null> {
   const adapter = runtime.databaseAdapter as any;
-  const { rows } = await adapter.query(
-    `SELECT * FROM follow_ups 
-     WHERE user_id = $1 AND status = 'sent' 
-     ORDER BY sent_at DESC LIMIT 1`,
-    [userId]
-  );
+  const databaseType = (process.env.DATABASE_TYPE || 'postgres').toLowerCase();
+  const isMongo = databaseType === 'mongodb' || databaseType === 'mongo';
+  
+  let rows: any[] = [];
+  if (isMongo && adapter.getDb) {
+    const mongoDb = await adapter.getDb();
+    const docs = await mongoDb.collection('follow_ups')
+      .find({ user_id: userId, status: 'sent' })
+      .sort({ sent_at: -1 })
+      .limit(1)
+      .toArray();
+    rows = docs;
+  } else if (adapter.query) {
+    const result = await adapter.query(
+      `SELECT * FROM follow_ups 
+       WHERE user_id = $1::text AND status = 'sent' 
+       ORDER BY sent_at DESC LIMIT 1`,
+      [userId]
+    );
+    rows = result.rows || [];
+  }
   
   if (rows.length === 0) return null;
   
@@ -148,16 +203,29 @@ export async function getUserMatches(userId: string, limit: number = 20): Promis
   const adapter = createDatabaseAdapter();
   
   try {
-    const result = await adapter.query(
-      `SELECT id, user_id, matched_user_id, room_id, match_date, status 
-       FROM matches 
-       WHERE user_id = $1 
-       ORDER BY match_date DESC 
-       LIMIT $2`,
-      [userId, limit]
-    );
+    const databaseType = (process.env.DATABASE_TYPE || 'postgres').toLowerCase();
+    const isMongo = databaseType === 'mongodb' || databaseType === 'mongo';
     
-    const rows = result.rows || [];
+    let rows: any[] = [];
+    if (isMongo && adapter.getDb) {
+      const mongoDb = await adapter.getDb();
+      const docs = await mongoDb.collection('matches')
+        .find({ user_id: userId })
+        .sort({ match_date: -1 })
+        .limit(limit)
+        .toArray();
+      rows = docs;
+    } else if (adapter.query) {
+      const result = await adapter.query(
+        `SELECT id, user_id, matched_user_id, room_id, match_date, status 
+         FROM matches 
+         WHERE user_id = $1::text 
+         ORDER BY match_date DESC 
+         LIMIT $2`,
+        [userId, limit]
+      );
+      rows = result.rows || [];
+    }
     return rows.map((row: any) => ({
        id: row.id || row._id?.toString(),
        userId: row.user_id || row.userId,

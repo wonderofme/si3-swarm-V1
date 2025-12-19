@@ -182,7 +182,7 @@ export async function sendNoMatchNotification(
         const { v4: uuidv4 } = await import('uuid');
         await db.query(
           `INSERT INTO manual_connection_requests (id, user_id, user_name, telegram_handle, created_at, status) 
-           VALUES ($1, $2, $3, $4, NOW(), 'pending')`,
+           VALUES ($1, $2::text, $3, $4, NOW(), 'pending')`,
           [uuidv4(), userId, userProfile.name || 'Unknown', userProfile.telegramHandle || null]
         );
         console.log('[No Match Notification] ✅ Tracked manual connection request in PostgreSQL');

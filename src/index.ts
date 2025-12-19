@@ -1699,7 +1699,7 @@ async function startAgents() {
                           if (db && db.query) {
                             const { v4: uuidv4 } = await import('uuid');
                             await db.query(
-                              `INSERT INTO feature_requests (id, user_id, user_name, request_text, created_at) VALUES ($1, $2, $3, $4, NOW())`,
+                              `INSERT INTO feature_requests (id, user_id, user_name, request_text, created_at) VALUES ($1, $2::text, $3, $4, NOW())`,
                               [uuidv4(), userId, state.profile.name || 'Anonymous', messageText]
                             );
                             console.log('[Feature Request] ✅ Saved to database');
@@ -1842,12 +1842,23 @@ async function startAgents() {
                                 // Get previous matches to exclude
                                 let previousMatchIds: string[] = [];
                                 try {
-                                  const prevMatches = await db.query(
-                                    `SELECT matched_user_id FROM matches WHERE user_id = $1`,
-                                    [userId]
-                                  );
-                                  previousMatchIds = (prevMatches.rows || []).map((r: any) => r.matched_user_id);
-                                } catch (e) { /* no previous matches */ }
+                                  const databaseType = (process.env.DATABASE_TYPE || 'postgres').toLowerCase();
+                                  const isMongo = databaseType === 'mongodb' || databaseType === 'mongo';
+                                  
+                                  if (isMongo && db.getDb) {
+                                    const mongoDb = await db.getDb();
+                                    const prevMatches = await mongoDb.collection('matches').find({ user_id: userId }).toArray();
+                                    previousMatchIds = prevMatches.map((m: any) => m.matched_user_id);
+                                  } else {
+                                    const prevMatches = await db.query(
+                                      `SELECT matched_user_id FROM matches WHERE user_id = $1::text`,
+                                      [userId]
+                                    );
+                                    previousMatchIds = (prevMatches.rows || []).map((r: any) => r.matched_user_id);
+                                  }
+                                } catch (e) { 
+                                  console.log('[Manual Match] Could not get previous matches:', e);
+                                }
                                 
                                 const matchCandidates = await findMatches(
                                   kaiaRuntimeForOnboardingCheck,
@@ -1872,22 +1883,62 @@ async function startAgents() {
                                 // Get previous matches for fallback
                                 let fallbackPreviousMatchIds: string[] = [];
                                 try {
-                                  const prevMatches = await db.query(
-                                    `SELECT matched_user_id FROM matches WHERE user_id = $1`,
-                                    [userId]
-                                  );
-                                  fallbackPreviousMatchIds = (prevMatches.rows || []).map((r: any) => r.matched_user_id);
-                                } catch (e) { /* no previous matches */ }
+                                  const databaseType = (process.env.DATABASE_TYPE || 'postgres').toLowerCase();
+                                  const isMongo = databaseType === 'mongodb' || databaseType === 'mongo';
+                                  
+                                  if (isMongo && db.getDb) {
+                                    const mongoDb = await db.getDb();
+                                    const prevMatches = await mongoDb.collection('matches').find({ user_id: userId }).toArray();
+                                    fallbackPreviousMatchIds = prevMatches.map((m: any) => m.matched_user_id);
+                                  } else {
+                                    const prevMatches = await db.query(
+                                      `SELECT matched_user_id FROM matches WHERE user_id = $1::text`,
+                                      [userId]
+                                    );
+                                    fallbackPreviousMatchIds = (prevMatches.rows || []).map((r: any) => r.matched_user_id);
+                                  }
+                                } catch (e) { 
+                                  console.log('[Manual Match Fallback] Could not get previous matches:', e);
+                                }
                                 
-                                const res = await db.query(`SELECT key, value FROM cache WHERE key LIKE 'onboarding_%'`);
-                                for (const row of (res.rows || [])) {
+                                // Get all users from cache
+                                const databaseType = (process.env.DATABASE_TYPE || 'postgres').toLowerCase();
+                                const isMongo = databaseType === 'mongodb' || databaseType === 'mongo';
+                                
+                                let allCacheEntries: any[] = [];
+                                if (isMongo && db.getDb) {
+                                  const mongoDb = await db.getDb();
+                                  const docs = await mongoDb.collection('cache').find({ key: { $regex: /^onboarding_/ } }).toArray();
+                                  allCacheEntries = docs.map((doc: any) => ({ key: doc.key, value: doc.value }));
+                                } else {
+                                  const res = await db.query(`SELECT key, value FROM cache WHERE key LIKE 'onboarding_%'`);
+                                  allCacheEntries = res.rows || [];
+                                }
+                                
+                                for (const row of allCacheEntries) {
                                   const otherUserId = row.key.replace('onboarding_', '');
                                   if (otherUserId === userId) continue;
                                   if (fallbackPreviousMatchIds.includes(otherUserId)) continue;
                                   
                                   try {
-                                    const otherState = typeof row.value === 'string' ? JSON.parse(row.value) : row.value;
-                                    if (otherState.step !== 'COMPLETED' || !otherState.profile) continue;
+                                    // Handle string-based cache format
+                                    let otherState: any = null;
+                                    if (typeof row.value === 'string') {
+                                      try {
+                                        otherState = JSON.parse(row.value);
+                                      } catch (e) {
+                                        // Try double-encoding
+                                        try {
+                                          otherState = JSON.parse(JSON.parse(row.value));
+                                        } catch (e2) {
+                                          continue; // Skip invalid entries
+                                        }
+                                      }
+                                    } else {
+                                      otherState = row.value;
+                                    }
+                                    
+                                    if (!otherState || otherState.step !== 'COMPLETED' || !otherState.profile) continue;
                                     
                                     const otherInterests = otherState.profile.interests || [];
                                     const otherRoles = otherState.profile.roles || [];
@@ -1933,20 +1984,49 @@ async function startAgents() {
                                   const { v4: uuidv4 } = await import('uuid');
                                   const matchId = uuidv4();
                                   const db = kaiaRuntimeForOnboardingCheck.databaseAdapter as any;
-                                  if (db && db.query) {
-                                    // Record the match
-                                    await db.query(
-                                      `INSERT INTO matches (id, user_id, matched_user_id, room_id, match_date, status) VALUES ($1, $2, $3, $4, NOW(), 'pending')`,
-                                      [matchId, userId, matchedUserId, chatId.toString()]
-                                    );
+                                  if (db) {
+                                    const databaseType = (process.env.DATABASE_TYPE || 'postgres').toLowerCase();
+                                    const isMongo = databaseType === 'mongodb' || databaseType === 'mongo';
+                                    const matchDate = new Date();
                                     
-                                    // Schedule 3-day follow-up
-                                    const followUpDate = new Date();
-                                    followUpDate.setDate(followUpDate.getDate() + 3);
-                                    await db.query(
-                                      `INSERT INTO follow_ups (id, match_id, user_id, type, scheduled_for, status) VALUES ($1, $2, $3, '3_day_checkin', $4, 'pending')`,
-                                      [uuidv4(), matchId, userId, followUpDate]
-                                    );
+                                    if (isMongo && db.getDb) {
+                                      const mongoDb = await db.getDb();
+                                      // Record the match
+                                      await mongoDb.collection('matches').insertOne({
+                                        id: matchId,
+                                        user_id: userId,
+                                        matched_user_id: matchedUserId,
+                                        room_id: chatId.toString(),
+                                        match_date: matchDate,
+                                        status: 'pending'
+                                      });
+                                      
+                                      // Schedule 3-day follow-up
+                                      const followUpDate = new Date();
+                                      followUpDate.setDate(followUpDate.getDate() + 3);
+                                      await mongoDb.collection('follow_ups').insertOne({
+                                        id: uuidv4(),
+                                        match_id: matchId,
+                                        user_id: userId,
+                                        type: '3_day_checkin',
+                                        scheduled_for: followUpDate,
+                                        status: 'pending'
+                                      });
+                                    } else if (db.query) {
+                                      // Record the match (PostgreSQL)
+                                      await db.query(
+                                        `INSERT INTO matches (id, user_id, matched_user_id, room_id, match_date, status) VALUES ($1, $2::text, $3::text, $4::text, NOW(), 'pending')`,
+                                        [matchId, userId, matchedUserId, chatId.toString()]
+                                      );
+                                      
+                                      // Schedule 3-day follow-up
+                                      const followUpDate = new Date();
+                                      followUpDate.setDate(followUpDate.getDate() + 3);
+                                      await db.query(
+                                        `INSERT INTO follow_ups (id, match_id, user_id, type, scheduled_for, status) VALUES ($1, $2, $3::text, '3_day_checkin', $4, 'pending')`,
+                                        [uuidv4(), matchId, userId, followUpDate]
+                                      );
+                                    }
                                     console.log('[Match Tracker] ✅ Match recorded and follow-up scheduled');
                                   }
                                 } catch (trackErr) {
@@ -1981,22 +2061,40 @@ async function startAgents() {
                           let matchList = '';
                           try {
                             const db = kaiaRuntimeForOnboardingCheck.databaseAdapter as any;
-                            if (db && db.query) {
-                              const matchRes = await db.query(
-                                `SELECT * FROM matches WHERE user_id = $1 ORDER BY match_date DESC LIMIT 5`,
-                                [userId]
-                              );
-                              matchCount = matchRes.rows?.length || 0;
+                            if (db) {
+                              const databaseType = (process.env.DATABASE_TYPE || 'postgres').toLowerCase();
+                              const isMongo = databaseType === 'mongodb' || databaseType === 'mongo';
+                              
+                              let matches: any[] = [];
+                              if (isMongo && db.getDb) {
+                                const mongoDb = await db.getDb();
+                                matches = await mongoDb.collection('matches')
+                                  .find({ user_id: userId })
+                                  .sort({ match_date: -1 })
+                                  .limit(5)
+                                  .toArray();
+                                matchCount = matches.length;
+                              } else if (db.query) {
+                                const matchRes = await db.query(
+                                  `SELECT * FROM matches WHERE user_id = $1::text ORDER BY match_date DESC LIMIT 5`,
+                                  [userId]
+                                );
+                                matches = matchRes.rows || [];
+                                matchCount = matches.length;
+                              }
+                              
                               if (matchCount > 0) {
                                 matchList = '\n\nRecent Matches:\n';
-                                for (const match of matchRes.rows) {
+                                for (const match of matches) {
                                   const statusEmoji = match.status === 'connected' ? '✅' : match.status === 'not_interested' ? '❌' : '⏳';
                                   const date = new Date(match.match_date).toLocaleDateString();
                                   matchList += `${statusEmoji} ${date} - ${match.status}\n`;
                                 }
                               }
                             }
-                          } catch (e) { /* no matches */ }
+                          } catch (e) { 
+                            console.log('[Profile History] Could not fetch matches:', e);
+                          }
                           
                           // Use formatProfileForDisplay to ensure actual values are shown
                           const { formatProfileForDisplay } = await import('./plugins/onboarding/utils.js');
@@ -2124,7 +2222,7 @@ async function startAgents() {
                               if (db && db.query) {
                                 const { v4: uuidv4 } = await import('uuid');
                                 await db.query(
-                                  `INSERT INTO feature_requests (id, user_id, user_name, request_text, created_at) VALUES ($1, $2, $3, $4, NOW())`,
+                                  `INSERT INTO feature_requests (id, user_id, user_name, request_text, created_at) VALUES ($1, $2::text, $3, $4, NOW())`,
                                   [uuidv4(), userId, state.profile.name || 'Anonymous', messageText]
                                 );
                                 console.log('[Feature Request] ✅ Saved to database');
@@ -2706,26 +2804,67 @@ PERSONALITY:
       }
       
       const db = kaiaRuntimeForOnboardingCheck.databaseAdapter as any;
-      if (!db || !db.query) {
+      if (!db) {
         console.log('[Follow-Up Scheduler] No database adapter, skipping check');
         return;
       }
       
-      // Query for due follow-ups
-      const result = await db.query(
-        `SELECT f.*, m.user_id, m.matched_user_id 
-         FROM follow_ups f 
-         JOIN matches m ON f.match_id = m.id 
-         WHERE f.status = 'pending' AND f.scheduled_for <= NOW()
-         LIMIT 10`
-      );
+      const databaseType = (process.env.DATABASE_TYPE || 'postgres').toLowerCase();
+      const isMongo = databaseType === 'mongodb' || databaseType === 'mongo';
       
-      if (!result.rows || result.rows.length === 0) {
+      let followUps: any[] = [];
+      if (isMongo && db.getDb) {
+        const mongoDb = await db.getDb();
+        const now = new Date();
+        const followUpDocs = await mongoDb.collection('follow_ups')
+          .aggregate([
+            {
+              $match: {
+                status: 'pending',
+                scheduled_for: { $lte: now }
+              }
+            },
+            {
+              $lookup: {
+                from: 'matches',
+                localField: 'match_id',
+                foreignField: 'id',
+                as: 'match'
+              }
+            },
+            {
+              $unwind: {
+                path: '$match',
+                preserveNullAndEmptyArrays: true
+              }
+            },
+            {
+              $limit: 10
+            }
+          ])
+          .toArray();
+        followUps = followUpDocs;
+      } else if (db.query) {
+        // PostgreSQL
+        const result = await db.query(
+          `SELECT f.*, m.user_id, m.matched_user_id 
+           FROM follow_ups f 
+           JOIN matches m ON f.match_id = m.id 
+           WHERE f.status = 'pending' AND f.scheduled_for <= NOW()
+           LIMIT 10`
+        );
+        followUps = result.rows || [];
+      } else {
+        console.log('[Follow-Up Scheduler] No database query method available');
+        return;
+      }
+      
+      if (followUps.length === 0) {
         console.log('[Follow-Up Scheduler] No due follow-ups');
         return;
       }
       
-      console.log(`[Follow-Up Scheduler] Found ${result.rows.length} due follow-ups`);
+      console.log(`[Follow-Up Scheduler] Found ${followUps.length} due follow-ups`);
       
       // Get bot instance for sending messages
       const telegramToken = process.env.TELEGRAM_BOT_TOKEN;
@@ -2734,9 +2873,10 @@ PERSONALITY:
         return;
       }
       
-      for (const followUp of result.rows) {
+      for (const followUp of followUps) {
         try {
-          const userId = followUp.user_id;
+          // Handle both MongoDB and PostgreSQL result formats
+          const userId = followUp.user_id || followUp.match?.user_id;
           const followUpType = followUp.type;
           
           // Get user's profile for personalization
@@ -2783,20 +2923,40 @@ PERSONALITY:
             });
             
             // Mark follow-up as sent
-            await db.query(
-              `UPDATE follow_ups SET status = 'sent', sent_at = NOW() WHERE id = $1`,
-              [followUp.id]
-            );
+            if (isMongo && db.getDb) {
+              const mongoDb = await db.getDb();
+              await mongoDb.collection('follow_ups').updateOne(
+                { id: followUp.id },
+                { $set: { status: 'sent', sent_at: new Date() } }
+              );
+            } else if (db.query) {
+              await db.query(
+                `UPDATE follow_ups SET status = 'sent', sent_at = NOW() WHERE id = $1`,
+                [followUp.id]
+              );
+            }
             
             console.log(`[Follow-Up Scheduler] ✅ Sent ${followUpType} to user ${userId}`);
           }
         } catch (sendErr) {
           console.error('[Follow-Up Scheduler] Error sending follow-up:', sendErr);
           // Mark as failed to avoid infinite retry
-          await db.query(
-            `UPDATE follow_ups SET status = 'failed' WHERE id = $1`,
-            [followUp.id]
-          ).catch(() => {});
+          try {
+            if (isMongo && db.getDb) {
+              const mongoDb = await db.getDb();
+              await mongoDb.collection('follow_ups').updateOne(
+                { id: followUp.id },
+                { $set: { status: 'failed' } }
+              );
+            } else if (db.query) {
+              await db.query(
+                `UPDATE follow_ups SET status = 'failed' WHERE id = $1`,
+                [followUp.id]
+              );
+            }
+          } catch (updateErr) {
+            // Ignore update errors
+          }
         }
       }
     } catch (error) {

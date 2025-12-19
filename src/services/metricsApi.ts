@@ -105,8 +105,9 @@ async function getMatchMetrics(
   monthAgo: Date,
   dateFilter?: { start: Date; end: Date }
 ): Promise<MatchMetrics> {
-  if (isMongo) {
-    const collection = db.db.collection('matches');
+  if (isMongo && db.getDb) {
+    const mongoDb = await db.getDb();
+    const collection = mongoDb.collection('matches');
     
     // Total matches
     const total = await collection.countDocuments();
@@ -219,8 +220,9 @@ async function getUserMetrics(
   weekAgo: Date,
   monthAgo: Date
 ): Promise<UserMetrics> {
-  if (isMongo) {
-    const cacheCollection = db.db.collection('cache');
+  if (isMongo && db.getDb) {
+    const mongoDb = await db.getDb();
+    const cacheCollection = mongoDb.collection('cache');
     
     // Get all cache entries that look like user profiles
     const allCache = await cacheCollection.find({
@@ -302,7 +304,8 @@ async function getEngagementMetrics(
     // Feature requests
     let featureTotal = 0, featureWeek = 0, featureMonth = 0;
     try {
-      const featureRequestsCollection = db.db.collection('feature_requests');
+      const mongoDb = await db.getDb();
+      const featureRequestsCollection = mongoDb.collection('feature_requests');
       featureTotal = await featureRequestsCollection.countDocuments();
       featureWeek = await featureRequestsCollection.countDocuments({
         created_at: { $gte: weekAgo }
@@ -317,7 +320,8 @@ async function getEngagementMetrics(
     // Manual connection requests (no-match notifications)
     let manualTotal = 0, manualWeek = 0, manualMonth = 0;
     try {
-      const manualRequestsCollection = db.db.collection('manual_connection_requests');
+      const mongoDb = await db.getDb();
+      const manualRequestsCollection = mongoDb.collection('manual_connection_requests');
       manualTotal = await manualRequestsCollection.countDocuments();
       manualWeek = await manualRequestsCollection.countDocuments({
         created_at: { $gte: weekAgo }
@@ -330,7 +334,8 @@ async function getEngagementMetrics(
     }
     
     // Diversity research
-    const diversityCollection = db.db.collection('diversity_research');
+    const mongoDb = await db.getDb();
+    const diversityCollection = mongoDb.collection('diversity_research');
     const diversityTotal = await diversityCollection.countDocuments();
     const diversityWeek = await diversityCollection.countDocuments({
       interestedAt: { $gte: weekAgo }
@@ -447,8 +452,9 @@ async function getFollowUpMetrics(
   db: any,
   isMongo: boolean
 ): Promise<FollowUpMetrics> {
-  if (isMongo) {
-    const collection = db.db.collection('follow_ups');
+  if (isMongo && db.getDb) {
+    const mongoDb = await db.getDb();
+    const collection = mongoDb.collection('follow_ups');
     
     const scheduled = await collection.countDocuments({ status: 'pending' });
     const sent = await collection.countDocuments({ status: 'sent' });
