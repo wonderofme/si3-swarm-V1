@@ -68,12 +68,43 @@ async function checkForNewMatches(
         const cacheCollection = mongoDb.collection('cache');
         const doc = await cacheCollection.findOne({ key: `onboarding_${match.userId}` });
         if (doc && doc.value) {
-          otherState = typeof doc.value === 'string' ? JSON.parse(doc.value) : doc.value;
+          // Handle string-based cache (ElizaOS CacheManager format)
+          if (typeof doc.value === 'string') {
+            try {
+              otherState = JSON.parse(doc.value);
+            } catch (e) {
+              // If parsing fails, it might be double-encoded
+              try {
+                otherState = JSON.parse(JSON.parse(doc.value));
+              } catch (e2) {
+                console.log('[Real-Time Matching] Could not parse state for user:', match.userId);
+                continue;
+              }
+            }
+          } else {
+            otherState = doc.value;
+          }
         }
       } else {
         const res = await db.query(`SELECT value FROM cache WHERE key = $1`, [`onboarding_${match.userId}`]);
         if (res.rows.length > 0) {
-          otherState = typeof res.rows[0].value === 'string' ? JSON.parse(res.rows[0].value) : res.rows[0].value;
+          const value = res.rows[0].value;
+          // Handle string-based cache (ElizaOS CacheManager format)
+          if (typeof value === 'string') {
+            try {
+              otherState = JSON.parse(value);
+            } catch (e) {
+              // If parsing fails, it might be double-encoded
+              try {
+                otherState = JSON.parse(JSON.parse(value));
+              } catch (e2) {
+                console.log('[Real-Time Matching] Could not parse state for user:', match.userId);
+                continue;
+              }
+            }
+          } else {
+            otherState = value;
+          }
         }
       }
       
@@ -90,30 +121,82 @@ async function checkForNewMatches(
         fr: `🎉 Nouvelle connexion trouvée!\n\nJ'ai trouvé quelqu'un qui pourrait être une excellente connexion pour vous:\n\n${newUserProfile.name} de ${newUserProfile.location || 'la communauté'}\nRôles: ${(newUserProfile.roles || []).join(', ') || 'Non spécifié'}\nIntérêts: ${(newUserProfile.interests || []).slice(0, 3).join(', ') || 'Non spécifié'}\n${newUserProfile.telegramHandle ? `Telegram: @${newUserProfile.telegramHandle}\n` : ''}\n💡 ${matchMessage}\n\nDites "trouve-moi une connexion" pour plus! 🤝`
       };
       
+      // Record match in database to prevent duplicates
+      try {
+        const matchDate = new Date();
+        if (isMongo && db.getDb) {
+          const mongoDb = await db.getDb();
+          await mongoDb.collection('matches').insertOne({
+            user_id: match.userId,
+            matched_user_id: newUserId,
+            room_id: String(match.userId), // For private chats, room_id = user_id
+            match_date: matchDate,
+            status: 'pending',
+            score: match.score,
+            reason: match.icebreaker || match.reason
+          });
+        } else {
+          // PostgreSQL: user_id might be UUID or TEXT depending on schema
+          // Cast to TEXT to handle both cases (Telegram user IDs are strings)
+          await db.query(
+            `INSERT INTO matches (user_id, matched_user_id, room_id, match_date, status, score, reason) 
+             VALUES ($1::text, $2::text, $3::text, $4, $5, $6, $7)`,
+            [match.userId, newUserId, String(match.userId), matchDate, 'pending', match.score, match.icebreaker || match.reason]
+          );
+        }
+        console.log(`[Real-Time Matching] ✅ Recorded match in database: ${match.userId} <-> ${newUserId}`);
+      } catch (matchErr) {
+        console.log(`[Real-Time Matching] Could not record match (may already exist):`, matchErr);
+      }
+      
       // Send notification to existing user via Telegram
+      // For private chats, chat_id = user_id (Telegram user ID)
       const telegramToken = process.env.TELEGRAM_BOT_TOKEN;
       if (telegramToken) {
         try {
-          await fetch(`https://api.telegram.org/bot${telegramToken}/sendMessage`, {
+          const response = await fetch(`https://api.telegram.org/bot${telegramToken}/sendMessage`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              chat_id: match.userId,
+              chat_id: match.userId, // Telegram user ID works as chat_id for private messages
               text: notificationMessages[otherUserLang] || notificationMessages.en
             })
           });
-          console.log(`[Real-Time Matching] ✅ Notified ${otherState.profile.name} about new match (Score: ${match.score})`);
+          
+          if (response.ok) {
+            console.log(`[Real-Time Matching] ✅ Notified ${otherState.profile.name} (${match.userId}) about new match (Score: ${match.score})`);
+          } else {
+            const errorData = await response.json();
+            console.log(`[Real-Time Matching] ⚠️ Telegram API error for ${otherState.profile.name}:`, errorData);
+          }
         } catch (notifyErr) {
           console.log(`[Real-Time Matching] Could not notify ${otherState.profile.name}:`, notifyErr);
         }
       }
     }
     
+    // Also notify the NEW user about their matches (if they opted in)
+    if (newUserProfile.notifications === 'Yes' && candidates.length > 0) {
+      const newUserLang = newUserProfile.language || 'en';
+      const newUserMessages: Record<string, string> = {
+        en: `🎉 Great news! I found ${candidates.length} potential connection${candidates.length > 1 ? 's' : ''} for you!\n\nI've notified them about you. You'll hear from them soon if they're interested! 💜\n\nSay "find me a match" anytime to discover more connections! 🤝`,
+        es: `🎉 ¡Buenas noticias! Encontré ${candidates.length} conexión${candidates.length > 1 ? 'es' : ''} potencial${candidates.length > 1 ? 'es' : ''} para ti!\n\nLes he notificado sobre ti. ¡Te contactarán pronto si están interesados! 💜\n\n¡Di "encuéntrame una conexión" en cualquier momento para descubrir más! 🤝`,
+        pt: `🎉 Boas notícias! Encontrei ${candidates.length} conexão${candidates.length > 1 ? 'ões' : ''} potencial${candidates.length > 1 ? 'is' : ''} para você!\n\nNotifiquei eles sobre você. Eles entrarão em contato em breve se estiverem interessados! 💜\n\nDiga "encontre uma conexão" a qualquer momento para descobrir mais! 🤝`,
+        fr: `🎉 Excellente nouvelle! J'ai trouvé ${candidates.length} connexion${candidates.length > 1 ? 's' : ''} potentielle${candidates.length > 1 ? 's' : ''} pour vous!\n\nJe les ai informés de vous. Ils vous contacteront bientôt s'ils sont intéressés! 💜\n\nDites "trouve-moi une connexion" à tout moment pour en découvrir plus! 🤝`
+      };
+      
+      try {
+        await sendMessage(newUserChatId, newUserMessages[newUserLang] || newUserMessages.en);
+        console.log(`[Real-Time Matching] ✅ Notified new user ${newUserProfile.name} about ${candidates.length} match(es)`);
+      } catch (newUserErr) {
+        console.log(`[Real-Time Matching] Could not notify new user:`, newUserErr);
+      }
+    }
+    
     console.log(`[Real-Time Matching] ✅ Found ${candidates.length} match(es) for ${newUserProfile.name}`);
   } catch (error) {
     console.error('[Real-Time Matching] Error:', error);
-    // Fallback to old logic if new engine fails
-    console.log('[Real-Time Matching] Falling back to legacy matching logic');
+    // Don't fall back - just log the error
   }
 }
 
