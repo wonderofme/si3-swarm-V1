@@ -69,7 +69,8 @@ export class DatabaseCacheAdapter implements ICacheAdapter {
     // Check local cache first for speed
     const cached = this.localCache.get(key);
     if (cached !== undefined) {
-      return cached;
+      // ElizaOS CacheManager expects strings, so stringify if it's an object
+      return typeof cached === 'string' ? cached : JSON.stringify(cached);
     }
 
     try {
@@ -80,29 +81,28 @@ export class DatabaseCacheAdapter implements ICacheAdapter {
       if (this.isMongo()) {
         const mongoDb = await this.db.getDb();
         const doc = await mongoDb.collection('cache').findOne({ key });
-        if (doc) value = doc.value;
+        if (doc) {
+          value = doc.value;
+          // MongoDB returns objects natively, but ElizaOS CacheManager expects strings
+          // If it's already a string, keep it; otherwise stringify
+          if (typeof value !== 'string') {
+            value = JSON.stringify(value);
+          }
+        }
       } else {
         // PostgreSQL: Use SQL query
         const res = await this.db.query('SELECT value FROM cache WHERE key = $1', [key]);
         if (res.rows && res.rows.length > 0) {
           value = res.rows[0].value;
+          // PostgreSQL JSONB might return as object or string depending on driver
+          if (typeof value !== 'string') {
+            value = JSON.stringify(value);
+          }
         }
       }
 
-      // Parse & Cache Locally
+      // Cache Locally (store as string to match what we return)
       if (value !== undefined) {
-        // Handle double-encoding edge case (if DB has stringified JSON)
-        if (typeof value === 'string') {
-          try {
-            const parsed = JSON.parse(value);
-            // Check if it was double-encoded (common in legacy data)
-            value = typeof parsed === 'object' ? parsed : value;
-          } catch (e) {
-            // It was actually just a plain string, keep as is
-          }
-        }
-
-        // Store in local cache for faster future reads
         this.localCache.set(key, value);
       }
 
@@ -110,37 +110,44 @@ export class DatabaseCacheAdapter implements ICacheAdapter {
     } catch (error) {
       console.error(`[DatabaseCache] Error getting key ${key}:`, error);
       // Fallback: return cached value if we have it, rather than crashing
-      return cached !== undefined ? cached : undefined;
+      if (cached !== undefined) {
+        return typeof cached === 'string' ? cached : JSON.stringify(cached);
+      }
+      return undefined;
     }
   }
 
   async set(key: string, value: any): Promise<void> {
-    // Always update local cache immediately
-    this.localCache.set(key, value);
+    // ElizaOS CacheManager may pass strings or objects
+    // We need to stringify for storage, but keep the original format for local cache
+    const valueToStore = typeof value === 'string' ? value : JSON.stringify(value);
+    
+    // Always update local cache immediately (store as string to match get behavior)
+    this.localCache.set(key, valueToStore);
 
     try {
       await this.ensureInitialized();
 
       if (this.isMongo()) {
         const mongoDb = await this.db.getDb();
+        // MongoDB can store strings directly, or we can parse and store as object
+        // Store as string to be consistent with what ElizaOS expects
         await mongoDb.collection('cache').updateOne(
           { key },
           { 
-            $set: { value, updated_at: new Date() },
+            $set: { value: valueToStore, updated_at: new Date() },
             $setOnInsert: { created_at: new Date() }
           },
           { upsert: true }
         );
       } else {
-        // PostgreSQL: JSONB handles objects natively, but we stringify for safety
-        // This ensures compatibility across different PostgreSQL drivers
-        const valueStr = JSON.stringify(value);
+        // PostgreSQL: Store as JSONB (stringified)
         await this.db.query(
           `INSERT INTO cache (key, value, updated_at) 
            VALUES ($1, $2::jsonb, NOW()) 
            ON CONFLICT (key) 
            DO UPDATE SET value = $2::jsonb, updated_at = NOW()`,
-          [key, valueStr]
+          [key, valueToStore]
         );
       }
     } catch (error) {
