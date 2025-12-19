@@ -1,40 +1,37 @@
-import { ICacheAdapter, elizaLogger } from '@elizaos/core';
+import { ICacheAdapter } from '@elizaos/core';
 import { createDatabaseAdapter } from './databaseAdapter.js';
-
-interface CacheItem {
-  value: any;
-  expires: number;
-}
 
 /**
  * Database-backed cache adapter that persists state to MongoDB/PostgreSQL
- * Includes in-memory LRU-like caching with TTL for performance.
  * This ensures user data survives container restarts/redeployments
+ * Uses promise-based mutex to prevent race conditions during initialization
  */
 export class DatabaseCacheAdapter implements ICacheAdapter {
   private db: any;
-  private localCache = new Map<string, CacheItem>();
+  private localCache = new Map<string, any>(); // In-memory cache for fast reads
   private initializationPromise: Promise<void> | null = null;
-  private readonly LOCAL_TTL_MS = 5000; // 5 seconds local cache validity
 
   constructor() {
     this.db = createDatabaseAdapter();
   }
 
+  /**
+   * Prevents race conditions by using a Promise mutex.
+   * Ensures CREATE TABLE is called exactly once, even with concurrent requests.
+   */
   private async ensureInitialized(): Promise<void> {
-    // If already initialized (promise exists), return it
+    // If already initialized (promise exists), return the running promise
     if (this.initializationPromise) return this.initializationPromise;
 
-    // Create a new initialization promise (Mutex pattern)
+    // Create a new initialization promise
     this.initializationPromise = (async () => {
       try {
         const databaseType = (process.env.DATABASE_TYPE || 'postgres').toLowerCase();
         
         // Only Postgres needs table creation
         if (databaseType !== 'mongodb' && databaseType !== 'mongo') {
-          // Check if query method exists
           if (!this.db.query) {
-            elizaLogger.warn('[DatabaseCache] DB adapter missing query method, persistence disabled');
+            console.warn('[DatabaseCache] DB adapter missing query method, persistence disabled');
             return;
           }
 
@@ -47,10 +44,10 @@ export class DatabaseCacheAdapter implements ICacheAdapter {
             )
           `);
         }
-        elizaLogger.success('[DatabaseCache] ✅ Initialized');
+        console.log('[DatabaseCache] ✅ Initialized');
       } catch (error) {
-        elizaLogger.error('[DatabaseCache] ⚠️ Initialization error: ' + (error instanceof Error ? error.message : String(error)));
-        // Allow retry on failure
+        console.error('[DatabaseCache] ⚠️ Initialization error:', error);
+        // Reset promise on failure so we can try again
         this.initializationPromise = null; 
       }
     })();
@@ -58,68 +55,73 @@ export class DatabaseCacheAdapter implements ICacheAdapter {
     return this.initializationPromise;
   }
 
+  /**
+   * DRY Helper to determine DB type
+   */
+  private isMongo(): boolean {
+    const dbType = (process.env.DATABASE_TYPE || 'postgres').toLowerCase();
+    const isMongoType = dbType === 'mongodb' || dbType === 'mongo';
+    // Double check capability to prevent crashes
+    return isMongoType && this.db && typeof this.db.getDb === 'function';
+  }
+
   async get(key: string): Promise<any> {
-    // 1. Check local cache validity
+    // Check local cache first for speed
     const cached = this.localCache.get(key);
-    if (cached && Date.now() < cached.expires) {
-      return cached.value;
+    if (cached !== undefined) {
+      return cached;
     }
 
     try {
       await this.ensureInitialized();
       let value: any = undefined;
 
-      // 2. Database Fetch
-      const isMongo = this.isMongo();
-      
-      if (isMongo) {
+      // Database Fetch
+      if (this.isMongo()) {
         const mongoDb = await this.db.getDb();
         const doc = await mongoDb.collection('cache').findOne({ key });
         if (doc) value = doc.value;
       } else {
+        // PostgreSQL: Use SQL query
         const res = await this.db.query('SELECT value FROM cache WHERE key = $1', [key]);
-        if (res.rows.length > 0) value = res.rows[0].value;
+        if (res.rows && res.rows.length > 0) {
+          value = res.rows[0].value;
+        }
       }
 
-      // 3. Parse & Cache Locally
+      // Parse & Cache Locally
       if (value !== undefined) {
-        // Parse if it came back as a string but looks like an object/array
-        // This handles legacy data or driver quirks
+        // Handle double-encoding edge case (if DB has stringified JSON)
         if (typeof value === 'string') {
           try {
             const parsed = JSON.parse(value);
-            value = parsed;
+            // Check if it was double-encoded (common in legacy data)
+            value = typeof parsed === 'object' ? parsed : value;
           } catch (e) {
-            // It was actually just a string
+            // It was actually just a plain string, keep as is
           }
         }
 
-        this.localCache.set(key, {
-          value,
-          expires: Date.now() + this.LOCAL_TTL_MS
-        });
+        // Store in local cache for faster future reads
+        this.localCache.set(key, value);
       }
 
       return value;
     } catch (error) {
-      elizaLogger.error(`[DatabaseCache] Error getting key ${key}: ` + (error instanceof Error ? error.message : String(error)));
-      // Fallback: return expired local cache if we have it, rather than crashing
-      return cached ? cached.value : undefined;
+      console.error(`[DatabaseCache] Error getting key ${key}:`, error);
+      // Fallback: return cached value if we have it, rather than crashing
+      return cached !== undefined ? cached : undefined;
     }
   }
 
   async set(key: string, value: any): Promise<void> {
-    // 1. Update local cache immediately
-    this.localCache.set(key, {
-      value,
-      expires: Date.now() + this.LOCAL_TTL_MS
-    });
+    // Always update local cache immediately
+    this.localCache.set(key, value);
 
     try {
       await this.ensureInitialized();
-      const isMongo = this.isMongo();
 
-      if (isMongo) {
+      if (this.isMongo()) {
         const mongoDb = await this.db.getDb();
         await mongoDb.collection('cache').updateOne(
           { key },
@@ -130,20 +132,20 @@ export class DatabaseCacheAdapter implements ICacheAdapter {
           { upsert: true }
         );
       } else {
-        // For Postgres JSONB, we generally pass the object directly.
-        // The driver usually handles stringification for JSONB columns.
-        // If using a raw TEXT column, you MUST stringify. 
-        // Assuming JSONB based on create table:
+        // PostgreSQL: JSONB handles objects natively, but we stringify for safety
+        // This ensures compatibility across different PostgreSQL drivers
+        const valueStr = JSON.stringify(value);
         await this.db.query(
           `INSERT INTO cache (key, value, updated_at) 
-           VALUES ($1, $2, NOW()) 
+           VALUES ($1, $2::jsonb, NOW()) 
            ON CONFLICT (key) 
-           DO UPDATE SET value = $2, updated_at = NOW()`,
-          [key, value] 
+           DO UPDATE SET value = $2::jsonb, updated_at = NOW()`,
+          [key, valueStr]
         );
       }
     } catch (error) {
-      elizaLogger.error(`[DatabaseCache] Error setting key ${key}: ` + (error instanceof Error ? error.message : String(error)));
+      console.error(`[DatabaseCache] Error setting key ${key}:`, error);
+      // Data is still in local cache, so operation partially succeeded
     }
   }
 
@@ -152,25 +154,16 @@ export class DatabaseCacheAdapter implements ICacheAdapter {
 
     try {
       await this.ensureInitialized();
-      const isMongo = this.isMongo();
 
-      if (isMongo) {
+      if (this.isMongo()) {
         const mongoDb = await this.db.getDb();
         await mongoDb.collection('cache').deleteOne({ key });
       } else {
         await this.db.query('DELETE FROM cache WHERE key = $1', [key]);
       }
     } catch (error) {
-      elizaLogger.error(`[DatabaseCache] Error deleting key ${key}: ` + (error instanceof Error ? error.message : String(error)));
+      console.error(`[DatabaseCache] Error deleting key ${key}:`, error);
     }
-  }
-
-  // Helper to determine DB type
-  private isMongo(): boolean {
-    const dbType = (process.env.DATABASE_TYPE || 'postgres').toLowerCase();
-    const isMongoType = dbType === 'mongodb' || dbType === 'mongo';
-    // Double check capability
-    return isMongoType && this.db && typeof this.db.getDb === 'function';
   }
 }
 
