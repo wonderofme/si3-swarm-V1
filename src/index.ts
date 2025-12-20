@@ -755,6 +755,100 @@ async function startAgents() {
     }
   });
   
+  // User Search API - Search users by name
+  app.get('/api/users/search', async (req, res) => {
+    try {
+      // Optional API key authentication
+      const apiKey = process.env.WEB_API_KEY;
+      if (apiKey && apiKey !== 'disabled') {
+        const providedKey = req.headers['x-api-key'] || 
+                           req.headers['authorization']?.replace('Bearer ', '');
+        if (providedKey !== apiKey) {
+          return res.status(401).json({ error: 'Unauthorized' });
+        }
+      }
+      
+      const searchName = req.query.name as string;
+      if (!searchName || searchName.trim().length === 0) {
+        return res.status(400).json({ error: 'Missing required parameter: name' });
+      }
+      
+      const db = kaiaRuntime.databaseAdapter as any;
+      const databaseType = (process.env.DATABASE_TYPE || 'postgres').toLowerCase();
+      const isMongo = databaseType === 'mongodb' || databaseType === 'mongo';
+      
+      const results: Array<{ userId: string; name: string; step?: string; telegramHandle?: string }> = [];
+      
+      if (isMongo && db.getDb) {
+        // MongoDB
+        const mongoDb = await db.getDb();
+        const cacheCollection = mongoDb.collection('cache');
+        const docs = await cacheCollection.find({
+          key: { $regex: /^onboarding_/ }
+        }).toArray();
+        
+        for (const doc of docs) {
+          try {
+            const userId = doc.key.replace('onboarding_', '');
+            const value = typeof doc.value === 'string' ? JSON.parse(doc.value) : doc.value;
+            const name = value?.profile?.name || '';
+            
+            // Case-insensitive search
+            if (name && name.toLowerCase().includes(searchName.toLowerCase())) {
+              results.push({
+                userId,
+                name,
+                step: value?.step,
+                telegramHandle: value?.profile?.telegramHandle
+              });
+            }
+          } catch (e) {
+            console.error(`[User Search] Error parsing document ${doc.key}:`, e);
+          }
+        }
+      } else {
+        // PostgreSQL
+        const result = await db.query(`
+          SELECT key, value 
+          FROM cache 
+          WHERE key LIKE 'onboarding_%'
+        `);
+        
+        for (const row of result.rows) {
+          try {
+            const userId = row.key.replace('onboarding_', '');
+            const value = typeof row.value === 'string' ? JSON.parse(row.value) : row.value;
+            const name = value?.profile?.name || '';
+            
+            // Case-insensitive search
+            if (name && name.toLowerCase().includes(searchName.toLowerCase())) {
+              results.push({
+                userId,
+                name,
+                step: value?.step,
+                telegramHandle: value?.profile?.telegramHandle
+              });
+            }
+          } catch (e) {
+            console.error(`[User Search] Error parsing row ${row.key}:`, e);
+          }
+        }
+      }
+      
+      res.json({
+        searchTerm: searchName,
+        count: results.length,
+        users: results
+      });
+    } catch (error: any) {
+      console.error('[User Search API] Error:', error);
+      res.status(500).json({ 
+        error: 'Failed to search users',
+        message: error.message 
+      });
+    }
+  });
+  
   app.get('/api/history/:userId', async (req, res) => {
     try {
       const { userId } = req.params;
@@ -820,6 +914,7 @@ async function startAgents() {
       console.log(`[API]   GET /api/history/:userId - User profile & matches`);
       console.log(`[API]   GET /api/health - Health check`);
       console.log(`[API]   GET /api/metrics - Agent analytics & metrics`);
+      console.log(`[API]   GET /api/users/search?name=<search> - Search users by name`);
       if ((directClient as any).attachRoutes) {
         console.log(`[API]   DirectClient routes available at /direct/*`);
       }
