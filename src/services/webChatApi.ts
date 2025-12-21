@@ -14,6 +14,7 @@ export interface ChatResponse {
   success: boolean;
   response?: string;
   userId?: string;
+  primaryUserId?: string; // Original userId if continuing with existing profile
   profile?: any;
   onboardingStatus?: string;
   error?: string;
@@ -93,8 +94,150 @@ export async function processWebChatMessage(
       const newMsgs = getMessages(lang);
       responseText = newMsgs.GREETING;
     } else if (state.step === 'ASK_NAME') {
-      await updateState('ASK_LOCATION', { name: messageText.trim() });
-      responseText = msgs.LOCATION;
+      await updateState('ASK_EMAIL', { name: messageText.trim() });
+      responseText = msgs.EMAIL;
+    } else if (state.step === 'ASK_EMAIL') {
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      const emailText = messageText.trim();
+      if (!emailRegex.test(emailText)) {
+        responseText = `${msgs.EMAIL}\n\n⚠️ Please enter a valid email address (e.g., name@example.com)`;
+        return { success: true, response: responseText };
+      }
+      
+      // Check if email exists in database (could be from Telegram onboarding)
+      try {
+        const db = runtime.databaseAdapter as any;
+        const databaseType = (process.env.DATABASE_TYPE || 'postgres').toLowerCase();
+        const isMongo = databaseType === 'mongodb' || databaseType === 'mongo';
+        
+        let existingUser: { userId: string; profile: any } | null = null;
+        
+        if (isMongo && db.getDb) {
+          const mongoDb = await db.getDb();
+          const cacheCollection = mongoDb.collection('cache');
+          const docs = await cacheCollection.find({
+            key: { $regex: /^onboarding_/ }
+          }).toArray();
+          
+          for (const doc of docs) {
+            try {
+              const docUserId = doc.key.replace('onboarding_', '');
+              // Skip if it's the current user
+              if (docUserId === userId) continue;
+              
+              const value = typeof doc.value === 'string' ? JSON.parse(doc.value) : doc.value;
+              const profileEmail = value?.profile?.email || value?.email;
+              if (profileEmail && profileEmail.toLowerCase() === emailText.toLowerCase()) {
+                existingUser = {
+                  userId: docUserId,
+                  profile: value.profile || {}
+                };
+                break;
+              }
+            } catch (e) {
+              // Skip invalid entries
+            }
+          }
+        } else if (db.query) {
+          const result = await db.query(`
+            SELECT key, value 
+            FROM cache 
+            WHERE key LIKE 'onboarding_%'
+          `);
+          
+          for (const row of result.rows) {
+            try {
+              const docUserId = row.key.replace('onboarding_', '');
+              // Skip if it's the current user
+              if (docUserId === userId) continue;
+              
+              const value = typeof row.value === 'string' ? JSON.parse(row.value) : row.value;
+              const profileEmail = value?.profile?.email || value?.email;
+              if (profileEmail && profileEmail.toLowerCase() === emailText.toLowerCase()) {
+                existingUser = {
+                  userId: docUserId,
+                  profile: value.profile || {}
+                };
+                break;
+              }
+            } catch (e) {
+              // Skip invalid entries
+            }
+          }
+        }
+        
+        if (existingUser) {
+          // Email exists - ask if they want to continue or recreate
+          console.log(`[Web Chat API] Email ${emailText} exists for user ${existingUser.userId}`);
+          await updateState('ASK_PROFILE_CHOICE', {
+            email: emailText,
+            existingUserId: existingUser.userId,
+            existingProfile: existingUser.profile
+          });
+          responseText = `${msgs.PROFILE_EXISTS}\n\n${msgs.PROFILE_CHOICE}`;
+        } else {
+          // Email doesn't exist - continue with onboarding
+          await updateState('ASK_LOCATION', { email: emailText });
+          responseText = msgs.LOCATION;
+        }
+      } catch (error: any) {
+        console.error('[Web Chat API] Error checking email:', error);
+        // On error, continue with onboarding
+        await updateState('ASK_LOCATION', { email: emailText });
+        responseText = msgs.LOCATION;
+      }
+    } else if (state.step === 'ASK_PROFILE_CHOICE') {
+      const choice = messageText.trim();
+      const existingUserId = state.profile?.existingUserId;
+      const existingProfile = state.profile?.existingProfile;
+      
+      if (choice === '1' || choice.toLowerCase().includes('continue') || choice.toLowerCase().includes('existing')) {
+        // User wants to continue with existing profile
+        if (existingUserId && existingProfile) {
+          console.log(`[Web Chat API] Loading existing profile from user ${existingUserId}`);
+          const { formatProfileForDisplay } = await import('../plugins/onboarding/utils.js');
+          
+          // IMPORTANT: Use the original userId, not the current one
+          // Update the profile under the original userId
+          const { updateOnboardingStep } = await import('../plugins/onboarding/utils.js');
+          await updateOnboardingStep(
+            runtime,
+            existingUserId as any,
+            existingUserId as any, // Use original userId as roomId too
+            'COMPLETED',
+            {
+              ...existingProfile,
+              email: state.profile?.email, // Keep the email they just entered
+              onboardingCompletedAt: existingProfile.onboardingCompletedAt || new Date()
+            }
+          );
+          
+          const profileDisplay = formatProfileForDisplay({ ...existingProfile, email: state.profile?.email }, state.profile?.language || 'en');
+          responseText = `${msgs.COMPLETION}\n\n${profileDisplay}`;
+          
+          // Return the original userId so client can use it for all future requests
+          return {
+            success: true,
+            response: responseText,
+            userId: existingUserId, // Return original userId
+            primaryUserId: existingUserId, // Also return as primaryUserId for clarity
+            profile: { ...existingProfile, email: state.profile?.email },
+            onboardingStatus: 'COMPLETED'
+          };
+        } else {
+          // Fallback: continue with current profile
+          await updateState('ASK_LOCATION', {});
+          responseText = msgs.LOCATION;
+        }
+      } else if (choice === '2' || choice.toLowerCase().includes('new') || choice.toLowerCase().includes('recreate')) {
+        // User wants to create a new profile
+        await updateState('ASK_LOCATION', {});
+        responseText = msgs.LOCATION;
+      } else {
+        // Invalid choice - ask again
+        responseText = `${msgs.PROFILE_EXISTS}\n\n${msgs.PROFILE_CHOICE}`;
+      }
     } else if (state.step === 'ASK_LOCATION') {
       const location = isNext ? undefined : messageText.trim();
       await updateState('ASK_ROLE', { location });

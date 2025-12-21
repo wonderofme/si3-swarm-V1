@@ -31,6 +31,11 @@ export async function recordMatch(
   const matchId = uuidv4();
   const adapter = runtime.databaseAdapter as any;
   
+  // Resolve to primary userIds if mappings exist
+  const { resolvePrimaryUserId } = await import('../plugins/onboarding/utils.js');
+  const primaryUserId = await resolvePrimaryUserId(runtime, userId as any);
+  const primaryMatchedUserId = await resolvePrimaryUserId(runtime, matchedUserId as any);
+  
   // Insert match
   const databaseType = (process.env.DATABASE_TYPE || 'postgres').toLowerCase();
   const isMongo = databaseType === 'mongodb' || databaseType === 'mongo';
@@ -39,8 +44,8 @@ export async function recordMatch(
     const mongoDb = await adapter.getDb();
     await mongoDb.collection('matches').insertOne({
       id: matchId,
-      user_id: userId,
-      matched_user_id: matchedUserId,
+      user_id: primaryUserId, // Use primary userId
+      matched_user_id: primaryMatchedUserId, // Use primary matched userId
       room_id: roomId,
       match_date: new Date(),
       status: 'pending'
@@ -49,32 +54,32 @@ export async function recordMatch(
     // Schedule 3-day check-in
     const checkInDate = new Date();
     checkInDate.setDate(checkInDate.getDate() + 3);
-    await mongoDb.collection('follow_ups').insertOne({
-      id: uuidv4(),
-      match_id: matchId,
-      user_id: userId,
-      type: '3_day_checkin',
-      scheduled_for: checkInDate,
-      status: 'pending'
-    });
-    
-    // Schedule 7-day next match
-    const nextMatchDate = new Date();
-    nextMatchDate.setDate(nextMatchDate.getDate() + 7);
-    await mongoDb.collection('follow_ups').insertOne({
-      id: uuidv4(),
-      match_id: matchId,
-      user_id: userId,
-      type: '7_day_next_match',
-      scheduled_for: nextMatchDate,
-      status: 'pending'
-    });
+      await mongoDb.collection('follow_ups').insertOne({
+        id: uuidv4(),
+        match_id: matchId,
+        user_id: primaryUserId, // Use primary userId
+        type: '3_day_checkin',
+        scheduled_for: checkInDate,
+        status: 'pending'
+      });
+      
+      // Schedule 7-day next match
+      const nextMatchDate = new Date();
+      nextMatchDate.setDate(nextMatchDate.getDate() + 7);
+      await mongoDb.collection('follow_ups').insertOne({
+        id: uuidv4(),
+        match_id: matchId,
+        user_id: primaryUserId, // Use primary userId
+        type: '7_day_next_match',
+        scheduled_for: nextMatchDate,
+        status: 'pending'
+      });
   } else if (adapter.query) {
     // PostgreSQL
     await adapter.query(
       `INSERT INTO matches (id, user_id, matched_user_id, room_id, match_date, status)
        VALUES ($1, $2::text, $3::text, $4::text, NOW(), 'pending')`,
-      [matchId, userId, matchedUserId, roomId]
+      [matchId, primaryUserId, primaryMatchedUserId, roomId]
     );
 
     // Schedule 3-day check-in
@@ -83,7 +88,7 @@ export async function recordMatch(
     await adapter.query(
       `INSERT INTO follow_ups (id, match_id, user_id, type, scheduled_for, status)
        VALUES ($1, $2, $3::text, '3_day_checkin', $4, 'pending')`,
-      [uuidv4(), matchId, userId, checkInDate]
+      [uuidv4(), matchId, primaryUserId, checkInDate]
     );
 
     // Schedule 7-day next match
@@ -92,7 +97,7 @@ export async function recordMatch(
     await adapter.query(
       `INSERT INTO follow_ups (id, match_id, user_id, type, scheduled_for, status)
        VALUES ($1, $2, $3::text, '7_day_next_match', $4, 'pending')`,
-      [uuidv4(), matchId, userId, nextMatchDate]
+      [uuidv4(), matchId, primaryUserId, nextMatchDate]
     );
   }
 
@@ -161,6 +166,9 @@ export async function getRecentSentFollowUp(
   runtime: IAgentRuntime, 
   userId: string
 ): Promise<FollowUpRecord | null> {
+  // Resolve to primary userId if mapping exists
+  const { resolvePrimaryUserId } = await import('../plugins/onboarding/utils.js');
+  const primaryUserId = await resolvePrimaryUserId(runtime, userId as any);
   const adapter = runtime.databaseAdapter as any;
   const databaseType = (process.env.DATABASE_TYPE || 'postgres').toLowerCase();
   const isMongo = databaseType === 'mongodb' || databaseType === 'mongo';
@@ -169,7 +177,7 @@ export async function getRecentSentFollowUp(
   if (isMongo && adapter.getDb) {
     const mongoDb = await adapter.getDb();
     const docs = await mongoDb.collection('follow_ups')
-      .find({ user_id: userId, status: 'sent' })
+      .find({ user_id: primaryUserId, status: 'sent' })
       .sort({ sent_at: -1 })
       .limit(1)
       .toArray();
@@ -179,7 +187,7 @@ export async function getRecentSentFollowUp(
       `SELECT * FROM follow_ups 
        WHERE user_id = $1::text AND status = 'sent' 
        ORDER BY sent_at DESC LIMIT 1`,
-      [userId]
+      [primaryUserId]
     );
     rows = result.rows || [];
   }
@@ -198,7 +206,10 @@ export async function getRecentSentFollowUp(
   };
 }
 
-export async function getUserMatches(userId: string, limit: number = 20): Promise<MatchRecord[]> {
+export async function getUserMatches(runtime: IAgentRuntime, userId: string, limit: number = 20): Promise<MatchRecord[]> {
+  // Resolve to primary userId if mapping exists
+  const { resolvePrimaryUserId } = await import('../plugins/onboarding/utils.js');
+  const primaryUserId = await resolvePrimaryUserId(runtime, userId as any);
   // Create adapter for API context (when runtime is not available)
   const adapter = createDatabaseAdapter();
   
@@ -210,7 +221,7 @@ export async function getUserMatches(userId: string, limit: number = 20): Promis
     if (isMongo && adapter.getDb) {
       const mongoDb = await adapter.getDb();
       const docs = await mongoDb.collection('matches')
-        .find({ user_id: userId })
+        .find({ user_id: primaryUserId })
         .sort({ match_date: -1 })
         .limit(limit)
         .toArray();
@@ -222,7 +233,7 @@ export async function getUserMatches(userId: string, limit: number = 20): Promis
          WHERE user_id = $1::text 
          ORDER BY match_date DESC 
          LIMIT $2`,
-        [userId, limit]
+        [primaryUserId, limit]
       );
       rows = result.rows || [];
     }
@@ -244,16 +255,28 @@ export async function getUserMatches(userId: string, limit: number = 20): Promis
   }
 }
 
-export async function getOnboardingCompletionDate(userId: string): Promise<Date | null> {
+export async function getOnboardingCompletionDate(runtime: IAgentRuntime | null, userId: string): Promise<Date | null> {
+    // Resolve to primary userId if mapping exists and runtime is available
+    let primaryUserId = userId;
+    if (runtime) {
+      try {
+        const { resolvePrimaryUserId } = await import('../plugins/onboarding/utils.js');
+        primaryUserId = await resolvePrimaryUserId(runtime, userId as any);
+      } catch (e) {
+        // If resolution fails, use original userId
+        console.error('[MatchTracker] Error resolving primary userId:', e);
+      }
+    }
+    
     // This requires accessing the onboarding state cache/memory.
     // We can query the cache table/collection directly if we know the key.
     const adapter = createDatabaseAdapter();
     
     try {
-        // Try to get from cache first
+        // Try to get from cache first using primary userId
         const res = await adapter.query(
             `SELECT value FROM cache WHERE key = $1`,
-            [`onboarding_${userId}`]
+            [`onboarding_${primaryUserId}`]
         );
         
         if (res.rows && res.rows.length > 0) {

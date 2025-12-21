@@ -22,7 +22,7 @@ export const showHistoryAction: Action = {
 
     try {
       const profile = await getUserProfile(runtime, userId);
-      const matches = await getUserMatches(userId, 20);
+      const matches = await getUserMatches(runtime, userId, 20);
       const { step } = await getOnboardingState(runtime, userId);
       
       let historyMessage = `Hola ${profile.name || 'there'}! 💜\n\nYour Grow3dge Profile:\n\n`;

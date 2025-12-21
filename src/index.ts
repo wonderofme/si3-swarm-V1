@@ -226,6 +226,10 @@ async function runMigrations(db: DatabaseAdapter) {
         // Create indexes for knowledge collection (for vector search)
         await db.query(`CREATE INDEX IF NOT EXISTS idx_knowledge_agent_id ON knowledge(agent_id)`);
 
+        // Create index for user_mappings collection
+        await db.query(`CREATE INDEX IF NOT EXISTS idx_user_mappings_platform_user_id ON user_mappings(platform_user_id)`);
+        await db.query(`CREATE INDEX IF NOT EXISTS idx_user_mappings_primary_user_id ON user_mappings(primary_user_id)`);
+
         console.log('[Migrations] MongoDB indexes created successfully.');
       } catch (error: any) {
         // Index creation errors are non-fatal in MongoDB
@@ -287,7 +291,21 @@ async function runMigrations(db: DatabaseAdapter) {
         END $$;
       `);
 
-      // 4. Create indexes (safe to run if exists)
+      // 4. Create user_mappings table for cross-platform profile linking
+      await db.query(`
+        CREATE TABLE IF NOT EXISTS user_mappings (
+          platform_user_id TEXT PRIMARY KEY,
+          primary_user_id TEXT NOT NULL,
+          platform TEXT NOT NULL,
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          updated_at TIMESTAMPTZ DEFAULT NOW()
+        );
+        
+        CREATE INDEX IF NOT EXISTS idx_user_mappings_platform_user_id ON user_mappings(platform_user_id);
+        CREATE INDEX IF NOT EXISTS idx_user_mappings_primary_user_id ON user_mappings(primary_user_id);
+      `);
+
+      // 5. Create indexes (safe to run if exists)
       await db.query(`
         CREATE INDEX IF NOT EXISTS idx_matches_user_id ON matches(user_id);
         CREATE INDEX IF NOT EXISTS idx_follow_ups_scheduled_for ON follow_ups(scheduled_for) WHERE status = 'pending';
@@ -673,17 +691,89 @@ async function startAgents() {
         }
       }
       
-      const { userId, message } = req.body;
+      const { userId, email, message } = req.body;
       
-      if (!userId || !message) {
+      if (!message) {
         return res.status(400).json({
           success: false,
-          error: 'Missing required fields: userId and message'
+          error: 'Missing required field: message'
+        });
+      }
+      
+      // If email is provided instead of userId, look up the userId
+      let actualUserId = userId;
+      if (!actualUserId && email) {
+        try {
+          const db = kaiaRuntime.databaseAdapter as any;
+          const databaseType = (process.env.DATABASE_TYPE || 'postgres').toLowerCase();
+          const isMongo = databaseType === 'mongodb' || databaseType === 'mongo';
+          
+          if (isMongo && db.getDb) {
+            const mongoDb = await db.getDb();
+            const cacheCollection = mongoDb.collection('cache');
+            const docs = await cacheCollection.find({
+              key: { $regex: /^onboarding_/ }
+            }).toArray();
+            
+            for (const doc of docs) {
+              try {
+                const value = typeof doc.value === 'string' ? JSON.parse(doc.value) : doc.value;
+                const profileEmail = value?.profile?.email || value?.email;
+                if (profileEmail && profileEmail.toLowerCase() === email.toLowerCase()) {
+                  actualUserId = doc.key.replace('onboarding_', '');
+                  console.log(`[API] Found userId ${actualUserId} for email ${email}`);
+                  break;
+                }
+              } catch (e) {
+                // Skip invalid entries
+              }
+            }
+          } else if (db.query) {
+            const result = await db.query(`
+              SELECT key, value 
+              FROM cache 
+              WHERE key LIKE 'onboarding_%'
+            `);
+            
+            for (const row of result.rows) {
+              try {
+                const value = typeof row.value === 'string' ? JSON.parse(row.value) : row.value;
+                const profileEmail = value?.profile?.email || value?.email;
+                if (profileEmail && profileEmail.toLowerCase() === email.toLowerCase()) {
+                  actualUserId = row.key.replace('onboarding_', '');
+                  console.log(`[API] Found userId ${actualUserId} for email ${email}`);
+                  break;
+                }
+              } catch (e) {
+                // Skip invalid entries
+              }
+            }
+          }
+          
+          if (!actualUserId) {
+            return res.status(404).json({
+              success: false,
+              error: 'User not found. Please ensure you onboarded on Telegram first, or provide your userId.'
+            });
+          }
+        } catch (error: any) {
+          console.error('[API] Error looking up user by email:', error);
+          return res.status(500).json({
+            success: false,
+            error: 'Error looking up user by email'
+          });
+        }
+      }
+      
+      if (!actualUserId) {
+        return res.status(400).json({
+          success: false,
+          error: 'Missing required field: userId or email. Provide either userId (from Telegram) or email (used during onboarding)'
         });
       }
       
       // Process the chat message
-      const result = await processWebChatMessage(kaiaRuntime, userId, message);
+      const result = await processWebChatMessage(kaiaRuntime, actualUserId, message);
       
       if (result.success) {
         res.json(result);
@@ -756,6 +846,94 @@ async function startAgents() {
   });
   
   // User Search API - Search users by name
+  // Look up userId by email - for web users who onboarded on Telegram
+  app.get('/api/user/by-email', async (req, res) => {
+    try {
+      const apiKey = req.headers['x-api-key'] as string || req.headers['authorization']?.replace('Bearer ', '');
+      const webApiKey = process.env.WEB_API_KEY;
+      
+      if (webApiKey && webApiKey !== 'disabled') {
+        if (!apiKey || apiKey !== webApiKey) {
+          return res.status(401).json({ error: 'Invalid or missing API key' });
+        }
+      }
+      
+      const email = req.query.email as string;
+      if (!email) {
+        return res.status(400).json({ error: 'Email query parameter is required' });
+      }
+      
+      const db = kaiaRuntime.databaseAdapter as any;
+      const databaseType = (process.env.DATABASE_TYPE || 'postgres').toLowerCase();
+      const isMongo = databaseType === 'mongodb' || databaseType === 'mongo';
+      
+      let foundUser: { userId: string; name?: string; email?: string } | null = null;
+      
+      if (isMongo && db.getDb) {
+        const mongoDb = await db.getDb();
+        const cacheCollection = mongoDb.collection('cache');
+        const docs = await cacheCollection.find({
+          key: { $regex: /^onboarding_/ }
+        }).toArray();
+        
+        for (const doc of docs) {
+          try {
+            const userId = doc.key.replace('onboarding_', '');
+            const value = typeof doc.value === 'string' ? JSON.parse(doc.value) : doc.value;
+            const profileEmail = value?.profile?.email || value?.email;
+            
+            if (profileEmail && profileEmail.toLowerCase() === email.toLowerCase()) {
+              foundUser = {
+                userId,
+                name: value?.profile?.name,
+                email: profileEmail
+              };
+              break;
+            }
+          } catch (e) {
+            // Skip invalid entries
+          }
+        }
+      } else if (db.query) {
+        const result = await db.query(`
+          SELECT key, value 
+          FROM cache 
+          WHERE key LIKE 'onboarding_%'
+        `);
+        
+        for (const row of result.rows) {
+          try {
+            const userId = row.key.replace('onboarding_', '');
+            const value = typeof row.value === 'string' ? JSON.parse(row.value) : row.value;
+            const profileEmail = value?.profile?.email || value?.email;
+            
+            if (profileEmail && profileEmail.toLowerCase() === email.toLowerCase()) {
+              foundUser = {
+                userId,
+                name: value?.profile?.name,
+                email: profileEmail
+              };
+              break;
+            }
+          } catch (e) {
+            // Skip invalid entries
+          }
+        }
+      }
+      
+      if (!foundUser) {
+        return res.status(404).json({ 
+          error: 'User not found. Please ensure you completed onboarding on Telegram first.' 
+        });
+      }
+      
+      res.json(foundUser);
+    } catch (error: any) {
+      console.error('[User Lookup API] Error:', error);
+      res.status(500).json({ error: 'Failed to look up user', message: error.message });
+    }
+  });
+
   app.get('/api/users/search', async (req, res) => {
     try {
       // Optional API key authentication
@@ -856,9 +1034,9 @@ async function startAgents() {
       const { getUserProfile, getOnboardingState } = await import('./plugins/onboarding/utils.js');
       
       const profile = await getUserProfile(kaiaRuntime, userId as any);
-      const matches = await getUserMatches(userId, 50);
+      const matches = await getUserMatches(kaiaRuntime, userId, 50);
       const { step } = await getOnboardingState(kaiaRuntime, userId as any);
-      const completionDate = await getOnboardingCompletionDate(userId);
+      const completionDate = await getOnboardingCompletionDate(kaiaRuntime, userId);
       
       // Get matched user names (Basic implementation)
       const matchesWithNames = await Promise.all(matches.map(async (match) => {
@@ -1365,10 +1543,190 @@ async function startAgents() {
                         responseText = newMsgs.GREETING;
                         console.log('[Telegram Chat ID Capture] 📋 Language set to:', lang);
                       } else if (state.step === 'ASK_NAME') {
-                        // Save name and ask for location
-                        await updateState('ASK_LOCATION', { name: messageText.trim() });
-                        responseText = msgs.LOCATION;
+                        // Save name and ask for email (new flow: Name → Email)
+                        await updateState('ASK_EMAIL', { name: messageText.trim() });
+                        responseText = msgs.EMAIL;
                         console.log('[Telegram Chat ID Capture] 📋 Name saved:', messageText.trim());
+                      } else if (state.step === 'ASK_EMAIL') {
+                        // Validate email format
+                        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                        const emailText = messageText.trim();
+                        if (!emailRegex.test(emailText)) {
+                          responseText = `${msgs.EMAIL}\n\n⚠️ Please enter a valid email address (e.g., name@example.com)`;
+                          console.log('[Telegram Chat ID Capture] ⚠️ Invalid email format');
+                        } else {
+                          // Check if email exists in database (could be from web onboarding)
+                          try {
+                            const db = kaiaRuntimeForOnboardingCheck.databaseAdapter as any;
+                            const databaseType = (process.env.DATABASE_TYPE || 'postgres').toLowerCase();
+                            const isMongo = databaseType === 'mongodb' || databaseType === 'mongo';
+                            
+                            let existingUser: { userId: string; profile: any } | null = null;
+                            
+                            if (isMongo && db.getDb) {
+                              const mongoDb = await db.getDb();
+                              const cacheCollection = mongoDb.collection('cache');
+                              const docs = await cacheCollection.find({
+                                key: { $regex: /^onboarding_/ }
+                              }).toArray();
+                              
+                              for (const doc of docs) {
+                                try {
+                                  const docUserId = doc.key.replace('onboarding_', '');
+                                  // Skip if it's the current user
+                                  if (docUserId === userId) continue;
+                                  
+                                  const value = typeof doc.value === 'string' ? JSON.parse(doc.value) : doc.value;
+                                  const profileEmail = value?.profile?.email || value?.email;
+                                  if (profileEmail && profileEmail.toLowerCase() === emailText.toLowerCase()) {
+                                    existingUser = {
+                                      userId: docUserId,
+                                      profile: value.profile || {}
+                                    };
+                                    break;
+                                  }
+                                } catch (e) {
+                                  // Skip invalid entries
+                                }
+                              }
+                            } else if (db.query) {
+                              const result = await db.query(`
+                                SELECT key, value 
+                                FROM cache 
+                                WHERE key LIKE 'onboarding_%'
+                              `);
+                              
+                              for (const row of result.rows) {
+                                try {
+                                  const docUserId = row.key.replace('onboarding_', '');
+                                  // Skip if it's the current user
+                                  if (docUserId === userId) continue;
+                                  
+                                  const value = typeof row.value === 'string' ? JSON.parse(row.value) : row.value;
+                                  const profileEmail = value?.profile?.email || value?.email;
+                                  if (profileEmail && profileEmail.toLowerCase() === emailText.toLowerCase()) {
+                                    existingUser = {
+                                      userId: docUserId,
+                                      profile: value.profile || {}
+                                    };
+                                    break;
+                                  }
+                                } catch (e) {
+                                  // Skip invalid entries
+                                }
+                              }
+                            }
+                            
+                            if (existingUser) {
+                              // Email exists - ask if they want to continue or recreate
+                              console.log(`[Telegram Chat ID Capture] Email ${emailText} exists for user ${existingUser.userId}`);
+                              await updateState('ASK_PROFILE_CHOICE', {
+                                email: emailText,
+                                existingUserId: existingUser.userId,
+                                existingProfile: existingUser.profile
+                              });
+                              responseText = `${msgs.PROFILE_EXISTS}\n\n${msgs.PROFILE_CHOICE}`;
+                              console.log('[Telegram Chat ID Capture] 📋 Asking for profile choice');
+                            } else {
+                              // Email doesn't exist - continue with onboarding
+                              await updateState('ASK_LOCATION', { email: emailText });
+                              responseText = msgs.LOCATION;
+                              console.log('[Telegram Chat ID Capture] 📋 Email saved (new user):', emailText);
+                            }
+                          } catch (error: any) {
+                            console.error('[Telegram Chat ID Capture] Error checking email:', error);
+                            // On error, continue with onboarding
+                            await updateState('ASK_LOCATION', { email: emailText });
+                            responseText = msgs.LOCATION;
+                            console.log('[Telegram Chat ID Capture] 📋 Email saved (error checking, continuing):', emailText);
+                          }
+                        }
+                      } else if (state.step === 'ASK_PROFILE_CHOICE') {
+                        const choice = messageText.trim();
+                        const existingUserId = state.profile?.existingUserId;
+                        const existingProfile = state.profile?.existingProfile;
+                        
+                        if (choice === '1' || choice.toLowerCase().includes('continue') || choice.toLowerCase().includes('existing')) {
+                          // User wants to continue with existing profile
+                          if (existingUserId && existingProfile) {
+                            console.log(`[Telegram Chat ID Capture] Linking Telegram userId ${userId} to original userId ${existingUserId}`);
+                            
+                            // Create mapping from Telegram userId to original userId
+                            try {
+                              const db = kaiaRuntimeForOnboardingCheck.databaseAdapter as any;
+                              const databaseType = (process.env.DATABASE_TYPE || 'postgres').toLowerCase();
+                              const isMongo = databaseType === 'mongodb' || databaseType === 'mongo';
+                              
+                              if (isMongo && db.getDb) {
+                                const mongoDb = await db.getDb();
+                                await mongoDb.collection('user_mappings').updateOne(
+                                  { platform_user_id: userId },
+                                  { 
+                                    $set: { 
+                                      primary_user_id: existingUserId,
+                                      platform: 'telegram',
+                                      updated_at: new Date()
+                                    },
+                                    $setOnInsert: {
+                                      created_at: new Date()
+                                    }
+                                  },
+                                  { upsert: true }
+                                );
+                              } else if (db.query) {
+                                await db.query(
+                                  `INSERT INTO user_mappings (platform_user_id, primary_user_id, platform, created_at, updated_at)
+                                   VALUES ($1::text, $2::text, 'telegram', NOW(), NOW())
+                                   ON CONFLICT (platform_user_id) DO UPDATE SET primary_user_id = $2::text, updated_at = NOW()`,
+                                  [userId, existingUserId]
+                                );
+                              }
+                            } catch (mappingError) {
+                              console.error('[Telegram Chat ID Capture] Error creating user mapping:', mappingError);
+                            }
+                            
+                            // Update the profile under the original userId
+                            const { updateOnboardingStep } = await import('./plugins/onboarding/utils.js');
+                            await updateOnboardingStep(
+                              kaiaRuntimeForOnboardingCheck,
+                              existingUserId as any,
+                              userId as any, // Use Telegram userId as roomId
+                              'COMPLETED',
+                              {
+                                ...existingProfile,
+                                email: state.profile?.email, // Keep the email they just entered
+                                onboardingCompletedAt: existingProfile.onboardingCompletedAt || new Date()
+                              }
+                            );
+                            
+                            // Create a reference under Telegram userId pointing to original
+                            await updateState('COMPLETED', {
+                              ...existingProfile,
+                              email: state.profile?.email,
+                              primaryUserId: existingUserId,
+                              isLinked: true
+                            });
+                            
+                            const { formatProfileForDisplay } = await import('./plugins/onboarding/utils.js');
+                            const profileDisplay = formatProfileForDisplay({ ...existingProfile, email: state.profile?.email }, state.profile?.language || 'en');
+                            responseText = `${msgs.COMPLETION}\n\n${profileDisplay}`;
+                            console.log('[Telegram Chat ID Capture] ✅ Loaded existing profile');
+                          } else {
+                            // Fallback: continue with current profile
+                            await updateState('ASK_LOCATION', {});
+                            responseText = msgs.LOCATION;
+                            console.log('[Telegram Chat ID Capture] ⚠️ Could not load existing profile, continuing onboarding');
+                          }
+                        } else if (choice === '2' || choice.toLowerCase().includes('new') || choice.toLowerCase().includes('recreate')) {
+                          // User wants to create a new profile
+                          await updateState('ASK_LOCATION', {});
+                          responseText = msgs.LOCATION;
+                          console.log('[Telegram Chat ID Capture] 📋 User chose to create new profile');
+                        } else {
+                          // Invalid choice - ask again
+                          responseText = `${msgs.PROFILE_EXISTS}\n\n${msgs.PROFILE_CHOICE}`;
+                          console.log('[Telegram Chat ID Capture] ⚠️ Invalid profile choice');
+                        }
                       } else if (state.step === 'ASK_LOCATION') {
                         // Save location (or skip) and ask for roles
                         const location = isNext ? undefined : messageText.trim();

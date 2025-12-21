@@ -4,6 +4,9 @@ export interface Messages {
   GREETING: string;
   LANGUAGE: string;
   LOCATION: string;
+  EMAIL: string;
+  PROFILE_EXISTS: string;
+  PROFILE_CHOICE: string;
   ROLES: string;
   INTERESTS: string;
   GOALS: string;
@@ -59,6 +62,16 @@ Reply with the number (for example: 1)`,
     LOCATION: `What's your location (city and country)? 📍 (optional)
 
 To move on to the next question, type 'Next'`,
+    EMAIL: `To help us connect your profile with your SI<3> Her and/or Grow3dge account, please share the email address you registered with.
+
+What's your email address?`,
+    PROFILE_EXISTS: `We found an existing Agent Kaia profile connected to this email address.`,
+    PROFILE_CHOICE: `Would you like to:
+
+1. Continue with your existing profile
+2. Create a new profile
+
+Reply with the number (for example: 1)`,
     ROLES: `To be able to match you with members and opportunities, can you tell me a bit about yourself by selecting the options that best describe you? You may select more than one.
 
 1. Founder/Builder
@@ -126,6 +139,7 @@ In the meantime, I will let you know when I have a member match for you.`,
     SUMMARY_TITLE: `Here's your summary. Does it look right?`,
     SUMMARY_NAME: `Name:`,
     SUMMARY_LOCATION: `Location:`,
+    SUMMARY_EMAIL: `Email:`,
     SUMMARY_ROLES: `Professional Roles:`,
     SUMMARY_INTERESTS: `Learning Goals:`,
     SUMMARY_GOALS: `Connection Goals:`,
@@ -138,6 +152,7 @@ In the meantime, I will let you know when I have a member match for you.`,
     SUMMARY_NOT_PROVIDED: `Not provided`,
     EDIT_NAME: `Edit name`,
     EDIT_LOCATION: `Edit location`,
+    EDIT_EMAIL: `Edit email`,
     EDIT_ROLES: `Edit professional roles`,
     EDIT_INTERESTS: `Edit learning Goals`,
     EDIT_GOALS: `Edit connection Goals`,
@@ -166,6 +181,16 @@ Responde con el número (por ejemplo: 1)`,
     LOCATION: `¿Cuál es tu ubicación (ciudad y país)? 📍 (opcional)
 
 Para pasar a la siguiente pregunta, escribe 'Next'`,
+    EMAIL: `Para ayudarnos a conectar tu perfil con tu cuenta de SI<3> Her y/o Grow3dge, por favor comparte la dirección de correo electrónico con la que te registraste.
+
+¿Cuál es tu dirección de correo electrónico?`,
+    PROFILE_EXISTS: `Encontramos un perfil existente de Agent Kaia conectado a esta dirección de correo electrónico.`,
+    PROFILE_CHOICE: `¿Te gustaría:
+
+1. Continuar con tu perfil existente
+2. Crear un nuevo perfil
+
+Responde con el número (por ejemplo: 1)`,
     ROLES: `Para poder conectarte con miembros y oportunidades, ¿puedes contarme un poco sobre ti seleccionando las opciones que mejor te describen? Puedes seleccionar más de una.
 
 1. Fundador/Constructor
@@ -233,6 +258,7 @@ Mientras tanto, te avisaré cuando tenga una conexión de miembro para ti.`,
     SUMMARY_TITLE: `Aquí está tu resumen. ¿Se ve bien?`,
     SUMMARY_NAME: `Nombre:`,
     SUMMARY_LOCATION: `Ubicación:`,
+    SUMMARY_EMAIL: `Correo electrónico:`,
     SUMMARY_ROLES: `Roles Profesionales:`,
     SUMMARY_INTERESTS: `Objetivos de Aprendizaje:`,
     SUMMARY_GOALS: `Objetivos de Conexión:`,
@@ -245,6 +271,7 @@ Mientras tanto, te avisaré cuando tenga una conexión de miembro para ti.`,
     SUMMARY_NOT_PROVIDED: `No proporcionado`,
     EDIT_NAME: `Editar nombre`,
     EDIT_LOCATION: `Editar ubicación`,
+    EDIT_EMAIL: `Editar correo electrónico`,
     EDIT_ROLES: `Editar roles profesionales`,
     EDIT_INTERESTS: `Editar objetivos de aprendizaje`,
     EDIT_GOALS: `Editar objetivos de conexión`,
@@ -273,6 +300,16 @@ Responda com o número (por exemplo: 1)`,
     LOCATION: `Qual é a sua localização (cidade e país)? 📍 (opcional)
 
 Para passar para a próxima pergunta, digite 'Next'`,
+    EMAIL: `Para nos ajudar a conectar seu perfil com sua conta do SI<3> Her e/ou Grow3dge, por favor compartilhe o endereço de e-mail com o qual você se registrou.
+
+Qual é o seu endereço de e-mail?`,
+    PROFILE_EXISTS: `Encontramos um perfil existente do Agent Kaia conectado a este endereço de e-mail.`,
+    PROFILE_CHOICE: `Você gostaria de:
+
+1. Continuar com seu perfil existente
+2. Criar um novo perfil
+
+Responda com o número (por exemplo: 1)`,
     ROLES: `Para poder conectá-lo com membros e oportunidades, você pode me contar um pouco sobre si mesmo selecionando as opções que melhor o descrevem? Você pode selecionar mais de uma.
 
 1. Fundador/Construtor
@@ -340,6 +377,7 @@ Enquanto isso, avisarei quando tiver uma conexão de membro para você.`,
     SUMMARY_TITLE: `Aqui está o seu resumo. Parece correto?`,
     SUMMARY_NAME: `Nome:`,
     SUMMARY_LOCATION: `Localização:`,
+    SUMMARY_EMAIL: `E-mail:`,
     SUMMARY_ROLES: `Funções Profissionais:`,
     SUMMARY_INTERESTS: `Objetivos de Aprendizagem:`,
     SUMMARY_GOALS: `Objetivos de Conexão:`,
@@ -352,6 +390,7 @@ Enquanto isso, avisarei quando tiver uma conexão de membro para você.`,
     SUMMARY_NOT_PROVIDED: `Não fornecido`,
     EDIT_NAME: `Editar nome`,
     EDIT_LOCATION: `Editar localização`,
+    EDIT_EMAIL: `Editar e-mail`,
     EDIT_ROLES: `Editar funções profissionais`,
     EDIT_INTERESTS: `Editar objetivos de aprendizagem`,
     EDIT_GOALS: `Editar objetivos de conexão`,
@@ -380,6 +419,16 @@ Répondez avec le numéro (par exemple: 1)`,
     LOCATION: `Quelle est votre localisation (ville et pays)? 📍 (optionnel)
 
 Pour passer à la question suivante, tapez 'Next'`,
+    EMAIL: `Pour nous aider à connecter votre profil avec votre compte SI<3> Her et/ou Grow3dge, veuillez partager l'adresse e-mail avec laquelle vous vous êtes inscrit.
+
+Quelle est votre adresse e-mail?`,
+    PROFILE_EXISTS: `Nous avons trouvé un profil Agent Kaia existant connecté à cette adresse e-mail.`,
+    PROFILE_CHOICE: `Souhaitez-vous:
+
+1. Continuer avec votre profil existant
+2. Créer un nouveau profil
+
+Répondez avec le numéro (par exemple: 1)`,
     ROLES: `Pour pouvoir vous mettre en relation avec des membres et des opportunités, pouvez-vous me parler un peu de vous en sélectionnant les options qui vous décrivent le mieux? Vous pouvez en sélectionner plusieurs.
 
 1. Fondateur/Constructeur
@@ -447,6 +496,7 @@ En attendant, je vous informerai lorsque j'aurai une correspondance de membre po
     SUMMARY_TITLE: `Voici votre résumé. Cela semble correct?`,
     SUMMARY_NAME: `Nom:`,
     SUMMARY_LOCATION: `Localisation:`,
+    SUMMARY_EMAIL: `E-mail:`,
     SUMMARY_ROLES: `Rôles Professionnels:`,
     SUMMARY_INTERESTS: `Objectifs d'Apprentissage:`,
     SUMMARY_GOALS: `Objectifs de Connexion:`,
@@ -459,6 +509,7 @@ En attendant, je vous informerai lorsque j'aurai une correspondance de membre po
     SUMMARY_NOT_PROVIDED: `Non fourni`,
     EDIT_NAME: `Modifier le nom`,
     EDIT_LOCATION: `Modifier la localisation`,
+    EDIT_EMAIL: `Modifier l'e-mail`,
     EDIT_ROLES: `Modifier les rôles professionnels`,
     EDIT_INTERESTS: `Modifier les objectifs d'apprentissage`,
     EDIT_GOALS: `Modifier les objectifs de connexion`,

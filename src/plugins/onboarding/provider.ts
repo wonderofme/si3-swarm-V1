@@ -103,13 +103,13 @@ ${msgs.LANGUAGE}
 After sending this message, wait for the user's response with a number (1-4).]`;
     }
     
-    // First time - show greeting (only if this is a restart or initial greeting)
-    console.log(`[Onboarding Provider] Showing initial greeting`);
-    return `[ONBOARDING STEP: ASK_NAME - Send this EXACT message word-for-word. Do not modify, paraphrase, or add anything:
+    // First time - show language question (new flow: Language first)
+    console.log(`[Onboarding Provider] Showing language question first`);
+    return `[ONBOARDING STEP: ASK_LANGUAGE - Send this EXACT message word-for-word. Do not modify, paraphrase, or add anything:
 
-${msgs.GREETING}
+${msgs.LANGUAGE}
 
-After sending this message, wait for the user's response with their name.]`;
+After sending this message, wait for the user's response with a number (1-4).]`;
   }
   
   // ASK_LANGUAGE step
@@ -121,14 +121,14 @@ After sending this message, wait for the user's response with their name.]`;
     
     console.log(`[Onboarding Provider] ASK_LANGUAGE step - userText: "${userText}", isValidLanguageSelection: ${isValidLanguageSelection}`);
     
-    // If user provided a valid language selection, show location question instead
+    // If user provided a valid language selection, show name question instead
     if (isValidLanguageSelection) {
-      console.log(`[Onboarding Provider] Detected valid language selection, returning location question`);
-      return `[ONBOARDING STEP: ASK_LOCATION - Send this EXACT message word-for-word. Do not modify, paraphrase, or add anything:
+      console.log(`[Onboarding Provider] Detected valid language selection, returning name question`);
+      return `[ONBOARDING STEP: ASK_NAME - Send this EXACT message word-for-word. Do not modify, paraphrase, or add anything:
 
-${msgs.LOCATION}
+${msgs.GREETING}
 
-After sending this message, wait for the user's response with their location or "Next" to skip.]`;
+After sending this message, wait for the user's response with their name.]`;
     }
     
     // First time - show language question
@@ -147,6 +147,26 @@ After sending this message, wait for the user's response with a number (1-4).]`;
 ${msgs.LOCATION}
 
 After sending this message, wait for the user's response with their location or "Next" to skip.]`;
+  }
+  
+  // ASK_EMAIL step
+  if (step === 'ASK_EMAIL') {
+    return `[ONBOARDING STEP: ASK_EMAIL - Send this EXACT message word-for-word. Do not modify, paraphrase, or add anything:
+
+${msgs.EMAIL}
+
+After sending this message, wait for the user's response with their email address.]`;
+  }
+  
+  // ASK_PROFILE_CHOICE step
+  if (step === 'ASK_PROFILE_CHOICE') {
+    return `[ONBOARDING STEP: ASK_PROFILE_CHOICE - Send this EXACT message word-for-word. Do not modify, paraphrase, or add anything:
+
+${msgs.PROFILE_EXISTS}
+
+${msgs.PROFILE_CHOICE}
+
+After sending this message, wait for the user's response with a number (1 or 2).]`;
   }
   
   // ASK_ROLE step

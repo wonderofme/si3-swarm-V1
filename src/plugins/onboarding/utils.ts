@@ -4,9 +4,46 @@ import { getMessages, LanguageCode } from './translations.js';
 
 const ONBOARDING_MEMORY_TYPE = 'onboarding_state';
 
+/**
+ * Resolves the primary userId from any platform userId
+ * If a mapping exists, returns the primary userId, otherwise returns the input userId
+ */
+export async function resolvePrimaryUserId(runtime: IAgentRuntime, userId: UUID): Promise<UUID> {
+  try {
+    const db = runtime.databaseAdapter as any;
+    const databaseType = (process.env.DATABASE_TYPE || 'postgres').toLowerCase();
+    const isMongo = databaseType === 'mongodb' || databaseType === 'mongo';
+    
+    if (isMongo && db.getDb) {
+      const mongoDb = await db.getDb();
+      const mapping = await mongoDb.collection('user_mappings').findOne({ platform_user_id: String(userId) });
+      if (mapping && mapping.primary_user_id) {
+        return mapping.primary_user_id as UUID;
+      }
+    } else if (db.query) {
+      const result = await db.query(
+        `SELECT primary_user_id FROM user_mappings WHERE platform_user_id = $1::text`,
+        [String(userId)]
+      );
+      if (result.rows && result.rows.length > 0 && result.rows[0].primary_user_id) {
+        return result.rows[0].primary_user_id as UUID;
+      }
+    }
+  } catch (error) {
+    console.error('[Onboarding Utils] Error resolving primary userId:', error);
+  }
+  
+  // No mapping found, return original userId
+  return userId;
+}
+
 export async function getOnboardingState(runtime: IAgentRuntime, userId: UUID): Promise<{ step: OnboardingStep, profile: UserProfile }> {
   try {
-    const cached = await runtime.cacheManager.get(`onboarding_${userId}`);
+    // First, resolve to primary userId if mapping exists
+    const primaryUserId = await resolvePrimaryUserId(runtime, userId);
+    
+    // Get state using primary userId
+    const cached = await runtime.cacheManager.get(`onboarding_${primaryUserId}`);
     if (cached && typeof cached === 'object') {
       // Ensure profile exists and is an object
       const state = cached as { step?: OnboardingStep, profile?: UserProfile };
@@ -29,8 +66,11 @@ export async function updateOnboardingStep(
   step: OnboardingStep,
   profileUpdate?: Partial<UserProfile>
 ) {
-  // Get current state
-  const { profile: currentProfile } = await getOnboardingState(runtime, userId);
+  // Resolve to primary userId if mapping exists
+  const primaryUserId = await resolvePrimaryUserId(runtime, userId);
+  
+  // Get current state using primary userId
+  const { profile: currentProfile } = await getOnboardingState(runtime, primaryUserId);
   
   const newState = {
     step,
@@ -45,9 +85,19 @@ export async function updateOnboardingStep(
     newState.profile.onboardingCompletedAt = new Date();
   }
 
-  // Save to Cache (Primary persistence for state machine)
+  // Save to Cache (Primary persistence for state machine) using primary userId
   // CacheManager handles JSON stringification internally
-  await runtime.cacheManager.set(`onboarding_${userId}`, newState as any);
+  await runtime.cacheManager.set(`onboarding_${primaryUserId}`, newState as any);
+  
+  // If this is a different userId (platform userId), also create a reference
+  if (primaryUserId !== userId) {
+    await runtime.cacheManager.set(`onboarding_${userId}`, {
+      step: 'COMPLETED',
+      profile: newState.profile,
+      primaryUserId: primaryUserId,
+      isLinked: true
+    } as any);
+  }
   
   // CRITICAL: Update onboarding step cache immediately
   // This ensures the provider gives the correct message to the LLM
@@ -128,6 +178,7 @@ export function formatProfileForDisplay(profile: UserProfile, lang: string = 'en
   return `💜 Your Grow3dge Profile:\n\n` +
     `${msgs.SUMMARY_NAME} ${profile.name || msgs.SUMMARY_NOT_PROVIDED}\n` +
     `${msgs.SUMMARY_LOCATION} ${profile.location || msgs.SUMMARY_NOT_PROVIDED}\n` +
+    `${msgs.SUMMARY_EMAIL} ${profile.email || msgs.SUMMARY_NOT_PROVIDED}\n` +
     `${msgs.SUMMARY_ROLES} ${formatArray(profile.roles)}\n` +
     `${msgs.SUMMARY_INTERESTS} ${formatArray(profile.interests)}\n` +
     `${msgs.SUMMARY_GOALS} ${formatArray(profile.connectionGoals, true)}\n` +

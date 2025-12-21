@@ -295,6 +295,10 @@ export async function findMatches(
     return [];
   }
   
+  // Resolve to primary userId if mapping exists
+  const { resolvePrimaryUserId } = await import('../plugins/onboarding/utils.js');
+  const primaryUserId = await resolvePrimaryUserId(runtime, userId as any);
+  
   // Check if database adapter has required methods (query for PostgreSQL, getDb for MongoDB)
   const databaseType = (process.env.DATABASE_TYPE || 'postgres').toLowerCase();
   const isMongo = databaseType === 'mongodb' || databaseType === 'mongo';
@@ -326,7 +330,10 @@ export async function findMatches(
       
       for (const doc of docs) {
         const otherUserId = doc.key.replace('onboarding_', '');
-        if (otherUserId === userId || excludeUserIds.includes(otherUserId)) continue;
+        // Resolve other user's primary userId
+        const otherPrimaryUserId = await resolvePrimaryUserId(runtime, otherUserId as any);
+        // Exclude if it's the same primary user (could be different platform userIds)
+        if (otherPrimaryUserId === primaryUserId || excludeUserIds.includes(otherUserId) || excludeUserIds.includes(otherPrimaryUserId)) continue;
         
         try {
           const state = typeof doc.value === 'string' ? JSON.parse(doc.value) : doc.value;
@@ -335,7 +342,7 @@ export async function findMatches(
               continue;
             }
             allUsers.push({
-              userId: otherUserId,
+              userId: otherPrimaryUserId, // Use primary userId for matching
               profile: state.profile
             });
           }
@@ -349,7 +356,10 @@ export async function findMatches(
       const rows: any[] = res?.rows || [];
       for (const row of rows) {
         const otherUserId = row.key.replace('onboarding_', '');
-        if (otherUserId === userId || excludeUserIds.includes(otherUserId)) continue;
+        // Resolve other user's primary userId
+        const otherPrimaryUserId = await resolvePrimaryUserId(runtime, otherUserId as any);
+        // Exclude if it's the same primary user (could be different platform userIds)
+        if (otherPrimaryUserId === primaryUserId || excludeUserIds.includes(otherUserId) || excludeUserIds.includes(otherPrimaryUserId)) continue;
         
         try {
           const state = typeof row.value === 'string' ? JSON.parse(row.value) : row.value;
@@ -358,7 +368,7 @@ export async function findMatches(
               continue;
             }
             allUsers.push({
-              userId: otherUserId,
+              userId: otherPrimaryUserId, // Use primary userId for matching
               profile: state.profile
             });
           }

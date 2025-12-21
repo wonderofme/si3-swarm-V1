@@ -1,7 +1,9 @@
 export type OnboardingStep = 
   | 'NONE'
-  | 'ASK_NAME'
   | 'ASK_LANGUAGE'
+  | 'ASK_NAME'
+  | 'ASK_EMAIL'
+  | 'ASK_PROFILE_CHOICE'
   | 'ASK_LOCATION'
   | 'ASK_ROLE'
   | 'ASK_INTERESTS'
@@ -17,6 +19,7 @@ export type OnboardingStep =
   | 'AWAITING_FEATURE_DETAILS'
   | 'UPDATING_NAME'
   | 'UPDATING_LOCATION'
+  | 'UPDATING_EMAIL'
   | 'UPDATING_ROLES'
   | 'UPDATING_INTERESTS'
   | 'UPDATING_GOALS'
@@ -32,6 +35,7 @@ export interface UserProfile {
   name?: string;
   language?: LanguageCode;
   location?: string;
+  email?: string;
   roles?: string[];
   interests?: string[];
   connectionGoals?: string[];
