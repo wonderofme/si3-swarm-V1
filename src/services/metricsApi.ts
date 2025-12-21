@@ -12,7 +12,8 @@ export interface MatchMetrics {
 }
 
 export interface UserMetrics {
-  total: number;
+  total: number; // Only users who completed onboarding
+  startedOnboarding: number; // All users who started (including incomplete)
   completedOnboarding: number;
   activeLast7Days: number;
   activeLast30Days: number;
@@ -224,72 +225,94 @@ async function getUserMetrics(
     const mongoDb = await db.getDb();
     const cacheCollection = mongoDb.collection('cache');
     
-    // Get all cache entries that look like user profiles
-    const allCache = await cacheCollection.find({
+    // Count all users who started onboarding (any cache entry with onboarding_ prefix)
+    const startedOnboarding = await cacheCollection.countDocuments({
       key: { $regex: /^onboarding_/ }
-    }).toArray();
-    
-    const total = allCache.length;
-    
-    // Count completed onboarding (has onboardingCompletedAt)
-    const completed = await cacheCollection.countDocuments({
-      key: { $regex: /^onboarding_/ },
-      'value.onboardingCompletedAt': { $exists: true }
     });
     
-    // Active users (updated in last 7/30 days)
+    // Count only users who completed onboarding (has onboardingCompletedAt)
+    // For MongoDB, check both value.onboardingCompletedAt and value.profile.onboardingCompletedAt
+    const completed = await cacheCollection.countDocuments({
+      key: { $regex: /^onboarding_/ },
+      $or: [
+        { 'value.onboardingCompletedAt': { $exists: true } },
+        { 'value.profile.onboardingCompletedAt': { $exists: true } }
+      ]
+    });
+    
+    // Active users (completed users updated in last 7/30 days)
     const active7Days = await cacheCollection.countDocuments({
       key: { $regex: /^onboarding_/ },
+      $or: [
+        { 'value.onboardingCompletedAt': { $exists: true } },
+        { 'value.profile.onboardingCompletedAt': { $exists: true } }
+      ],
       updated_at: { $gte: weekAgo }
     });
     
     const active30Days = await cacheCollection.countDocuments({
       key: { $regex: /^onboarding_/ },
+      $or: [
+        { 'value.onboardingCompletedAt': { $exists: true } },
+        { 'value.profile.onboardingCompletedAt': { $exists: true } }
+      ],
       updated_at: { $gte: monthAgo }
     });
     
     return {
-      total,
+      total: completed, // Only count completed users as "total"
+      startedOnboarding,
       completedOnboarding: completed,
       activeLast7Days: active7Days,
       activeLast30Days: active30Days,
-      onboardingCompletionRate: total > 0 ? (completed / total) * 100 : 0
+      onboardingCompletionRate: startedOnboarding > 0 ? (completed / startedOnboarding) * 100 : 0
     };
   } else {
     // PostgreSQL
-    const total = (await db.query(
+    const startedOnboarding = parseInt((await db.query(
       "SELECT COUNT(*) as count FROM cache WHERE key LIKE 'onboarding_%'"
-    )).rows[0].count;
+    )).rows[0].count);
     
-    const completed = (await db.query(`
+    // Check both value::jsonb->>'onboardingCompletedAt' and value::jsonb->'profile'->>'onboardingCompletedAt'
+    const completed = parseInt((await db.query(`
       SELECT COUNT(*) as count 
       FROM cache 
       WHERE key LIKE 'onboarding_%' 
-      AND value::jsonb->'profile'->>'onboardingCompletedAt' IS NOT NULL
-    `)).rows[0].count;
+      AND (
+        value::jsonb->>'onboardingCompletedAt' IS NOT NULL
+        OR value::jsonb->'profile'->>'onboardingCompletedAt' IS NOT NULL
+      )
+    `)).rows[0].count);
     
-    const active7Days = (await db.query(`
+    const active7Days = parseInt((await db.query(`
       SELECT COUNT(*) as count 
       FROM cache 
       WHERE key LIKE 'onboarding_%' 
+      AND (
+        value::jsonb->>'onboardingCompletedAt' IS NOT NULL
+        OR value::jsonb->'profile'->>'onboardingCompletedAt' IS NOT NULL
+      )
       AND updated_at >= $1
-    `, [weekAgo])).rows[0].count;
+    `, [weekAgo])).rows[0].count);
     
-    const active30Days = (await db.query(`
+    const active30Days = parseInt((await db.query(`
       SELECT COUNT(*) as count 
       FROM cache 
       WHERE key LIKE 'onboarding_%' 
+      AND (
+        value::jsonb->>'onboardingCompletedAt' IS NOT NULL
+        OR value::jsonb->'profile'->>'onboardingCompletedAt' IS NOT NULL
+      )
       AND updated_at >= $1
-    `, [monthAgo])).rows[0].count;
+    `, [monthAgo])).rows[0].count);
     
     return {
-      total: parseInt(total),
-      completedOnboarding: parseInt(completed),
-      activeLast7Days: parseInt(active7Days),
-      activeLast30Days: parseInt(active30Days),
-      onboardingCompletionRate: parseInt(total) > 0 
-        ? (parseInt(completed) / parseInt(total)) * 100 
-        : 0
+      total: completed, // Only count completed users as "total"
+      startedOnboarding,
+      completedOnboarding: completed,
+      activeLast7Days: active7Days,
+      activeLast30Days: active30Days,
+      onboardingCompletionRate: startedOnboarding > 0 ? (completed / startedOnboarding) * 100 : 0
     };
   }
 }
