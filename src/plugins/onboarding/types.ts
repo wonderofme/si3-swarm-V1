@@ -49,6 +49,8 @@ export interface UserProfile {
   isEditing?: boolean;
   editingField?: string;
   onboardingCompletedAt?: Date;
+  existingUserId?: string; // Used temporarily during ASK_PROFILE_CHOICE
+  existingProfile?: UserProfile; // Used temporarily during ASK_PROFILE_CHOICE
 }
 
 // Extend the standard State to include our onboarding context

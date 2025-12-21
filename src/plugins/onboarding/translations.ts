@@ -20,6 +20,7 @@ export interface Messages {
   SUMMARY_TITLE: string;
   SUMMARY_NAME: string;
   SUMMARY_LOCATION: string;
+  SUMMARY_EMAIL: string;
   SUMMARY_ROLES: string;
   SUMMARY_INTERESTS: string;
   SUMMARY_GOALS: string;
@@ -32,6 +33,7 @@ export interface Messages {
   SUMMARY_NOT_PROVIDED: string;
   EDIT_NAME: string;
   EDIT_LOCATION: string;
+  EDIT_EMAIL: string;
   EDIT_ROLES: string;
   EDIT_INTERESTS: string;
   EDIT_GOALS: string;
