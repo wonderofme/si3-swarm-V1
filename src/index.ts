@@ -114,11 +114,26 @@ async function checkForNewMatches(
       const otherUserLang = otherState.profile.language || 'en';
       const matchMessage = match.icebreaker || match.reason;
       
+      // Determine platform for new user
+      const newUserRoles = newUserProfile.roles || [];
+      const newUserIsGrow3dge = newUserRoles.includes('partner');
+      const newUserIsSiHer = newUserRoles.includes('team');
+      const newUserHasBoth = newUserIsGrow3dge && newUserIsSiHer;
+      
+      let platformText = '';
+      if (newUserHasBoth) {
+        platformText = '\nPlatform: SI Her & Grow3dge Member\n';
+      } else if (newUserIsGrow3dge) {
+        platformText = '\nPlatform: Grow3dge Member\n';
+      } else if (newUserIsSiHer) {
+        platformText = '\nPlatform: SI Her Member\n';
+      }
+      
       const notificationMessages: Record<string, string> = {
-        en: `🎉 New match alert!\n\nI found someone who might be a great connection for you:\n\n${newUserProfile.name} from ${newUserProfile.location || 'the community'}\nRoles: ${(newUserProfile.roles || []).join(', ') || 'Not specified'}\nInterests: ${(newUserProfile.interests || []).slice(0, 3).join(', ') || 'Not specified'}\n${newUserProfile.telegramHandle ? `Telegram: @${newUserProfile.telegramHandle}\n` : ''}\n💡 ${matchMessage}\n\nSay "find me a match" for more connections! 🤝`,
-        es: `🎉 ¡Nueva conexión encontrada!\n\nEncontré a alguien que podría ser una gran conexión para ti:\n\n${newUserProfile.name} de ${newUserProfile.location || 'la comunidad'}\nRoles: ${(newUserProfile.roles || []).join(', ') || 'No especificado'}\nIntereses: ${(newUserProfile.interests || []).slice(0, 3).join(', ') || 'No especificado'}\n${newUserProfile.telegramHandle ? `Telegram: @${newUserProfile.telegramHandle}\n` : ''}\n💡 ${matchMessage}\n\n¡Di "encuéntrame una conexión" para más! 🤝`,
-        pt: `🎉 Nova conexão encontrada!\n\nEncontrei alguém que pode ser uma ótima conexão para você:\n\n${newUserProfile.name} de ${newUserProfile.location || 'a comunidade'}\nFunções: ${(newUserProfile.roles || []).join(', ') || 'Não especificado'}\nInteresses: ${(newUserProfile.interests || []).slice(0, 3).join(', ') || 'Não especificado'}\n${newUserProfile.telegramHandle ? `Telegram: @${newUserProfile.telegramHandle}\n` : ''}\n💡 ${matchMessage}\n\nDiga "encontre uma conexão" para mais! 🤝`,
-        fr: `🎉 Nouvelle connexion trouvée!\n\nJ'ai trouvé quelqu'un qui pourrait être une excellente connexion pour vous:\n\n${newUserProfile.name} de ${newUserProfile.location || 'la communauté'}\nRôles: ${(newUserProfile.roles || []).join(', ') || 'Non spécifié'}\nIntérêts: ${(newUserProfile.interests || []).slice(0, 3).join(', ') || 'Non spécifié'}\n${newUserProfile.telegramHandle ? `Telegram: @${newUserProfile.telegramHandle}\n` : ''}\n💡 ${matchMessage}\n\nDites "trouve-moi une connexion" pour plus! 🤝`
+        en: `🎉 New match alert!\n\nI found someone who might be a great connection for you:\n\n${newUserProfile.name} from ${newUserProfile.location || 'the community'}${platformText}Roles: ${(newUserProfile.roles || []).join(', ') || 'Not specified'}\nInterests: ${(newUserProfile.interests || []).slice(0, 3).join(', ') || 'Not specified'}\n${newUserProfile.telegramHandle ? `Telegram: @${newUserProfile.telegramHandle}\n` : ''}\n💡 ${matchMessage}\n\nSay "find me a match" for more connections! 🤝`,
+        es: `🎉 ¡Nueva conexión encontrada!\n\nEncontré a alguien que podría ser una gran conexión para ti:\n\n${newUserProfile.name} de ${newUserProfile.location || 'la comunidad'}${platformText}Roles: ${(newUserProfile.roles || []).join(', ') || 'No especificado'}\nIntereses: ${(newUserProfile.interests || []).slice(0, 3).join(', ') || 'No especificado'}\n${newUserProfile.telegramHandle ? `Telegram: @${newUserProfile.telegramHandle}\n` : ''}\n💡 ${matchMessage}\n\n¡Di "encuéntrame una conexión" para más! 🤝`,
+        pt: `🎉 Nova conexão encontrada!\n\nEncontrei alguém que pode ser uma ótima conexão para você:\n\n${newUserProfile.name} de ${newUserProfile.location || 'a comunidade'}${platformText}Funções: ${(newUserProfile.roles || []).join(', ') || 'Não especificado'}\nInteresses: ${(newUserProfile.interests || []).slice(0, 3).join(', ') || 'Não especificado'}\n${newUserProfile.telegramHandle ? `Telegram: @${newUserProfile.telegramHandle}\n` : ''}\n💡 ${matchMessage}\n\nDiga "encontre uma conexão" para mais! 🤝`,
+        fr: `🎉 Nouvelle connexion trouvée!\n\nJ'ai trouvé quelqu'un qui pourrait être une excellente connexion pour vous:\n\n${newUserProfile.name} de ${newUserProfile.location || 'la communauté'}${platformText}Rôles: ${(newUserProfile.roles || []).join(', ') || 'Non spécifié'}\nIntérêts: ${(newUserProfile.interests || []).slice(0, 3).join(', ') || 'Non spécifié'}\n${newUserProfile.telegramHandle ? `Telegram: @${newUserProfile.telegramHandle}\n` : ''}\n💡 ${matchMessage}\n\nDites "trouve-moi une connexion" pour plus! 🤝`
       };
       
       // Record match in database to prevent duplicates

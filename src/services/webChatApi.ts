@@ -1,5 +1,6 @@
 import { AgentRuntime } from '@elizaos/core';
 import { getMessages } from '../plugins/onboarding/translations.js';
+import { findSi3UserByEmail } from './si3Database.js';
 
 // API key for authentication (should be set in environment)
 const API_KEY = process.env.WEB_API_KEY || process.env.JWT_SECRET || 'default-api-key';
@@ -105,7 +106,28 @@ export async function processWebChatMessage(
         return { success: true, response: responseText };
       }
       
-      // Check if email exists in database (could be from Telegram onboarding)
+      // First, check SI<3> database for user roles
+      let si3User = null;
+      let si3Roles: string[] = [];
+      let si3Interests: string[] = [];
+      let si3PersonalValues: string[] = [];
+      
+      try {
+        si3User = await findSi3UserByEmail(emailText, 'si3Users', 'email');
+        if (si3User) {
+          si3Roles = si3User.roles || [];
+          si3Interests = si3User.interests || [];
+          si3PersonalValues = si3User.personalValues || [];
+          console.log(`[Web Chat API] Found SI<3> user with roles: ${si3Roles.join(', ')}`);
+        } else {
+          console.log(`[Web Chat API] Email ${emailText} not found in SI<3> database`);
+        }
+      } catch (error: any) {
+        console.error('[Web Chat API] Error searching SI<3> database:', error.message);
+        // Continue with onboarding even if SI<3> lookup fails
+      }
+      
+      // Check if email exists in Kaia database (could be from Telegram onboarding)
       try {
         const db = runtime.databaseAdapter as any;
         const databaseType = (process.env.DATABASE_TYPE || 'postgres').toLowerCase();
@@ -173,13 +195,31 @@ export async function processWebChatMessage(
           await updateState('ASK_PROFILE_CHOICE', {
             email: emailText,
             existingUserId: existingUser.userId,
-            existingProfile: existingUser.profile
+            existingProfile: existingUser.profile,
+            roles: si3Roles.length > 0 ? si3Roles : undefined,
+            interests: si3Interests.length > 0 ? si3Interests : undefined,
+            personalValues: si3PersonalValues.length > 0 ? si3PersonalValues : undefined
           });
           responseText = `${msgs.PROFILE_EXISTS}\n\n${msgs.PROFILE_CHOICE}`;
         } else {
           // Email doesn't exist - continue with onboarding
-          await updateState('ASK_LOCATION', { email: emailText });
+          // Include roles and interests from SI<3> if found
+          const profileUpdate: any = { email: emailText };
+          if (si3Roles.length > 0) {
+            profileUpdate.roles = si3Roles;
+          }
+          if (si3Interests.length > 0) {
+            profileUpdate.interests = si3Interests;
+          }
+          if (si3PersonalValues.length > 0) {
+            profileUpdate.personalValues = si3PersonalValues;
+          }
+          
+          await updateState('ASK_LOCATION', profileUpdate);
           responseText = msgs.LOCATION;
+          if (si3Roles.length > 0) {
+            console.log(`[Web Chat API] User roles from SI<3>: ${si3Roles.join(', ')}`);
+          }
         }
       } catch (error: any) {
         console.error('[Web Chat API] Error checking email:', error);

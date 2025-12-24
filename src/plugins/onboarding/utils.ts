@@ -1,6 +1,6 @@
 import { IAgentRuntime, UUID } from '@elizaos/core';
 import { OnboardingStep, UserProfile } from './types.js';
-import { getMessages, LanguageCode } from './translations.js';
+import { getMessages, getPlatformMessages, LanguageCode } from './translations.js';
 
 const ONBOARDING_MEMORY_TYPE = 'onboarding_state';
 
@@ -175,7 +175,11 @@ export function formatProfileForDisplay(profile: UserProfile, lang: string = 'en
     return String(arr);
   };
   
-  return `💜 Your Grow3dge Profile:\n\n` +
+  // Get platform-specific messages based on user roles
+  const userRoles = profile.roles || [];
+  const platformMsgs = getPlatformMessages(lang as LanguageCode, userRoles);
+  
+  return `${platformMsgs.PROFILE_TITLE}\n\n` +
     `${msgs.SUMMARY_NAME} ${profile.name || msgs.SUMMARY_NOT_PROVIDED}\n` +
     `${msgs.SUMMARY_LOCATION} ${profile.location || msgs.SUMMARY_NOT_PROVIDED}\n` +
     `${msgs.SUMMARY_EMAIL} ${profile.email || msgs.SUMMARY_NOT_PROVIDED}\n` +

@@ -4,6 +4,7 @@ import { OnboardingStep, UserProfile } from './types.js';
 import { getMessages, parseLanguageCode, LanguageCode } from './translations.js';
 import { recordMessageSent } from '../../services/messageDeduplication.js';
 import { recordActionExecution, getChatIdForRoomId } from '../../services/llmResponseInterceptor.js';
+import { findSi3UserByEmail } from '../../services/si3Database.js';
 
 // Helper function to check if email exists in the database
 async function findUserByEmail(runtime: IAgentRuntime, email: string): Promise<{ userId: string; profile: any } | null> {
@@ -431,7 +432,28 @@ export const continueOnboardingAction: Action = {
           await updateOnboardingStep(runtime, message.userId, roomId, 'CONFIRMATION', { email: emailText, isEditing: false, editingField: undefined });
           if (roomId) recordActionExecution(roomId);
         } else {
-          // Check if email already exists in the database
+          // First, check SI<3> database for user roles
+          let si3User = null;
+          let si3Roles: string[] = [];
+          let si3Interests: string[] = [];
+          let si3PersonalValues: string[] = [];
+          
+          try {
+            si3User = await findSi3UserByEmail(emailText, 'si3Users', 'email');
+            if (si3User) {
+              si3Roles = si3User.roles || [];
+              si3Interests = si3User.interests || [];
+              si3PersonalValues = si3User.personalValues || [];
+              console.log(`[Onboarding Action] Found SI<3> user with roles: ${si3Roles.join(', ')}`);
+            } else {
+              console.log(`[Onboarding Action] Email ${emailText} not found in SI<3> database`);
+            }
+          } catch (error: any) {
+            console.error('[Onboarding Action] Error searching SI<3> database:', error.message);
+            // Continue with onboarding even if SI<3> lookup fails
+          }
+          
+          // Check if email already exists in Kaia database
           const existingUser = await findUserByEmail(runtime, emailText);
           
           if (existingUser && existingUser.userId !== message.userId) {
@@ -440,17 +462,35 @@ export const continueOnboardingAction: Action = {
             await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_PROFILE_CHOICE', { 
               email: emailText,
               existingUserId: existingUser.userId,
-              existingProfile: existingUser.profile
+              existingProfile: existingUser.profile,
+              roles: si3Roles.length > 0 ? si3Roles : undefined,
+              interests: si3Interests.length > 0 ? si3Interests : undefined,
+              personalValues: si3PersonalValues.length > 0 ? si3PersonalValues : undefined
             });
             if (roomId) recordActionExecution(roomId);
             // LLM will send the profile choice question via provider
             console.log('[Onboarding Action] State updated to ASK_PROFILE_CHOICE - LLM will send message via provider');
           } else {
             // Email doesn't exist or is for current user - continue with onboarding
-            await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_LOCATION', { email: emailText });
+            // Include roles and interests from SI<3> if found
+            const profileUpdate: any = { email: emailText };
+            if (si3Roles.length > 0) {
+              profileUpdate.roles = si3Roles;
+            }
+            if (si3Interests.length > 0) {
+              profileUpdate.interests = si3Interests;
+            }
+            if (si3PersonalValues.length > 0) {
+              profileUpdate.personalValues = si3PersonalValues;
+            }
+            
+            await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_LOCATION', profileUpdate);
             if (roomId) recordActionExecution(roomId);
             // LLM will send the location question via provider
             console.log('[Onboarding Action] State updated to ASK_LOCATION - LLM will send message via provider');
+            if (si3Roles.length > 0) {
+              console.log(`[Onboarding Action] User roles from SI<3>: ${si3Roles.join(', ')}`);
+            }
           }
         }
         break;
@@ -510,18 +550,49 @@ export const continueOnboardingAction: Action = {
             const { getOnboardingState } = await import('./utils.js');
             const originalState = await getOnboardingState(runtime, existingUserId as any);
             
-            // Update the profile under the original userId with the email
-            await updateOnboardingStep(runtime, existingUserId as any, roomId, 'COMPLETED', {
+            // Merge SI<3> roles/interests if available (from profile stored during ASK_EMAIL)
+            const si3Roles = (profile as any).roles || [];
+            const si3Interests = (profile as any).interests || [];
+            const si3PersonalValues = (profile as any).personalValues || [];
+            
+            // Merge roles: combine existing with SI<3> roles (avoid duplicates)
+            const mergedRoles = [...new Set([
+              ...(existingProfile.roles || []),
+              ...(originalState.profile.roles || []),
+              ...si3Roles
+            ])];
+            
+            // Merge interests: combine existing with SI<3> interests (avoid duplicates)
+            const mergedInterests = [...new Set([
+              ...(existingProfile.interests || []),
+              ...(originalState.profile.interests || []),
+              ...si3Interests
+            ])];
+            
+            // Merge personal values: combine existing with SI<3> values (avoid duplicates)
+            const mergedPersonalValues = [...new Set([
+              ...(existingProfile.personalValues || []),
+              ...(originalState.profile.personalValues || []),
+              ...si3PersonalValues
+            ])];
+            
+            // Update the profile under the original userId with the email and merged data
+            const mergedProfile = {
               ...originalState.profile,
               ...existingProfile,
               email: profile.email, // Keep the email they just entered
+              roles: mergedRoles.length > 0 ? mergedRoles : undefined,
+              interests: mergedInterests.length > 0 ? mergedInterests : undefined,
+              personalValues: mergedPersonalValues.length > 0 ? mergedPersonalValues : undefined,
               onboardingCompletedAt: existingProfile.onboardingCompletedAt || originalState.profile.onboardingCompletedAt || new Date()
-            });
+            };
+            
+            await updateOnboardingStep(runtime, existingUserId as any, roomId, 'COMPLETED', mergedProfile);
             
             // Also create a reference under Telegram userId pointing to original
             await runtime.cacheManager.set(`onboarding_${message.userId}`, {
               step: 'COMPLETED',
-              profile: { ...existingProfile, email: profile.email },
+              profile: mergedProfile,
               primaryUserId: existingUserId, // Store reference to primary userId
               isLinked: true
             } as any);

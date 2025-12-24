@@ -1,6 +1,6 @@
 import { Provider, IAgentRuntime, Memory, State } from '@elizaos/core';
 import { getOnboardingStep, getUserProfile, formatProfileForDisplay } from './utils.js';
-import { getMessages, LanguageCode } from './translations.js';
+import { getMessages, getPlatformMessages, LanguageCode } from './translations.js';
 import { OnboardingStep } from './types.js';
 import { checkActionExecutedRecently, getOnboardingStepFromCache } from '../../services/llmResponseInterceptor.js';
 
@@ -36,7 +36,9 @@ const actualProviderGet = async (runtime: IAgentRuntime, message: Memory, state?
   // CRITICAL: For restart commands, always use English
   const isRestart = isRestartCommand(userText);
   const userLang: LanguageCode = isRestart ? 'en' : (profile.language || 'en');
-  const msgs = getMessages(userLang);
+  // Get platform-specific messages based on user roles
+  const userRoles = profile.roles || [];
+  const msgs = getPlatformMessages(userLang, userRoles);
 
   // CRITICAL: Check cache first for fast synchronous access, then fallback to async
   // This ensures we get the latest state even if it was just updated

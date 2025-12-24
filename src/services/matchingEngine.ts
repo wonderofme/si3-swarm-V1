@@ -17,6 +17,7 @@ export interface MatchCandidate {
   commonInterests: string[];
   sharedEvents: string[];
   icebreaker?: string;
+  platform?: string; // Platform membership: 'Grow3dge', 'SI Her', 'Both', or undefined
 }
 
 export interface MatchingConfig {
@@ -316,6 +317,11 @@ export async function findMatches(
   const userAInterests = userProfile.interests || [];
   const userAEvents = userProfile.events || [];
   
+  // Determine platform membership for filtering
+  const userAIsGrow3dge = userARoles.includes('partner');
+  const userAIsSiHer = userARoles.includes('team');
+  const userAHasBoth = userAIsGrow3dge && userAIsSiHer;
+  
   // Get all completed profiles
   let allUsers: any[] = [];
   try {
@@ -398,6 +404,38 @@ export async function findMatches(
     const userBInterests = userB.interests || [];
     const userBEvents = userB.events || [];
     
+    // Platform-based filtering:
+    // - Grow3dge members (partner) only match with other Grow3dge members
+    // - SI Her members (team) only match with other SI Her members
+    // - Users with both roles can match with anyone
+    const userBIsGrow3dge = userBRoles.includes('partner');
+    const userBIsSiHer = userBRoles.includes('team');
+    const userBHasBoth = userBIsGrow3dge && userBIsSiHer;
+    
+    // Apply platform filtering:
+    // - Users with both roles can match with anyone
+    // - Grow3dge-only members only match with other Grow3dge members
+    // - SI Her-only members only match with other SI Her members
+    // - Users with no platform roles can match with anyone (default flow)
+    if (!userAHasBoth && !userBHasBoth) {
+      // Both users are in single groups or have no platform roles
+      if (userAIsGrow3dge && !userAIsSiHer) {
+        // User A is Grow3dge-only - must match with Grow3dge members
+        if (!userBIsGrow3dge) {
+          console.log(`[Matching Engine] ⚠️ Skipping match - User A is Grow3dge only, User B is not Grow3dge`);
+          continue;
+        }
+      } else if (userAIsSiHer && !userAIsGrow3dge) {
+        // User A is SI Her-only - must match with SI Her members
+        if (!userBIsSiHer) {
+          console.log(`[Matching Engine] ⚠️ Skipping match - User A is SI Her only, User B is not SI Her`);
+          continue;
+        }
+      }
+      // If userA has no platform roles, they can match with anyone (default flow)
+    }
+    // If userAHasBoth or userBHasBoth, allow the match (they can match with anyone)
+    
     // Calculate component scores
     const intentScore = calculateIntentScore(userAGoals, userARoles, userBGoals, userBRoles);
     const { similarity: interestSimilarity, common: commonInterests } = calculateInterestOverlap(userAInterests, userBInterests);
@@ -452,6 +490,16 @@ export async function findMatches(
         reason += ` | Both attending: ${sharedEvents.join(', ')}`;
       }
       
+      // Determine platform for match candidate
+      let platform: string | undefined;
+      if (userBHasBoth) {
+        platform = 'Both';
+      } else if (userBIsGrow3dge) {
+        platform = 'Grow3dge';
+      } else if (userBIsSiHer) {
+        platform = 'SI Her';
+      }
+      
       candidates.push({
         userId: otherUser.userId,
         profile: userB,
@@ -461,7 +509,8 @@ export async function findMatches(
         eventScore: Math.round(eventScore),
         reason,
         commonInterests,
-        sharedEvents
+        sharedEvents,
+        platform: platform
       });
     }
   }

@@ -1,4 +1,5 @@
 import { IAgentRuntime } from '@elizaos/core';
+import { getPlatformFromRoles, isSiHerMember, isGrow3dgeMember } from './si3Database.js';
 
 export interface MatchMetrics {
   total: number;
@@ -18,6 +19,12 @@ export interface UserMetrics {
   activeLast7Days: number;
   activeLast30Days: number;
   onboardingCompletionRate: number;
+  byRole?: { [role: string]: { total: number; activeLast7Days: number; activeLast30Days: number } };
+  byPlatform?: { 
+    'SI Her': { total: number; activeLast7Days: number; activeLast30Days: number };
+    'Grow3dge': { total: number; activeLast7Days: number; activeLast30Days: number };
+    'SI Her & Grow3dge': { total: number; activeLast7Days: number; activeLast30Days: number };
+  };
 }
 
 export interface EngagementMetrics {
@@ -259,13 +266,75 @@ async function getUserMetrics(
       updated_at: { $gte: monthAgo }
     });
     
+    // Role-based analytics
+    const roleMetrics: { [role: string]: { total: number; activeLast7Days: number; activeLast30Days: number } } = {};
+    // Platform-based analytics (SI Her vs Grow3dge)
+    const platformMetrics: {
+      'SI Her': { total: number; activeLast7Days: number; activeLast30Days: number };
+      'Grow3dge': { total: number; activeLast7Days: number; activeLast30Days: number };
+      'SI Her & Grow3dge': { total: number; activeLast7Days: number; activeLast30Days: number };
+    } = {
+      'SI Her': { total: 0, activeLast7Days: 0, activeLast30Days: 0 },
+      'Grow3dge': { total: 0, activeLast7Days: 0, activeLast30Days: 0 },
+      'SI Her & Grow3dge': { total: 0, activeLast7Days: 0, activeLast30Days: 0 }
+    };
+    
+    const completedDocs = await cacheCollection.find({
+      key: { $regex: /^onboarding_/ },
+      $or: [
+        { 'value.onboardingCompletedAt': { $exists: true } },
+        { 'value.profile.onboardingCompletedAt': { $exists: true } }
+      ]
+    }).toArray();
+    
+    for (const doc of completedDocs) {
+      try {
+        const value = typeof doc.value === 'string' ? JSON.parse(doc.value) : doc.value;
+        const roles = value?.profile?.roles || [];
+        const isActive7Days = doc.updated_at && new Date(doc.updated_at) >= weekAgo;
+        const isActive30Days = doc.updated_at && new Date(doc.updated_at) >= monthAgo;
+        
+        // Role-based metrics
+        for (const role of roles) {
+          if (!roleMetrics[role]) {
+            roleMetrics[role] = { total: 0, activeLast7Days: 0, activeLast30Days: 0 };
+          }
+          roleMetrics[role].total++;
+          if (isActive7Days) roleMetrics[role].activeLast7Days++;
+          if (isActive30Days) roleMetrics[role].activeLast30Days++;
+        }
+        
+        // Platform-based metrics
+        const isSiHer = isSiHerMember(roles);
+        const isGrow3dge = isGrow3dgeMember(roles);
+        
+        if (isSiHer && isGrow3dge) {
+          platformMetrics['SI Her & Grow3dge'].total++;
+          if (isActive7Days) platformMetrics['SI Her & Grow3dge'].activeLast7Days++;
+          if (isActive30Days) platformMetrics['SI Her & Grow3dge'].activeLast30Days++;
+        } else if (isSiHer) {
+          platformMetrics['SI Her'].total++;
+          if (isActive7Days) platformMetrics['SI Her'].activeLast7Days++;
+          if (isActive30Days) platformMetrics['SI Her'].activeLast30Days++;
+        } else if (isGrow3dge) {
+          platformMetrics['Grow3dge'].total++;
+          if (isActive7Days) platformMetrics['Grow3dge'].activeLast7Days++;
+          if (isActive30Days) platformMetrics['Grow3dge'].activeLast30Days++;
+        }
+      } catch (e) {
+        // Skip invalid entries
+      }
+    }
+    
     return {
       total: completed, // Only count completed users as "total"
       startedOnboarding,
       completedOnboarding: completed,
       activeLast7Days: active7Days,
       activeLast30Days: active30Days,
-      onboardingCompletionRate: startedOnboarding > 0 ? (completed / startedOnboarding) * 100 : 0
+      onboardingCompletionRate: startedOnboarding > 0 ? (completed / startedOnboarding) * 100 : 0,
+      byRole: Object.keys(roleMetrics).length > 0 ? roleMetrics : undefined,
+      byPlatform: (platformMetrics['SI Her'].total > 0 || platformMetrics['Grow3dge'].total > 0 || platformMetrics['SI Her & Grow3dge'].total > 0) ? platformMetrics : undefined
     };
   } else {
     // PostgreSQL
@@ -306,13 +375,77 @@ async function getUserMetrics(
       AND updated_at >= $1
     `, [monthAgo])).rows[0].count);
     
+    // Role-based analytics
+    const roleMetrics: { [role: string]: { total: number; activeLast7Days: number; activeLast30Days: number } } = {};
+    // Platform-based analytics (SI Her vs Grow3dge)
+    const platformMetrics: {
+      'SI Her': { total: number; activeLast7Days: number; activeLast30Days: number };
+      'Grow3dge': { total: number; activeLast7Days: number; activeLast30Days: number };
+      'SI Her & Grow3dge': { total: number; activeLast7Days: number; activeLast30Days: number };
+    } = {
+      'SI Her': { total: 0, activeLast7Days: 0, activeLast30Days: 0 },
+      'Grow3dge': { total: 0, activeLast7Days: 0, activeLast30Days: 0 },
+      'SI Her & Grow3dge': { total: 0, activeLast7Days: 0, activeLast30Days: 0 }
+    };
+    
+    const completedRows = await db.query(`
+      SELECT value, updated_at
+      FROM cache 
+      WHERE key LIKE 'onboarding_%' 
+      AND (
+        value::jsonb->>'onboardingCompletedAt' IS NOT NULL
+        OR value::jsonb->'profile'->>'onboardingCompletedAt' IS NOT NULL
+      )
+    `);
+    
+    for (const row of completedRows.rows) {
+      try {
+        const value = typeof row.value === 'string' ? JSON.parse(row.value) : row.value;
+        const roles = value?.profile?.roles || [];
+        const isActive7Days = row.updated_at && new Date(row.updated_at) >= weekAgo;
+        const isActive30Days = row.updated_at && new Date(row.updated_at) >= monthAgo;
+        
+        // Role-based metrics
+        for (const role of roles) {
+          if (!roleMetrics[role]) {
+            roleMetrics[role] = { total: 0, activeLast7Days: 0, activeLast30Days: 0 };
+          }
+          roleMetrics[role].total++;
+          if (isActive7Days) roleMetrics[role].activeLast7Days++;
+          if (isActive30Days) roleMetrics[role].activeLast30Days++;
+        }
+        
+        // Platform-based metrics
+        const isSiHer = isSiHerMember(roles);
+        const isGrow3dge = isGrow3dgeMember(roles);
+        
+        if (isSiHer && isGrow3dge) {
+          platformMetrics['SI Her & Grow3dge'].total++;
+          if (isActive7Days) platformMetrics['SI Her & Grow3dge'].activeLast7Days++;
+          if (isActive30Days) platformMetrics['SI Her & Grow3dge'].activeLast30Days++;
+        } else if (isSiHer) {
+          platformMetrics['SI Her'].total++;
+          if (isActive7Days) platformMetrics['SI Her'].activeLast7Days++;
+          if (isActive30Days) platformMetrics['SI Her'].activeLast30Days++;
+        } else if (isGrow3dge) {
+          platformMetrics['Grow3dge'].total++;
+          if (isActive7Days) platformMetrics['Grow3dge'].activeLast7Days++;
+          if (isActive30Days) platformMetrics['Grow3dge'].activeLast30Days++;
+        }
+      } catch (e) {
+        // Skip invalid entries
+      }
+    }
+    
     return {
       total: completed, // Only count completed users as "total"
       startedOnboarding,
       completedOnboarding: completed,
       activeLast7Days: active7Days,
       activeLast30Days: active30Days,
-      onboardingCompletionRate: startedOnboarding > 0 ? (completed / startedOnboarding) * 100 : 0
+      onboardingCompletionRate: startedOnboarding > 0 ? (completed / startedOnboarding) * 100 : 0,
+      byRole: Object.keys(roleMetrics).length > 0 ? roleMetrics : undefined,
+      byPlatform: (platformMetrics['SI Her'].total > 0 || platformMetrics['Grow3dge'].total > 0 || platformMetrics['SI Her & Grow3dge'].total > 0) ? platformMetrics : undefined
     };
   }
 }

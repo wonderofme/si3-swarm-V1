@@ -38,6 +38,7 @@ export interface UserProfile {
   email?: string;
   roles?: string[];
   interests?: string[];
+  personalValues?: string[];
   connectionGoals?: string[];
   events?: string[];
   socials?: string[];

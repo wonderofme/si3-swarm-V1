@@ -1,4 +1,5 @@
 export type LanguageCode = 'en' | 'es' | 'pt' | 'fr';
+export type Platform = 'grow3dge' | 'siher' | 'default';
 
 export interface Messages {
   GREETING: string;
@@ -44,6 +45,7 @@ export interface Messages {
   EDIT_NOTIFICATIONS: string;
   CONFIRM: string;
   NEXT_INSTRUCTION: string;
+  PROFILE_TITLE: string; // Platform-specific profile title (e.g., "Your Grow3dge Profile" or "Your Si Her DAO Profile")
 }
 
 const translations: Record<LanguageCode, Messages> = {
@@ -164,7 +166,8 @@ In the meantime, I will let you know when I have a member match for you.`,
     EDIT_GENDER: `Edit gender info`,
     EDIT_NOTIFICATIONS: `Edit notifications for collabs`,
     CONFIRM: `✅ Confirm`,
-    NEXT_INSTRUCTION: `To move on to the next question, type 'Next'`
+    NEXT_INSTRUCTION: `To move on to the next question, type 'Next'`,
+    PROFILE_TITLE: `💜 Your Grow3dge Profile:`
   },
   es: {
     GREETING: `¡Hola! Soy la Agente Kaia, creada por SI<3>. Soy tu guía amigable para ayudarte a navegar Web3. Estoy aquí para apoyarte a hacer conexiones significativas y compartir conocimientos útiles y oportunidades dentro de nuestra red de miembros. 💜
@@ -283,7 +286,8 @@ Mientras tanto, te avisaré cuando tenga una conexión de miembro para ti.`,
     EDIT_GENDER: `Editar información de género`,
     EDIT_NOTIFICATIONS: `Editar notificaciones para colaboraciones`,
     CONFIRM: `✅ Confirmar`,
-    NEXT_INSTRUCTION: `Para pasar a la siguiente pregunta, escribe 'Next'`
+    NEXT_INSTRUCTION: `Para pasar a la siguiente pregunta, escribe 'Next'`,
+    PROFILE_TITLE: `💜 Tu Perfil de Grow3dge:`
   },
   pt: {
     GREETING: `Olá! Sou a Agente Kaia, criada pela SI<3>. Sou sua guia amigável para ajudá-lo a navegar na Web3. Estou aqui para apoiá-lo a fazer conexões significativas e compartilhar conhecimentos úteis e oportunidades dentro de nossa rede de membros. 💜
@@ -402,7 +406,8 @@ Enquanto isso, avisarei quando tiver uma conexão de membro para você.`,
     EDIT_GENDER: `Editar informações de gênero`,
     EDIT_NOTIFICATIONS: `Editar notificações para colaborações`,
     CONFIRM: `✅ Confirmar`,
-    NEXT_INSTRUCTION: `Para passar para a próxima pergunta, digite 'Next'`
+    NEXT_INSTRUCTION: `Para passar para a próxima pergunta, digite 'Next'`,
+    PROFILE_TITLE: `💜 Seu Perfil Grow3dge:`
   },
   fr: {
     GREETING: `Bonjour! Je suis l'Agent Kaia, créée par SI<3>. Je suis votre guide amical pour vous aider à naviguer dans Web3. Je suis là pour vous soutenir dans la création de connexions significatives et partager des connaissances utiles et des opportunités au sein de notre réseau de membres. 💜
@@ -521,7 +526,8 @@ En attendant, je vous informerai lorsque j'aurai une correspondance de membre po
     EDIT_GENDER: `Modifier les informations de genre`,
     EDIT_NOTIFICATIONS: `Modifier les notifications pour collaborations`,
     CONFIRM: `✅ Confirmer`,
-    NEXT_INSTRUCTION: `Pour passer à la question suivante, tapez 'Next'`
+    NEXT_INSTRUCTION: `Pour passer à la question suivante, tapez 'Next'`,
+    PROFILE_TITLE: `💜 Votre Profil Grow3dge:`
   }
 };
 
@@ -536,5 +542,154 @@ export function parseLanguageCode(input: string): LanguageCode | null {
   if (trimmed === '3' || trimmed.toLowerCase() === 'portuguese' || trimmed.toLowerCase() === 'português' || trimmed.toLowerCase() === 'pt') return 'pt';
   if (trimmed === '4' || trimmed.toLowerCase() === 'french' || trimmed.toLowerCase() === 'français' || trimmed.toLowerCase() === 'fr') return 'fr';
   return null;
+}
+
+/**
+ * Get platform-specific messages based on user roles
+ * Returns Grow3dge messages if user has "partner" role, SI Her if "team" role, default otherwise
+ */
+export function getPlatformMessages(lang: LanguageCode = 'en', roles: string[] = []): Messages {
+  const baseMessages = getMessages(lang);
+  const isGrow3dge = roles.includes('partner');
+  const isSiHer = roles.includes('team');
+  
+  // If user has both roles, default to Grow3dge (can be changed if needed)
+  if (isGrow3dge && !isSiHer) {
+    return {
+      ...baseMessages,
+      INTERESTS: `As I am getting to know you better, can you please share what you are excited to explore in the Grow3dge program? You can select more than one topic.
+
+1. Web3 Growth Marketing
+2. Sales, BD & Partnerships
+3. Education 3.0
+4. AI
+5. Cybersecurity
+6. DAO's
+7. Tokenomics
+8. Fundraising
+9. DeepTech
+
+Reply with the number before the topic (for example: 2,3). If you have a topic that is not listed, type that as text (for example: 2,3 and DevRel)`,
+      GOALS: `I'd love to help you find the right connections - what are you looking for? 🤝
+
+1. Startups to invest in
+2. Investors/grant programs
+3. Growth tools, strategies, and/or support
+4. Sales/BD tools, strategies and/or support
+5. Communities and/or DAO's to join
+6. New job opportunities
+
+Reply with the number before the connection type (for example: 3, 4). If you have a connection type that is not listed, type that as text (for example 3,4 and Cybersecurity).`,
+      EVENTS: `I am also able to match you with other Grow3dge members that are attending the same events and conferences.
+
+Can you share any events that you will be attending coming up (event name, date, and location)? (optional)
+
+To move on to the next question, type 'Next'`,
+      SOCIALS: `Can you share your digital links and/or social media profiles so we can share those with your matches? (optional)
+
+To move on to the next question, type 'Next'`,
+      NOTIFICATIONS: `One last thing…would you be interested in receiving notifications for project and mission collaboration opportunities initiated by SI<3> and its ecosystem partners?
+
+1. Yes!
+2. No, thanks
+3. Not sure yet, check in with me another time
+
+Please reply with the number (for example: 1)`,
+      PROFILE_TITLE: `💜 Your Grow3dge Profile:`
+    };
+  } else if (isSiHer && !isGrow3dge) {
+    return {
+      ...baseMessages,
+      INTERESTS: `As I am getting to know you better, can you please share what you are excited to explore in our Si Her DAO? You can select more than one topic.
+
+1. Personal Branding
+2. Networking & Partnerships
+3. Education 3.0 (peer-to-peer learning)
+4. AI
+5. Cybersecurity
+6. DAO Education
+7. Tokenomics
+8. Fundraising
+9. Well-Being
+
+Reply with the number before the topic (for example: 2,3). If you have a topic that is not listed, type that as text (for example: 2,3 and xx)`,
+      GOALS: `I'd love to help you find the right connections - what are you looking for? 🤝
+
+1. Women in Web3 communities to join
+2. Investors/grant programs
+3. Well-Being support
+4. New job opportunities
+5. Technical projects to support as a developer
+6. Si Her DAO members in my region
+
+Reply with the number before the connection type (for example: 3, 4). If you have a connection type that is not listed, type that as text (for example 3,4 and xx).`,
+      EVENTS: `I am also able to match you with other Si Her members that are attending the same events and conferences.
+
+Can you share any events that you will be attending coming up (event name, date, and location)? (optional)
+
+To move on to the next question, type 'Next'`,
+      SOCIALS: `Can you share your digital links, siher.eth sites and/or social media profiles so we can share those with your matches? (optional)
+
+To move on to the next question, type 'Next'`,
+      NOTIFICATIONS: `One last thing…would you be interested in receiving notifications for project and mission collaboration opportunities initiated by SI<3> and Si Her DAO?
+
+1. Yes!
+2. No, thanks
+3. Not sure yet, check in with me another time
+
+Please reply with the number (for example: 1)`,
+      PROFILE_TITLE: `💜 Your Si Her DAO Profile:`
+    };
+  } else if (isSiHer && isGrow3dge) {
+    // User has both roles - default to Grow3dge flow
+    return {
+      ...baseMessages,
+      INTERESTS: `As I am getting to know you better, can you please share what you are excited to explore in the Grow3dge program? You can select more than one topic.
+
+1. Web3 Growth Marketing
+2. Sales, BD & Partnerships
+3. Education 3.0
+4. AI
+5. Cybersecurity
+6. DAO's
+7. Tokenomics
+8. Fundraising
+9. DeepTech
+
+Reply with the number before the topic (for example: 2,3). If you have a topic that is not listed, type that as text (for example: 2,3 and DevRel)`,
+      GOALS: `I'd love to help you find the right connections - what are you looking for? 🤝
+
+1. Startups to invest in
+2. Investors/grant programs
+3. Growth tools, strategies, and/or support
+4. Sales/BD tools, strategies and/or support
+5. Communities and/or DAO's to join
+6. New job opportunities
+
+Reply with the number before the connection type (for example: 3, 4). If you have a connection type that is not listed, type that as text (for example 3,4 and Cybersecurity).`,
+      EVENTS: `I am also able to match you with other Grow3dge members that are attending the same events and conferences.
+
+Can you share any events that you will be attending coming up (event name, date, and location)? (optional)
+
+To move on to the next question, type 'Next'`,
+      SOCIALS: `Can you share your digital links and/or social media profiles so we can share those with your matches? (optional)
+
+To move on to the next question, type 'Next'`,
+      NOTIFICATIONS: `One last thing…would you be interested in receiving notifications for project and mission collaboration opportunities initiated by SI<3> and its ecosystem partners?
+
+1. Yes!
+2. No, thanks
+3. Not sure yet, check in with me another time
+
+Please reply with the number (for example: 1)`,
+      PROFILE_TITLE: `💜 Your Grow3dge Profile:`
+    };
+  }
+  
+  // Default (no platform detected)
+  return {
+    ...baseMessages,
+    PROFILE_TITLE: `💜 Your Profile:`
+  };
 }
 

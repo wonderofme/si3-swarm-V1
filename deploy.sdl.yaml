@@ -3,10 +3,11 @@ version: "2.0"
 services:
   kaia-swarm:
     # Update version after each GitHub push (github.run_number in workflow)
-    image: ghcr.io/si3-ecosystem/kaia-swarm:v326
+    image: ghcr.io/si3-ecosystem/kaia-swarm:v327
     env:
       - DATABASE_URL=${DATABASE_URL}
       - DATABASE_TYPE=mongodb
+      - SI3_DATABASE_URL=${SI3_DATABASE_URL}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - JWT_SECRET=${JWT_SECRET}

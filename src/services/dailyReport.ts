@@ -193,7 +193,7 @@ function formatMetricsAsHTML(metrics: AgentMetrics): string {
         <div class="metric-value">${metrics.engagement.featureRequests.total}</div>
       </div>
       <div class="metric-card warning">
-        <div class="metric-label">Manual Connections</div>
+        <div class="metric-label">Manual Connection Requests</div>
         <div class="metric-value">${metrics.engagement.manualConnectionRequests.total}</div>
       </div>
       <div class="metric-card">
@@ -248,6 +248,68 @@ function formatMetricsAsHTML(metrics: AgentMetrics): string {
         <span class="stat-label">Active (Last 30 Days)</span>
         <span class="stat-value">${metrics.users.activeLast30Days}</span>
       </div>
+      ${metrics.users.byPlatform && (metrics.users.byPlatform['SI Her'].total > 0 || metrics.users.byPlatform['Grow3dge'].total > 0 || metrics.users.byPlatform['SI Her & Grow3dge'].total > 0) ? `
+      <h3 style="margin-top: 20px; color: #6366f1;">Membership Breakdown</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Platform</th>
+            <th>Total</th>
+            <th>Active (7d)</th>
+            <th>Active (30d)</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${metrics.users.byPlatform['SI Her'].total > 0 ? `
+            <tr>
+              <td><strong>SI Her Members</strong></td>
+              <td>${metrics.users.byPlatform['SI Her'].total}</td>
+              <td>${metrics.users.byPlatform['SI Her'].activeLast7Days}</td>
+              <td>${metrics.users.byPlatform['SI Her'].activeLast30Days}</td>
+            </tr>
+          ` : ''}
+          ${metrics.users.byPlatform['Grow3dge'].total > 0 ? `
+            <tr>
+              <td><strong>Grow3dge Members</strong></td>
+              <td>${metrics.users.byPlatform['Grow3dge'].total}</td>
+              <td>${metrics.users.byPlatform['Grow3dge'].activeLast7Days}</td>
+              <td>${metrics.users.byPlatform['Grow3dge'].activeLast30Days}</td>
+            </tr>
+          ` : ''}
+          ${metrics.users.byPlatform['SI Her & Grow3dge'].total > 0 ? `
+            <tr>
+              <td><strong>SI Her & Grow3dge (Both)</strong></td>
+              <td>${metrics.users.byPlatform['SI Her & Grow3dge'].total}</td>
+              <td>${metrics.users.byPlatform['SI Her & Grow3dge'].activeLast7Days}</td>
+              <td>${metrics.users.byPlatform['SI Her & Grow3dge'].activeLast30Days}</td>
+            </tr>
+          ` : ''}
+        </tbody>
+      </table>
+      ` : ''}
+      ${metrics.users.byRole && Object.keys(metrics.users.byRole).length > 0 ? `
+      <h3 style="margin-top: 20px; color: #6366f1;">Users by Role</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Role</th>
+            <th>Total</th>
+            <th>Active (7d)</th>
+            <th>Active (30d)</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${Object.entries(metrics.users.byRole).map(([role, stats]) => `
+            <tr>
+              <td><strong>${role}</strong></td>
+              <td>${stats.total}</td>
+              <td>${stats.activeLast7Days}</td>
+              <td>${stats.activeLast30Days}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+      ` : ''}
     </div>
 
     <div class="section">
@@ -380,6 +442,18 @@ Total Users:          ${metrics.users.total}
 Completed Onboarding: ${metrics.users.completedOnboarding} (${metrics.users.onboardingCompletionRate.toFixed(1)}%)
 Active (7 Days):      ${metrics.users.activeLast7Days}
 Active (30 Days):     ${metrics.users.activeLast30Days}
+${metrics.users.byPlatform && (metrics.users.byPlatform['SI Her'].total > 0 || metrics.users.byPlatform['Grow3dge'].total > 0 || metrics.users.byPlatform['SI Her & Grow3dge'].total > 0) ? `
+MEMBERSHIP BREAKDOWN:
+${metrics.users.byPlatform['SI Her'].total > 0 ? `SI Her Members: ${metrics.users.byPlatform['SI Her'].total} total, ${metrics.users.byPlatform['SI Her'].activeLast7Days} active (7d), ${metrics.users.byPlatform['SI Her'].activeLast30Days} active (30d)` : ''}
+${metrics.users.byPlatform['Grow3dge'].total > 0 ? `Grow3dge Members: ${metrics.users.byPlatform['Grow3dge'].total} total, ${metrics.users.byPlatform['Grow3dge'].activeLast7Days} active (7d), ${metrics.users.byPlatform['Grow3dge'].activeLast30Days} active (30d)` : ''}
+${metrics.users.byPlatform['SI Her & Grow3dge'].total > 0 ? `SI Her & Grow3dge (Both): ${metrics.users.byPlatform['SI Her & Grow3dge'].total} total, ${metrics.users.byPlatform['SI Her & Grow3dge'].activeLast7Days} active (7d), ${metrics.users.byPlatform['SI Her & Grow3dge'].activeLast30Days} active (30d)` : ''}
+` : ''}
+${metrics.users.byRole && Object.keys(metrics.users.byRole).length > 0 ? `
+USERS BY ROLE:
+${Object.entries(metrics.users.byRole).map(([role, stats]) => 
+  `${role}: ${stats.total} total, ${stats.activeLast7Days} active (7d), ${stats.activeLast30Days} active (30d)`
+).join('\n')}
+` : ''}
 
 💬 ENGAGEMENT
 ───────────────────────────────────────────────────────
