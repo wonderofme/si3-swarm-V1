@@ -9,6 +9,7 @@ function formatFieldName(key: string): string {
   const specialCases: Record<string, string> = {
     'userId': 'User ID',
     'onboardingCompletedAt': 'Onboarding Completed At',
+    'platformMembership': 'Platform Membership',
   };
   
   if (specialCases[key]) {
@@ -193,12 +194,28 @@ export async function sendNoMatchNotification(
     }
   }
 
+  // Determine platform membership from roles
+  const userRoles = userProfile.roles || [];
+  const isGrow3dge = userRoles.includes('partner');
+  const isSiHer = userRoles.includes('team');
+  const hasBoth = isGrow3dge && isSiHer;
+  
+  let platformMembership = 'Not specified';
+  if (hasBoth) {
+    platformMembership = 'SI Her & Grow3dge Member';
+  } else if (isGrow3dge) {
+    platformMembership = 'Grow3dge Member';
+  } else if (isSiHer) {
+    platformMembership = 'SI Her Member';
+  }
+
   // Build user info (excluding anonymous fields like gender and diversity research)
   const userInfo = {
     userId: userId,
     name: userProfile.name || 'Not provided',
     location: userProfile.location || 'Not provided',
     language: userProfile.language || 'en',
+    platformMembership: platformMembership,
     roles: userProfile.roles?.join(', ') || 'Not provided',
     interests: userProfile.interests?.join(', ') || 'Not provided',
     connectionGoals: userProfile.connectionGoals?.join(', ') || 'Not provided',

@@ -129,6 +129,7 @@ export async function processWebChatMessage(
       
       // Check if email exists in Kaia database (could be from Telegram onboarding)
       try {
+        console.log(`[Web Chat API] Checking if email ${emailText} exists in Kaia database...`);
         const db = runtime.databaseAdapter as any;
         const databaseType = (process.env.DATABASE_TYPE || 'postgres').toLowerCase();
         const isMongo = databaseType === 'mongodb' || databaseType === 'mongo';
@@ -136,11 +137,24 @@ export async function processWebChatMessage(
         let existingUser: { userId: string; profile: any } | null = null;
         
         if (isMongo && db.getDb) {
+          console.log(`[Web Chat API] Using MongoDB to check for existing email...`);
           const mongoDb = await db.getDb();
           const cacheCollection = mongoDb.collection('cache');
-          const docs = await cacheCollection.find({
-            key: { $regex: /^onboarding_/ }
-          }).toArray();
+          
+          // Add timeout and limit to prevent hanging
+          const docs = await Promise.race([
+            cacheCollection.find({
+              key: { $regex: /^onboarding_/ }
+            }).limit(1000).toArray(), // Limit to prevent huge queries
+            new Promise<any[]>((_, reject) => 
+              setTimeout(() => reject(new Error('MongoDB query timeout')), 5000)
+            )
+          ]).catch((err) => {
+            console.error(`[Web Chat API] MongoDB query error or timeout:`, err);
+            return []; // Return empty array on error/timeout
+          });
+          
+          console.log(`[Web Chat API] Found ${docs.length} onboarding entries to check`);
           
           for (const doc of docs) {
             try {
@@ -155,20 +169,34 @@ export async function processWebChatMessage(
                   userId: docUserId,
                   profile: value.profile || {}
                 };
+                console.log(`[Web Chat API] Found existing user ${docUserId} with email ${emailText}`);
                 break;
               }
             } catch (e) {
               // Skip invalid entries
+              console.log(`[Web Chat API] Skipping invalid entry: ${doc.key}`);
             }
           }
         } else if (db.query) {
-          const result = await db.query(`
-            SELECT key, value 
-            FROM cache 
-            WHERE key LIKE 'onboarding_%'
-          `);
+          console.log(`[Web Chat API] Using PostgreSQL to check for existing email...`);
+          const result = await Promise.race([
+            db.query(`
+              SELECT key, value 
+              FROM cache 
+              WHERE key LIKE 'onboarding_%'
+              LIMIT 1000
+            `),
+            new Promise<any>((_, reject) => 
+              setTimeout(() => reject(new Error('PostgreSQL query timeout')), 5000)
+            )
+          ]).catch((err) => {
+            console.error(`[Web Chat API] PostgreSQL query error or timeout:`, err);
+            return { rows: [] }; // Return empty result on error/timeout
+          });
           
-          for (const row of result.rows) {
+          console.log(`[Web Chat API] Found ${result.rows?.length || 0} onboarding entries to check`);
+          
+          for (const row of result.rows || []) {
             try {
               const docUserId = row.key.replace('onboarding_', '');
               // Skip if it's the current user
@@ -181,10 +209,12 @@ export async function processWebChatMessage(
                   userId: docUserId,
                   profile: value.profile || {}
                 };
+                console.log(`[Web Chat API] Found existing user ${docUserId} with email ${emailText}`);
                 break;
               }
             } catch (e) {
               // Skip invalid entries
+              console.log(`[Web Chat API] Skipping invalid entry: ${row.key}`);
             }
           }
         }
@@ -201,9 +231,11 @@ export async function processWebChatMessage(
             personalValues: si3PersonalValues.length > 0 ? si3PersonalValues : undefined
           });
           responseText = `${msgs.PROFILE_EXISTS}\n\n${msgs.PROFILE_CHOICE}`;
+          console.log(`[Web Chat API] Set responseText for ASK_PROFILE_CHOICE`);
         } else {
           // Email doesn't exist - continue with onboarding
           // Include roles and interests from SI<3> if found
+          console.log(`[Web Chat API] Email ${emailText} not found, continuing with new profile`);
           const profileUpdate: any = { email: emailText };
           if (si3Roles.length > 0) {
             profileUpdate.roles = si3Roles;
@@ -217,6 +249,7 @@ export async function processWebChatMessage(
           
           await updateState('ASK_LOCATION', profileUpdate);
           responseText = msgs.LOCATION;
+          console.log(`[Web Chat API] Set responseText for ASK_LOCATION`);
           if (si3Roles.length > 0) {
             console.log(`[Web Chat API] User roles from SI<3>: ${si3Roles.join(', ')}`);
           }
@@ -226,6 +259,7 @@ export async function processWebChatMessage(
         // On error, continue with onboarding
         await updateState('ASK_LOCATION', { email: emailText });
         responseText = msgs.LOCATION;
+        console.log(`[Web Chat API] Error occurred, set responseText to LOCATION message`);
       }
     } else if (state.step === 'ASK_PROFILE_CHOICE') {
       const choice = messageText.trim();
