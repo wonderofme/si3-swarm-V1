@@ -1,5 +1,5 @@
 import { AgentRuntime } from '@elizaos/core';
-import { getMessages } from '../plugins/onboarding/translations.js';
+import { getMessages, getPlatformMessages } from '../plugins/onboarding/translations.js';
 import { findSi3UserByEmail } from './si3Database.js';
 
 // API key for authentication (should be set in environment)
@@ -27,6 +27,48 @@ export interface ChatResponse {
 export function validateApiKey(providedKey: string | undefined): boolean {
   if (!providedKey) return false;
   return providedKey === API_KEY;
+}
+
+/**
+ * Parse roles/interests/goals from user input (matches Telegram format: "1,4 and xx")
+ */
+function parseNumberedList(text: string, numberMap: Record<string, string>): string[] {
+  const parts = text.split(/[,\s]+and\s+/i);
+  const numbers = parts[0].split(/[,\s]+/).filter(s => /^\d+$/.test(s.trim()));
+  const textPart = parts[1] || '';
+  const mapped = numbers.map(n => numberMap[n.trim()]).filter(Boolean);
+  const textItems = textPart ? [textPart.trim()] : [];
+  return [...mapped, ...textItems];
+}
+
+/**
+ * Generate confirmation summary text (matches Telegram flow)
+ */
+function generateConfirmationSummary(profile: any, msgs: any): string {
+  return `${msgs.SUMMARY_TITLE}\n\n` +
+    `${msgs.SUMMARY_NAME} ${profile.name || msgs.SUMMARY_NOT_PROVIDED}\n` +
+    `${msgs.SUMMARY_LOCATION} ${profile.location || msgs.SUMMARY_NOT_PROVIDED}\n` +
+    `${msgs.SUMMARY_EMAIL} ${profile.email || msgs.SUMMARY_NOT_PROVIDED}\n` +
+    `${msgs.SUMMARY_ROLES} ${(profile.roles || []).join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
+    `${msgs.SUMMARY_INTERESTS} ${(profile.interests || []).join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
+    `${msgs.SUMMARY_GOALS} ${(profile.connectionGoals || []).join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
+    `${msgs.SUMMARY_EVENTS} ${(profile.events || []).join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
+    `${msgs.SUMMARY_SOCIALS} ${(profile.socials || []).join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
+    `${msgs.SUMMARY_TELEGRAM} ${profile.telegramHandle ? '@' + profile.telegramHandle : msgs.SUMMARY_NOT_PROVIDED}\n` +
+    `${msgs.SUMMARY_GENDER} ${profile.gender || msgs.SUMMARY_NOT_PROVIDED}\n` +
+    (profile.diversityResearchInterest ? `${msgs.SUMMARY_DIVERSITY} ${profile.diversityResearchInterest}\n` : '') +
+    `${msgs.SUMMARY_NOTIFICATIONS} ${profile.notifications || msgs.SUMMARY_NOT_PROVIDED}\n\n` +
+    `${msgs.EDIT_NAME}\n` +
+    `${msgs.EDIT_LOCATION}\n` +
+    `${msgs.EDIT_ROLES}\n` +
+    `${msgs.EDIT_INTERESTS}\n` +
+    `${msgs.EDIT_GOALS}\n` +
+    `${msgs.EDIT_EVENTS}\n` +
+    `${msgs.EDIT_SOCIALS}\n` +
+    `${msgs.EDIT_TELEGRAM}\n` +
+    `${msgs.EDIT_GENDER}\n` +
+    `${msgs.EDIT_NOTIFICATIONS}\n\n` +
+    `${msgs.CONFIRM}`;
 }
 
 /**
@@ -74,11 +116,59 @@ export async function processWebChatMessage(
     
     let responseText = '';
     const lowerText = messageText.toLowerCase().trim();
-    const msgs = getMessages(state.profile.language || 'en');
+    const userLang = state.profile.language || 'en';
+    const userRoles = state.profile.roles || [];
+    const msgs = getPlatformMessages(userLang, userRoles);
     
     // Check for restart commands
     const isRestart = lowerText.includes('restart') || lowerText.includes('start over') || lowerText.includes('begin again');
     const isNext = lowerText === 'next' || lowerText === 'skip';
+    
+    // ==================== FEATURE REQUEST HANDLING ====================
+    if (state.step === 'AWAITING_FEATURE_DETAILS') {
+      // User is providing feature request details
+      try {
+        const { sendFeatureRequest } = await import('./featureRequest.js');
+        await sendFeatureRequest(userId, state.profile.name || 'Anonymous', messageText, messageText);
+        
+        // Also save to database as backup
+        try {
+          const db = runtime.databaseAdapter as any;
+          if (db && db.query) {
+            const { v4: uuidv4 } = await import('uuid');
+            await db.query(
+              `INSERT INTO feature_requests (id, user_id, user_name, request_text, created_at) VALUES ($1, $2::text, $3, $4, NOW())`,
+              [uuidv4(), userId, state.profile.name || 'Anonymous', messageText]
+            );
+          } else if (db && db.getDb) {
+            const mongoDb = await db.getDb();
+            const featureCollection = mongoDb.collection('feature_requests');
+            await featureCollection.insertOne({
+              userId: userId,
+              userName: state.profile.name || 'Anonymous',
+              requestText: messageText,
+              createdAt: new Date()
+            });
+          }
+        } catch (dbErr) {
+          console.log('[Web Chat API] Could not save feature request to DB:', dbErr);
+        }
+        
+        await updateState('COMPLETED', {});
+        const langResponses: Record<string, string> = {
+          en: "Thank you for your feature request! I've sent it to our team at tech@si3.space. We'll review it and work on adding it soon. 💜",
+          es: "¡Gracias por tu solicitud de función! La he enviado a nuestro equipo en tech@si3.space. La revisaremos y trabajaremos en agregarla pronto. 💜",
+          pt: "Obrigado pela sua solicitação de recurso! Enviei para nossa equipe em tech@si3.space. Vamos revisá-la e trabalhar para adicioná-la em breve. 💜",
+          fr: "Merci pour votre demande de fonctionnalité! Je l'ai envoyée à notre équipe à tech@si3.space. Nous l'examinerons et travaillerons à l'ajouter bientôt. 💜"
+        };
+        responseText = langResponses[userLang] || langResponses.en;
+        return { success: true, response: responseText, userId };
+      } catch (error: any) {
+        console.error('[Web Chat API] Error sending feature request:', error);
+        responseText = "I encountered an issue sending your feature request. Please try again later. 💜";
+        return { success: true, response: responseText, userId };
+      }
+    }
     
     // ==================== ONBOARDING FLOW ====================
     if (isRestart || state.step === 'NONE') {
@@ -92,11 +182,19 @@ export async function processWebChatMessage(
       else if (lowerText.includes('4') || lowerText.includes('français') || lowerText.includes('french')) lang = 'fr';
       
       await updateState('ASK_NAME', { language: lang });
-      const newMsgs = getMessages(lang);
+      const newMsgs = getPlatformMessages(lang, []);
       responseText = newMsgs.GREETING;
     } else if (state.step === 'ASK_NAME') {
-      await updateState('ASK_EMAIL', { name: messageText.trim() });
-      responseText = msgs.EMAIL;
+      const isEditing = state.profile.isEditing || false;
+      const name = messageText.trim();
+      if (isEditing) {
+        // If editing, go back to CONFIRMATION
+        await updateState('CONFIRMATION', { name, isEditing: false, editingField: undefined });
+        responseText = generateConfirmationSummary({ ...state.profile, name }, msgs);
+      } else {
+        await updateState('ASK_EMAIL', { name });
+        responseText = msgs.EMAIL;
+      }
     } else if (state.step === 'ASK_EMAIL') {
       // Validate email format
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -105,6 +203,8 @@ export async function processWebChatMessage(
         responseText = `${msgs.EMAIL}\n\n⚠️ Please enter a valid email address (e.g., name@example.com)`;
         return { success: true, response: responseText };
       }
+      
+      const isEditing = state.profile.isEditing || false;
       
       // First, check SI<3> database for user roles
       let si3User = null;
@@ -219,47 +319,420 @@ export async function processWebChatMessage(
           }
         }
         
-        if (existingUser) {
-          // Email exists - ask if they want to continue or recreate
-          console.log(`[Web Chat API] Email ${emailText} exists for user ${existingUser.userId}`);
-          await updateState('ASK_PROFILE_CHOICE', {
-            email: emailText,
-            existingUserId: existingUser.userId,
-            existingProfile: existingUser.profile,
-            roles: si3Roles.length > 0 ? si3Roles : undefined,
-            interests: si3Interests.length > 0 ? si3Interests : undefined,
-            personalValues: si3PersonalValues.length > 0 ? si3PersonalValues : undefined
-          });
-          responseText = `${msgs.PROFILE_EXISTS}\n\n${msgs.PROFILE_CHOICE}`;
-          console.log(`[Web Chat API] Set responseText for ASK_PROFILE_CHOICE`);
+        // Handle editing case first
+        if (isEditing) {
+          // If editing, go back to CONFIRMATION (skip email existence check)
+          await updateState('CONFIRMATION', { email: emailText, isEditing: false, editingField: undefined });
+          responseText = generateConfirmationSummary({ ...state.profile, email: emailText }, msgs);
         } else {
-          // Email doesn't exist - continue with onboarding
-          // Include roles and interests from SI<3> if found
-          console.log(`[Web Chat API] Email ${emailText} not found, continuing with new profile`);
-          const profileUpdate: any = { email: emailText };
-          if (si3Roles.length > 0) {
-            profileUpdate.roles = si3Roles;
-          }
-          if (si3Interests.length > 0) {
-            profileUpdate.interests = si3Interests;
-          }
-          if (si3PersonalValues.length > 0) {
-            profileUpdate.personalValues = si3PersonalValues;
-          }
-          
-          await updateState('ASK_LOCATION', profileUpdate);
-          responseText = msgs.LOCATION;
-          console.log(`[Web Chat API] Set responseText for ASK_LOCATION`);
-          if (si3Roles.length > 0) {
-            console.log(`[Web Chat API] User roles from SI<3>: ${si3Roles.join(', ')}`);
+          // Check if email exists (only if not editing) - already checked in try block above
+          if (existingUser && !state.profile.isEditing) {
+            // Email exists - ask if they want to continue or recreate
+            console.log(`[Web Chat API] Email ${emailText} exists for user ${existingUser.userId}`);
+            await updateState('ASK_PROFILE_CHOICE', {
+              email: emailText,
+              existingUserId: existingUser.userId,
+              existingProfile: existingUser.profile,
+              roles: si3Roles.length > 0 ? si3Roles : undefined,
+              interests: si3Interests.length > 0 ? si3Interests : undefined,
+              personalValues: si3PersonalValues.length > 0 ? si3PersonalValues : undefined
+            });
+            responseText = `${msgs.PROFILE_EXISTS}\n\n${msgs.PROFILE_CHOICE}`;
+            console.log(`[Web Chat API] Set responseText for ASK_PROFILE_CHOICE`);
+          } else if (!state.profile.isEditing) {
+            // Email doesn't exist - continue with onboarding
+            // Include roles and interests from SI<3> if found
+            console.log(`[Web Chat API] Email ${emailText} not found, continuing with new profile`);
+            const profileUpdate: any = { email: emailText };
+            if (si3Roles.length > 0) {
+              profileUpdate.roles = si3Roles;
+            }
+            if (si3Interests.length > 0) {
+              profileUpdate.interests = si3Interests;
+            }
+            if (si3PersonalValues.length > 0) {
+              profileUpdate.personalValues = si3PersonalValues;
+            }
+            
+            await updateState('ASK_LOCATION', profileUpdate);
+            responseText = msgs.LOCATION;
           }
         }
       } catch (error: any) {
         console.error('[Web Chat API] Error checking email:', error);
         // On error, continue with onboarding
-        await updateState('ASK_LOCATION', { email: emailText });
-        responseText = msgs.LOCATION;
-        console.log(`[Web Chat API] Error occurred, set responseText to LOCATION message`);
+        if (isEditing) {
+          // If editing, go back to CONFIRMATION
+          await updateState('CONFIRMATION', { email: emailText, isEditing: false, editingField: undefined });
+          responseText = generateConfirmationSummary({ ...state.profile, email: emailText }, msgs);
+        } else {
+          await updateState('ASK_LOCATION', { email: emailText });
+          responseText = msgs.LOCATION;
+        }
+        console.log(`[Web Chat API] Error occurred, set responseText to ${isEditing ? 'CONFIRMATION' : 'LOCATION'} message`);
+      }
+    } else if (state.step === 'ASK_LOCATION') {
+      const isEditing = state.profile.isEditing || false;
+      const location = isNext ? undefined : messageText.trim();
+      if (isEditing) {
+        // If editing, go back to CONFIRMATION
+        await updateState('CONFIRMATION', { location, isEditing: false, editingField: undefined });
+        responseText = generateConfirmationSummary({ ...state.profile, location }, msgs);
+      } else {
+        await updateState('ASK_ROLE', { location });
+        responseText = msgs.ROLES;
+      }
+    } else if (state.step === 'ASK_ROLE') {
+      const isEditing = state.profile.isEditing || false;
+      // Parse roles like Telegram: "1,4 and xx" -> ['Founder/Builder', 'Community Leader', 'xx']
+      const roleMap: Record<string, string> = {
+        '1': 'Founder/Builder', '2': 'Marketing/BD/Partnerships', '3': 'DAO Council Member/Delegate',
+        '4': 'Community Leader', '5': 'Investor/Grant Program Operator', '6': 'Early Web3 Explorer',
+        '7': 'Media', '8': 'Artist', '9': 'Developer', '10': 'Other'
+      };
+      const roles = parseNumberedList(messageText, roleMap);
+      if (isEditing) {
+        // If editing, go back to CONFIRMATION
+        await updateState('CONFIRMATION', { roles, isEditing: false, editingField: undefined });
+        responseText = generateConfirmationSummary({ ...state.profile, roles }, msgs);
+      } else {
+        await updateState('ASK_INTERESTS', { roles });
+        responseText = msgs.INTERESTS;
+      }
+    } else if (state.step === 'ASK_INTERESTS') {
+      const isEditing = state.profile.isEditing || false;
+      // Parse interests like Telegram: "2,3 and DevRel" -> ['Business Development & Partnerships', 'Education 3.0', 'DevRel']
+      const interestMap: Record<string, string> = {
+        '1': 'Web3 Growth Marketing', '2': 'Business Development & Partnerships', '3': 'Education 3.0',
+        '4': 'AI', '5': 'Cybersecurity', '6': 'DAOs', '7': 'Tokenomics', '8': 'Fundraising', '9': 'Other'
+      };
+      const interests = parseNumberedList(messageText, interestMap);
+      if (isEditing) {
+        // If editing, go back to CONFIRMATION
+        await updateState('CONFIRMATION', { interests, isEditing: false, editingField: undefined });
+        responseText = generateConfirmationSummary({ ...state.profile, interests }, msgs);
+      } else {
+        await updateState('ASK_CONNECTION_GOALS', { interests });
+        responseText = msgs.GOALS;
+      }
+    } else if (state.step === 'ASK_CONNECTION_GOALS') {
+      const isEditing = state.profile.isEditing || false;
+      // Parse goals like Telegram: "3,4 and Cybersecurity" -> ['Growth tools...', 'Sales/BD tools...', 'Cybersecurity']
+      const goalMap: Record<string, string> = {
+        '1': 'Startups to invest in',
+        '2': 'Investors/grant programs',
+        '3': 'Growth tools, strategies, and/or support',
+        '4': 'Sales/BD tools, strategies and/or support',
+        '5': "Communities and/or DAO's to join",
+        '6': 'New job opportunities'
+      };
+      const connectionGoals = parseNumberedList(messageText, goalMap);
+      if (isEditing) {
+        // If editing, go back to CONFIRMATION
+        await updateState('CONFIRMATION', { connectionGoals, isEditing: false, editingField: undefined });
+        responseText = generateConfirmationSummary({ ...state.profile, connectionGoals }, msgs);
+      } else {
+        await updateState('ASK_EVENTS', { connectionGoals });
+        responseText = msgs.EVENTS;
+      }
+    } else if (state.step === 'ASK_EVENTS') {
+      const isEditing = state.profile.isEditing || false;
+      const events = isNext ? undefined : messageText.split(',').map((r: string) => r.trim()).filter((r: string) => r);
+      if (isEditing) {
+        // If editing, go back to CONFIRMATION
+        await updateState('CONFIRMATION', { events, isEditing: false, editingField: undefined });
+        responseText = generateConfirmationSummary({ ...state.profile, events }, msgs);
+      } else {
+        await updateState('ASK_SOCIALS', { events });
+        responseText = msgs.SOCIALS;
+      }
+    } else if (state.step === 'ASK_SOCIALS') {
+      const isEditing = state.profile.isEditing || false;
+      const socials = isNext ? undefined : messageText.split(',').map((r: string) => r.trim()).filter((r: string) => r);
+      if (isEditing) {
+        // If editing, go back to CONFIRMATION
+        await updateState('CONFIRMATION', { socials, isEditing: false, editingField: undefined });
+        responseText = generateConfirmationSummary({ ...state.profile, socials }, msgs);
+      } else {
+        await updateState('ASK_TELEGRAM_HANDLE', { socials });
+        responseText = msgs.TELEGRAM;
+      }
+    } else if (state.step === 'ASK_TELEGRAM_HANDLE') {
+      const isEditing = state.profile.isEditing || false;
+      const telegramHandle = isNext ? undefined : messageText.replace('@', '').trim();
+      if (isEditing) {
+        // If editing, go back to CONFIRMATION
+        await updateState('CONFIRMATION', { telegramHandle, isEditing: false, editingField: undefined });
+        responseText = generateConfirmationSummary({ ...state.profile, telegramHandle }, msgs);
+      } else {
+        await updateState('ASK_GENDER', { telegramHandle });
+        responseText = msgs.GENDER;
+      }
+    } else if (state.step === 'ASK_GENDER') {
+      const isEditing = state.profile.isEditing || false;
+      
+      // Check if user wants to participate in diversity research (matches Telegram)
+      const saidYes = lowerText.includes('yes') || lowerText.includes('sí') || lowerText.includes('sim') || lowerText.includes('oui');
+      const saidNo = lowerText.includes('no') && !lowerText.includes('not sure');
+      const wantsDiversityResearch = saidYes && !saidNo && !isNext && lowerText.includes('diversity');
+      
+      let diversityResearchInterest: string | undefined;
+      if (wantsDiversityResearch) {
+        diversityResearchInterest = 'Yes';
+        // Track in MongoDB for diversity research (same as Telegram)
+        try {
+          const db = runtime.databaseAdapter as any;
+          if (db && db.getDb) {
+            const mongoDb = await db.getDb();
+            const diversityCollection = mongoDb.collection('diversity_research');
+            const existing = await diversityCollection.findOne({ userId: userId });
+            if (!existing) {
+              await diversityCollection.insertOne({
+                userId: userId,
+                email: state.profile.email || null,
+                interestedAt: new Date(),
+                status: 'pending'
+              });
+              console.log('[Web Chat API] ✅ Tracked diversity research interest for user:', userId);
+            } else {
+              await diversityCollection.updateOne(
+                { userId: userId },
+                { $set: { interestedAt: new Date(), status: 'pending' } }
+              );
+              console.log('[Web Chat API] ✅ Updated diversity research interest');
+            }
+          }
+        } catch (error) {
+          console.error('[Web Chat API] Error tracking diversity research interest:', error);
+          // Don't fail the flow if tracking fails
+        }
+      } else if (saidNo && !isNext) {
+        diversityResearchInterest = 'No';
+        // Remove from diversity research tracking if they said No
+        try {
+          const db = runtime.databaseAdapter as any;
+          if (db && db.getDb) {
+            const mongoDb = await db.getDb();
+            const diversityCollection = mongoDb.collection('diversity_research');
+            await diversityCollection.deleteOne({ userId: userId });
+            console.log('[Web Chat API] ✅ Removed from diversity research tracking');
+          }
+        } catch (error) {
+          console.error('[Web Chat API] Error removing from tracking:', error);
+        }
+      }
+      
+      let gender = isNext ? undefined : messageText.trim();
+      if (lowerText.includes('1') || lowerText.includes('female')) gender = 'Female';
+      else if (lowerText.includes('2') || lowerText.includes('male')) gender = 'Male';
+      else if (lowerText.includes('3') || lowerText.includes('non-binary')) gender = 'Non-binary';
+      else if (lowerText.includes('4') || lowerText.includes('prefer not')) gender = 'Prefer not to say';
+      
+      if (isEditing) {
+        // If editing, go back to CONFIRMATION
+        await updateState('CONFIRMATION', { gender, diversityResearchInterest, isEditing: false, editingField: undefined });
+        responseText = generateConfirmationSummary({ ...state.profile, gender, diversityResearchInterest }, msgs);
+      } else {
+        await updateState('ASK_NOTIFICATIONS', { gender, diversityResearchInterest });
+        responseText = msgs.NOTIFICATIONS;
+      }
+    } else if (state.step === 'ASK_NOTIFICATIONS') {
+      let notifications = 'Not sure';
+      if (lowerText.includes('1') || lowerText.includes('yes')) notifications = 'Yes';
+      else if (lowerText.includes('2') || lowerText.includes('no')) notifications = 'No';
+      else if (lowerText.includes('3')) notifications = 'Check later';
+      
+      await updateState('CONFIRMATION', { notifications });
+      responseText = generateConfirmationSummary({ ...state.profile, notifications }, msgs);
+    } else if (state.step === 'AWAITING_UPDATE_FIELD') {
+      // User is choosing which field to update (matches Telegram)
+      const updateFields: Record<string, { step: string, prompt: string, number: number }> = {
+        'name': { step: 'UPDATING_NAME', prompt: 'What would you like to change your name to?', number: 1 },
+        'location': { step: 'UPDATING_LOCATION', prompt: 'What is your new location (city and country)?', number: 2 },
+        'roles': { step: 'UPDATING_ROLES', prompt: msgs.ROLES, number: 3 },
+        'interests': { step: 'UPDATING_INTERESTS', prompt: msgs.INTERESTS, number: 4 },
+        'goals': { step: 'UPDATING_GOALS', prompt: msgs.GOALS, number: 5 },
+        'events': { step: 'UPDATING_EVENTS', prompt: 'What events will you be attending? (event name, date, location)', number: 6 },
+        'socials': { step: 'UPDATING_SOCIALS', prompt: 'Share your social media links:', number: 7 },
+        'telegram': { step: 'UPDATING_TELEGRAM', prompt: 'What is your Telegram handle? (e.g., @username)', number: 8 },
+        'diversity': { step: 'UPDATING_DIVERSITY', prompt: 'Would you like to be (anonymously) included within our diversity research?\n\n1. Yes\n2. No\n3. Not sure yet\n\nPlease reply with the number (for example: 1)', number: 9 },
+        'notifications': { step: 'UPDATING_NOTIFICATIONS', prompt: msgs.NOTIFICATIONS, number: 10 }
+      };
+      
+      // Check for number input (1-10)
+      const numberMatch = lowerText.match(/\b([1-9]|10)\b/);
+      let fieldToUpdate: string | null = null;
+      
+      if (numberMatch) {
+        const fieldNumber = parseInt(numberMatch[1]);
+        const fieldEntry = Object.entries(updateFields).find(([_, info]) => info.number === fieldNumber);
+        if (fieldEntry) {
+          fieldToUpdate = fieldEntry[0];
+        }
+      } else {
+        // Check for field name in text
+        for (const [field, _] of Object.entries(updateFields)) {
+          if (lowerText.includes(field) || 
+              (field === 'name' && (lowerText.includes('name') || lowerText.includes('nombre'))) ||
+              (field === 'location' && (lowerText.includes('location') || lowerText.includes('ubicación') || lowerText.includes('localização'))) ||
+              (field === 'roles' && (lowerText.includes('role') || lowerText.includes('rol'))) ||
+              (field === 'interests' && (lowerText.includes('interest') || lowerText.includes('interés'))) ||
+              (field === 'goals' && lowerText.includes('goal')) ||
+              (field === 'events' && (lowerText.includes('event') || lowerText.includes('conference'))) ||
+              (field === 'socials' && (lowerText.includes('social') || lowerText.includes('link'))) ||
+              (field === 'telegram' && lowerText.includes('telegram')) ||
+              (field === 'diversity' && (lowerText.includes('diversity') || lowerText.includes('diversidad'))) ||
+              (field === 'notifications' && (lowerText.includes('notification') || lowerText.includes('collab')))) {
+            fieldToUpdate = field;
+            break;
+          }
+        }
+      }
+      
+      if (fieldToUpdate) {
+        const updateInfo = updateFields[fieldToUpdate];
+        await updateState(updateInfo.step, {});
+        responseText = updateInfo.prompt;
+      } else {
+        // Invalid - show list again
+        responseText = `What would you like to update? 📝\n\n` +
+          `1. Name\n` +
+          `2. Location\n` +
+          `3. Professional role(s)\n` +
+          `4. Professional interests\n` +
+          `5. Professional goals\n` +
+          `6. Events & conferences attending\n` +
+          `7. Personal social and/or digital links\n` +
+          `8. Telegram handle\n` +
+          `9. Diversity research interest\n` +
+          `10. Collaboration notifications\n\n` +
+          `Just type the field number(s) (e.g. 1, 3).`;
+      }
+    } else if (state.step.startsWith('UPDATING_')) {
+      // Handle update for specific field (matches Telegram)
+      const fieldBeingUpdated = state.step.replace('UPDATING_', '').toLowerCase();
+      let updateValue: any = messageText.trim();
+      
+      // Parse based on field type
+      if (['roles', 'interests', 'goals', 'events', 'socials'].includes(fieldBeingUpdated)) {
+        if (fieldBeingUpdated === 'roles') {
+          const roleMap: Record<string, string> = {
+            '1': 'Founder/Builder', '2': 'Marketing/BD/Partnerships', '3': 'DAO Council Member/Delegate',
+            '4': 'Community Leader', '5': 'Investor/Grant Program Operator', '6': 'Early Web3 Explorer',
+            '7': 'Media', '8': 'Artist', '9': 'Developer', '10': 'Other'
+          };
+          updateValue = parseNumberedList(messageText, roleMap);
+        } else if (fieldBeingUpdated === 'interests') {
+          const interestMap: Record<string, string> = {
+            '1': 'Web3 Growth Marketing', '2': 'Business Development & Partnerships', '3': 'Education 3.0',
+            '4': 'AI', '5': 'Cybersecurity', '6': 'DAOs', '7': 'Tokenomics', '8': 'Fundraising', '9': 'Other'
+          };
+          updateValue = parseNumberedList(messageText, interestMap);
+        } else if (fieldBeingUpdated === 'goals') {
+          const goalMap: Record<string, string> = {
+            '1': 'Startups to invest in',
+            '2': 'Investors/grant programs',
+            '3': 'Growth tools, strategies, and/or support',
+            '4': 'Sales/BD tools, strategies and/or support',
+            '5': "Communities and/or DAO's to join",
+            '6': 'New job opportunities'
+          };
+          updateValue = parseNumberedList(messageText, goalMap);
+        } else {
+          updateValue = messageText.split(',').map((s: string) => s.trim()).filter((s: string) => s);
+        }
+      } else if (fieldBeingUpdated === 'notifications') {
+        if (lowerText.includes('1') || lowerText.includes('yes')) updateValue = 'Yes';
+        else if (lowerText.includes('2') || lowerText.includes('no')) updateValue = 'No';
+        else if (lowerText.includes('3')) updateValue = 'Check later';
+      } else if (fieldBeingUpdated === 'diversity') {
+        // Handle diversity research interest
+        if (lowerText.includes('1') || lowerText.includes('yes')) {
+          updateValue = 'Yes';
+          // Track in MongoDB for diversity research
+          try {
+            const db = runtime.databaseAdapter as any;
+            if (db && db.getDb) {
+              const mongoDb = await db.getDb();
+              const diversityCollection = mongoDb.collection('diversity_research');
+              const existing = await diversityCollection.findOne({ userId: userId });
+              if (!existing) {
+                await diversityCollection.insertOne({
+                  userId: userId,
+                  email: state.profile.email || null,
+                  interestedAt: new Date(),
+                  status: 'pending'
+                });
+                console.log('[Web Chat API] ✅ Tracked diversity research interest for user:', userId);
+              } else {
+                await diversityCollection.updateOne(
+                  { userId: userId },
+                  { $set: { interestedAt: new Date(), status: 'pending' } }
+                );
+                console.log('[Web Chat API] ✅ Updated diversity research interest');
+              }
+            }
+          } catch (error) {
+            console.error('[Web Chat API] Error tracking diversity research interest:', error);
+          }
+        } else if (lowerText.includes('2') || lowerText.includes('no')) {
+          updateValue = 'No';
+          // Remove from diversity research tracking
+          try {
+            const db = runtime.databaseAdapter as any;
+            if (db && db.getDb) {
+              const mongoDb = await db.getDb();
+              const diversityCollection = mongoDb.collection('diversity_research');
+              await diversityCollection.deleteOne({ userId: userId });
+              console.log('[Web Chat API] ✅ Removed from diversity research tracking');
+            }
+          } catch (error) {
+            console.error('[Web Chat API] Error removing from tracking:', error);
+          }
+        } else if (lowerText.includes('3') || lowerText.includes('not sure')) {
+          updateValue = 'Not sure yet';
+        }
+      } else if (fieldBeingUpdated === 'telegram') {
+        updateValue = messageText.trim().replace('@', '');
+      }
+      
+      // Map field names to profile keys
+      const fieldToKey: Record<string, string> = {
+        'name': 'name',
+        'location': 'location',
+        'roles': 'roles',
+        'interests': 'interests',
+        'goals': 'connectionGoals',
+        'events': 'events',
+        'socials': 'socials',
+        'telegram': 'telegramHandle',
+        'diversity': 'diversityResearchInterest',
+        'notifications': 'notifications'
+      };
+      
+      const profileKey = fieldToKey[fieldBeingUpdated];
+      if (profileKey) {
+        // Update the profile
+        const { updateOnboardingStep } = await import('../plugins/onboarding/utils.js');
+        const updatedProfile = { ...state.profile, [profileKey]: updateValue };
+        await updateOnboardingStep(
+          runtime,
+          userId as any,
+          userId as any,
+          'COMPLETED',
+          updatedProfile
+        );
+        await updateState('COMPLETED', updatedProfile);
+        
+        const langResponses: Record<string, string> = {
+          en: `✅ Updated! Your ${fieldBeingUpdated} has been changed.`,
+          es: `✅ ¡Actualizado! Tu ${fieldBeingUpdated} ha sido cambiado.`,
+          pt: `✅ Atualizado! Seu ${fieldBeingUpdated} foi alterado.`,
+          fr: `✅ Mis à jour! Votre ${fieldBeingUpdated} a été modifié.`
+        };
+        responseText = langResponses[userLang] || langResponses.en;
+      } else {
+        responseText = "I couldn't update that field. Please try again.";
       }
     } else if (state.step === 'ASK_PROFILE_CHOICE') {
       const choice = messageText.trim();
@@ -312,55 +785,384 @@ export async function processWebChatMessage(
         // Invalid choice - ask again
         responseText = `${msgs.PROFILE_EXISTS}\n\n${msgs.PROFILE_CHOICE}`;
       }
-    } else if (state.step === 'ASK_LOCATION') {
-      const location = isNext ? undefined : messageText.trim();
-      await updateState('ASK_ROLE', { location });
-      responseText = msgs.ROLES;
     } else if (state.step === 'ASK_ROLE') {
-      const roles = messageText.split(',').map((r: string) => r.trim()).filter((r: string) => r);
-      await updateState('ASK_INTERESTS', { roles });
-      responseText = msgs.INTERESTS;
+      const isEditing = state.profile.isEditing || false;
+      // Parse roles like Telegram: "1,4 and xx" -> ['Founder/Builder', 'Community Leader', 'xx']
+      const roleMap: Record<string, string> = {
+        '1': 'Founder/Builder', '2': 'Marketing/BD/Partnerships', '3': 'DAO Council Member/Delegate',
+        '4': 'Community Leader', '5': 'Investor/Grant Program Operator', '6': 'Early Web3 Explorer',
+        '7': 'Media', '8': 'Artist', '9': 'Developer', '10': 'Other'
+      };
+      const roles = parseNumberedList(messageText, roleMap);
+      if (isEditing) {
+        // If editing, go back to CONFIRMATION
+        await updateState('CONFIRMATION', { roles, isEditing: false, editingField: undefined });
+        // Regenerate summary
+        const summaryText = `${msgs.SUMMARY_TITLE}\n\n` +
+          `${msgs.SUMMARY_NAME} ${state.profile.name || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_LOCATION} ${state.profile.location || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_EMAIL} ${state.profile.email || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_ROLES} ${roles.join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_INTERESTS} ${(state.profile.interests || []).join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_GOALS} ${(state.profile.connectionGoals || []).join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_EVENTS} ${(state.profile.events || []).join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_SOCIALS} ${(state.profile.socials || []).join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_TELEGRAM} ${state.profile.telegramHandle ? '@' + state.profile.telegramHandle : msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_GENDER} ${state.profile.gender || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_NOTIFICATIONS} ${state.profile.notifications || msgs.SUMMARY_NOT_PROVIDED}\n\n` +
+          `${msgs.EDIT_NAME}\n` +
+          `${msgs.EDIT_LOCATION}\n` +
+          `${msgs.EDIT_ROLES}\n` +
+          `${msgs.EDIT_INTERESTS}\n` +
+          `${msgs.EDIT_GOALS}\n` +
+          `${msgs.EDIT_EVENTS}\n` +
+          `${msgs.EDIT_SOCIALS}\n` +
+          `${msgs.EDIT_TELEGRAM}\n` +
+          `${msgs.EDIT_GENDER}\n` +
+          `${msgs.EDIT_NOTIFICATIONS}\n\n` +
+          `${msgs.CONFIRM}`;
+        responseText = summaryText;
+      } else {
+        await updateState('ASK_INTERESTS', { roles });
+        responseText = msgs.INTERESTS;
+      }
     } else if (state.step === 'ASK_INTERESTS') {
-      const interests = messageText.split(',').map((r: string) => r.trim()).filter((r: string) => r);
-      await updateState('ASK_CONNECTION_GOALS', { interests });
-      responseText = msgs.GOALS;
+      const isEditing = state.profile.isEditing || false;
+      // Parse interests like Telegram: "2,3 and DevRel" -> ['Business Development & Partnerships', 'Education 3.0', 'DevRel']
+      const interestMap: Record<string, string> = {
+        '1': 'Web3 Growth Marketing', '2': 'Business Development & Partnerships', '3': 'Education 3.0',
+        '4': 'AI', '5': 'Cybersecurity', '6': 'DAOs', '7': 'Tokenomics', '8': 'Fundraising', '9': 'Other'
+      };
+      const interests = parseNumberedList(messageText, interestMap);
+      if (isEditing) {
+        // If editing, go back to CONFIRMATION
+        await updateState('CONFIRMATION', { interests, isEditing: false, editingField: undefined });
+        // Regenerate summary
+        const summaryText = `${msgs.SUMMARY_TITLE}\n\n` +
+          `${msgs.SUMMARY_NAME} ${state.profile.name || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_LOCATION} ${state.profile.location || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_EMAIL} ${state.profile.email || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_ROLES} ${(state.profile.roles || []).join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_INTERESTS} ${interests.join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_GOALS} ${(state.profile.connectionGoals || []).join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_EVENTS} ${(state.profile.events || []).join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_SOCIALS} ${(state.profile.socials || []).join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_TELEGRAM} ${state.profile.telegramHandle ? '@' + state.profile.telegramHandle : msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_GENDER} ${state.profile.gender || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_NOTIFICATIONS} ${state.profile.notifications || msgs.SUMMARY_NOT_PROVIDED}\n\n` +
+          `${msgs.EDIT_NAME}\n` +
+          `${msgs.EDIT_LOCATION}\n` +
+          `${msgs.EDIT_ROLES}\n` +
+          `${msgs.EDIT_INTERESTS}\n` +
+          `${msgs.EDIT_GOALS}\n` +
+          `${msgs.EDIT_EVENTS}\n` +
+          `${msgs.EDIT_SOCIALS}\n` +
+          `${msgs.EDIT_TELEGRAM}\n` +
+          `${msgs.EDIT_GENDER}\n` +
+          `${msgs.EDIT_NOTIFICATIONS}\n\n` +
+          `${msgs.CONFIRM}`;
+        responseText = summaryText;
+      } else {
+        await updateState('ASK_CONNECTION_GOALS', { interests });
+        responseText = msgs.GOALS;
+      }
     } else if (state.step === 'ASK_CONNECTION_GOALS') {
-      const connectionGoals = messageText.split(',').map((r: string) => r.trim()).filter((r: string) => r);
-      await updateState('ASK_EVENTS', { connectionGoals });
-      responseText = msgs.EVENTS;
+      const isEditing = state.profile.isEditing || false;
+      // Parse goals like Telegram: "3,4 and Cybersecurity" -> ['Growth tools...', 'Sales/BD tools...', 'Cybersecurity']
+      const goalMap: Record<string, string> = {
+        '1': 'Startups to invest in',
+        '2': 'Investors/grant programs',
+        '3': 'Growth tools, strategies, and/or support',
+        '4': 'Sales/BD tools, strategies and/or support',
+        '5': "Communities and/or DAO's to join",
+        '6': 'New job opportunities'
+      };
+      const connectionGoals = parseNumberedList(messageText, goalMap);
+      if (isEditing) {
+        // If editing, go back to CONFIRMATION
+        await updateState('CONFIRMATION', { connectionGoals, isEditing: false, editingField: undefined });
+        // Regenerate summary
+        const summaryText = `${msgs.SUMMARY_TITLE}\n\n` +
+          `${msgs.SUMMARY_NAME} ${state.profile.name || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_LOCATION} ${state.profile.location || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_EMAIL} ${state.profile.email || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_ROLES} ${(state.profile.roles || []).join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_INTERESTS} ${(state.profile.interests || []).join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_GOALS} ${connectionGoals.join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_EVENTS} ${(state.profile.events || []).join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_SOCIALS} ${(state.profile.socials || []).join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_TELEGRAM} ${state.profile.telegramHandle ? '@' + state.profile.telegramHandle : msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_GENDER} ${state.profile.gender || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_NOTIFICATIONS} ${state.profile.notifications || msgs.SUMMARY_NOT_PROVIDED}\n\n` +
+          `${msgs.EDIT_NAME}\n` +
+          `${msgs.EDIT_LOCATION}\n` +
+          `${msgs.EDIT_ROLES}\n` +
+          `${msgs.EDIT_INTERESTS}\n` +
+          `${msgs.EDIT_GOALS}\n` +
+          `${msgs.EDIT_EVENTS}\n` +
+          `${msgs.EDIT_SOCIALS}\n` +
+          `${msgs.EDIT_TELEGRAM}\n` +
+          `${msgs.EDIT_GENDER}\n` +
+          `${msgs.EDIT_NOTIFICATIONS}\n\n` +
+          `${msgs.CONFIRM}`;
+        responseText = summaryText;
+      } else {
+        await updateState('ASK_EVENTS', { connectionGoals });
+        responseText = msgs.EVENTS;
+      }
     } else if (state.step === 'ASK_EVENTS') {
+      const isEditing = state.profile.isEditing || false;
       const events = isNext ? undefined : messageText.split(',').map((r: string) => r.trim()).filter((r: string) => r);
-      await updateState('ASK_SOCIALS', { events });
-      responseText = msgs.SOCIALS;
+      if (isEditing) {
+        // If editing, go back to CONFIRMATION
+        await updateState('CONFIRMATION', { events, isEditing: false, editingField: undefined });
+        // Regenerate summary
+        const summaryText = `${msgs.SUMMARY_TITLE}\n\n` +
+          `${msgs.SUMMARY_NAME} ${state.profile.name || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_LOCATION} ${state.profile.location || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_EMAIL} ${state.profile.email || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_ROLES} ${(state.profile.roles || []).join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_INTERESTS} ${(state.profile.interests || []).join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_GOALS} ${(state.profile.connectionGoals || []).join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_EVENTS} ${(events || []).join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_SOCIALS} ${(state.profile.socials || []).join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_TELEGRAM} ${state.profile.telegramHandle ? '@' + state.profile.telegramHandle : msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_GENDER} ${state.profile.gender || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_NOTIFICATIONS} ${state.profile.notifications || msgs.SUMMARY_NOT_PROVIDED}\n\n` +
+          `${msgs.EDIT_NAME}\n` +
+          `${msgs.EDIT_LOCATION}\n` +
+          `${msgs.EDIT_ROLES}\n` +
+          `${msgs.EDIT_INTERESTS}\n` +
+          `${msgs.EDIT_GOALS}\n` +
+          `${msgs.EDIT_EVENTS}\n` +
+          `${msgs.EDIT_SOCIALS}\n` +
+          `${msgs.EDIT_TELEGRAM}\n` +
+          `${msgs.EDIT_GENDER}\n` +
+          `${msgs.EDIT_NOTIFICATIONS}\n\n` +
+          `${msgs.CONFIRM}`;
+        responseText = summaryText;
+      } else {
+        await updateState('ASK_SOCIALS', { events });
+        responseText = msgs.SOCIALS;
+      }
     } else if (state.step === 'ASK_SOCIALS') {
+      const isEditing = state.profile.isEditing || false;
       const socials = isNext ? undefined : messageText.split(',').map((r: string) => r.trim()).filter((r: string) => r);
-      await updateState('ASK_TELEGRAM_HANDLE', { socials });
-      responseText = msgs.TELEGRAM;
+      if (isEditing) {
+        // If editing, go back to CONFIRMATION
+        await updateState('CONFIRMATION', { socials, isEditing: false, editingField: undefined });
+        // Regenerate summary
+        const summaryText = `${msgs.SUMMARY_TITLE}\n\n` +
+          `${msgs.SUMMARY_NAME} ${state.profile.name || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_LOCATION} ${state.profile.location || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_EMAIL} ${state.profile.email || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_ROLES} ${(state.profile.roles || []).join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_INTERESTS} ${(state.profile.interests || []).join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_GOALS} ${(state.profile.connectionGoals || []).join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_EVENTS} ${(state.profile.events || []).join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_SOCIALS} ${(socials || []).join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_TELEGRAM} ${state.profile.telegramHandle ? '@' + state.profile.telegramHandle : msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_GENDER} ${state.profile.gender || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_NOTIFICATIONS} ${state.profile.notifications || msgs.SUMMARY_NOT_PROVIDED}\n\n` +
+          `${msgs.EDIT_NAME}\n` +
+          `${msgs.EDIT_LOCATION}\n` +
+          `${msgs.EDIT_ROLES}\n` +
+          `${msgs.EDIT_INTERESTS}\n` +
+          `${msgs.EDIT_GOALS}\n` +
+          `${msgs.EDIT_EVENTS}\n` +
+          `${msgs.EDIT_SOCIALS}\n` +
+          `${msgs.EDIT_TELEGRAM}\n` +
+          `${msgs.EDIT_GENDER}\n` +
+          `${msgs.EDIT_NOTIFICATIONS}\n\n` +
+          `${msgs.CONFIRM}`;
+        responseText = summaryText;
+      } else {
+        await updateState('ASK_TELEGRAM_HANDLE', { socials });
+        responseText = msgs.TELEGRAM;
+      }
     } else if (state.step === 'ASK_TELEGRAM_HANDLE') {
+      const isEditing = state.profile.isEditing || false;
       const telegramHandle = messageText.trim().replace('@', '');
-      await updateState('ASK_GENDER', { telegramHandle });
-      responseText = msgs.GENDER;
+      if (isEditing) {
+        // If editing, go back to CONFIRMATION
+        await updateState('CONFIRMATION', { telegramHandle, isEditing: false, editingField: undefined });
+        // Regenerate summary
+        const summaryText = `${msgs.SUMMARY_TITLE}\n\n` +
+          `${msgs.SUMMARY_NAME} ${state.profile.name || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_LOCATION} ${state.profile.location || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_EMAIL} ${state.profile.email || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_ROLES} ${(state.profile.roles || []).join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_INTERESTS} ${(state.profile.interests || []).join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_GOALS} ${(state.profile.connectionGoals || []).join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_EVENTS} ${(state.profile.events || []).join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_SOCIALS} ${(state.profile.socials || []).join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_TELEGRAM} ${telegramHandle ? '@' + telegramHandle : msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_GENDER} ${state.profile.gender || msgs.SUMMARY_NOT_PROVIDED}\n` +
+          `${msgs.SUMMARY_NOTIFICATIONS} ${state.profile.notifications || msgs.SUMMARY_NOT_PROVIDED}\n\n` +
+          `${msgs.EDIT_NAME}\n` +
+          `${msgs.EDIT_LOCATION}\n` +
+          `${msgs.EDIT_ROLES}\n` +
+          `${msgs.EDIT_INTERESTS}\n` +
+          `${msgs.EDIT_GOALS}\n` +
+          `${msgs.EDIT_EVENTS}\n` +
+          `${msgs.EDIT_SOCIALS}\n` +
+          `${msgs.EDIT_TELEGRAM}\n` +
+          `${msgs.EDIT_GENDER}\n` +
+          `${msgs.EDIT_NOTIFICATIONS}\n\n` +
+          `${msgs.CONFIRM}`;
+        responseText = summaryText;
+      } else {
+        await updateState('ASK_GENDER', { telegramHandle });
+        responseText = msgs.GENDER;
+      }
     } else if (state.step === 'ASK_GENDER') {
+      const isEditing = state.profile.isEditing || false;
+      
+      // Check if user wants to participate in diversity research (matches Telegram)
+      const saidYes = lowerText.includes('yes') || lowerText.includes('sí') || lowerText.includes('sim') || lowerText.includes('oui');
+      const saidNo = lowerText.includes('no') && !lowerText.includes('not sure');
+      const wantsDiversityResearch = saidYes && !saidNo && !isNext && lowerText.includes('diversity');
+      
+      let diversityResearchInterest: string | undefined;
+      if (wantsDiversityResearch) {
+        diversityResearchInterest = 'Yes';
+        // Track in MongoDB for diversity research (same as Telegram)
+        try {
+          const db = runtime.databaseAdapter as any;
+          if (db && db.getDb) {
+            const mongoDb = await db.getDb();
+            const diversityCollection = mongoDb.collection('diversity_research');
+            const existing = await diversityCollection.findOne({ userId: userId });
+            if (!existing) {
+              await diversityCollection.insertOne({
+                userId: userId,
+                email: state.profile.email || null,
+                interestedAt: new Date(),
+                status: 'pending'
+              });
+              console.log('[Web Chat API] ✅ Tracked diversity research interest for user:', userId);
+            } else {
+              await diversityCollection.updateOne(
+                { userId: userId },
+                { $set: { interestedAt: new Date(), status: 'pending' } }
+              );
+              console.log('[Web Chat API] ✅ Updated diversity research interest');
+            }
+          }
+        } catch (error) {
+          console.error('[Web Chat API] Error tracking diversity research interest:', error);
+          // Don't fail the flow if tracking fails
+        }
+      } else if (saidNo && !isNext) {
+        diversityResearchInterest = 'No';
+        // Remove from diversity research tracking if they said No
+        try {
+          const db = runtime.databaseAdapter as any;
+          if (db && db.getDb) {
+            const mongoDb = await db.getDb();
+            const diversityCollection = mongoDb.collection('diversity_research');
+            await diversityCollection.deleteOne({ userId: userId });
+            console.log('[Web Chat API] ✅ Removed from diversity research tracking');
+          }
+        } catch (error) {
+          console.error('[Web Chat API] Error removing from tracking:', error);
+        }
+      }
+      
       let gender = isNext ? undefined : messageText.trim();
       if (lowerText.includes('1') || lowerText.includes('female')) gender = 'Female';
       else if (lowerText.includes('2') || lowerText.includes('male')) gender = 'Male';
       else if (lowerText.includes('3') || lowerText.includes('non-binary')) gender = 'Non-binary';
       else if (lowerText.includes('4') || lowerText.includes('prefer not')) gender = 'Prefer not to say';
       
-      await updateState('ASK_NOTIFICATIONS', { gender });
-      responseText = msgs.NOTIFICATIONS;
+      if (isEditing) {
+        // If editing, go back to CONFIRMATION
+        await updateState('CONFIRMATION', { gender, diversityResearchInterest, isEditing: false, editingField: undefined });
+        responseText = generateConfirmationSummary({ ...state.profile, gender, diversityResearchInterest }, msgs);
+      } else {
+        await updateState('ASK_NOTIFICATIONS', { gender, diversityResearchInterest });
+        responseText = msgs.NOTIFICATIONS;
+      }
     } else if (state.step === 'ASK_NOTIFICATIONS') {
-      let notifications = 'No';
-      if (lowerText.includes('1') || lowerText.includes('yes') || lowerText.includes('daily')) notifications = 'Yes';
-      else if (lowerText.includes('2') || lowerText.includes('weekly')) notifications = 'Weekly';
-      else if (lowerText.includes('3') || lowerText.includes('no') || lowerText.includes('never')) notifications = 'No';
+      // Save notifications preference and complete (matches Telegram exactly)
+      let notifications = 'Not sure';
+      if (lowerText.includes('1') || lowerText.includes('yes')) notifications = 'Yes';
+      else if (lowerText.includes('2') || lowerText.includes('no')) notifications = 'No';
+      else if (lowerText.includes('3')) notifications = 'Check later';
       
-      await updateState('COMPLETED', { notifications });
+      await updateState('COMPLETED', { notifications, onboardingCompletedAt: new Date() });
       
-      // Send completion message
-      const completionMsg1 = msgs.COMPLETION || `Great! You're all set up, ${state.profile.name}! 🎉`;
-      const completionMsg2 = msgs.COMPLETION_2 || `Say "find me a match" to get connected with someone who shares your interests! 🤝💜`;
-      responseText = `${completionMsg1}\n\n${completionMsg2}`;
+      // Send completion message with profile (matches Telegram exactly)
+      const { formatProfileForDisplay } = await import('../plugins/onboarding/utils.js');
+      const profileText = formatProfileForDisplay(state.profile, state.profile.language || 'en');
+      responseText = msgs.COMPLETION + '\n\n' + profileText;
+    } else if (state.step === 'CONFIRMATION') {
+      // Handle confirmation step - matches Telegram flow exactly
+      if (lowerText.includes('confirm') || lowerText.includes('yes') || lowerText.includes('check')) {
+        // User confirmed - mark as completed and show profile
+        const { formatProfileForDisplay } = await import('../plugins/onboarding/utils.js');
+        const { updateOnboardingStep } = await import('../plugins/onboarding/utils.js');
+        
+        // Use updateOnboardingStep for consistency with Telegram
+        await updateOnboardingStep(
+          runtime,
+          userId as any,
+          userId as any, // Use userId as roomId for web
+          'COMPLETED',
+          {
+            ...state.profile,
+            isConfirmed: true,
+            onboardingCompletedAt: new Date()
+          }
+        );
+        
+        // Update local state
+        await updateState('COMPLETED', { isConfirmed: true, onboardingCompletedAt: new Date() });
+        
+        // Show completion message with formatted profile (matches Telegram)
+        const profileDisplay = formatProfileForDisplay(state.profile, userLang);
+        responseText = `${msgs.COMPLETION}\n\n${profileDisplay}`;
+      } else if (lowerText.includes('edit')) {
+        // Handle profile editing - matches Telegram flow
+        const lower = lowerText;
+        let editStep: string | null = null;
+        let editField: string | undefined = undefined;
+        
+        if (lower.includes('name')) { editStep = 'ASK_NAME'; editField = 'name'; }
+        else if (lower.includes('location')) { editStep = 'ASK_LOCATION'; editField = 'location'; }
+        else if (lower.includes('email')) { editStep = 'ASK_EMAIL'; editField = 'email'; }
+        else if (lower.includes('professional') || lower.includes('role')) { editStep = 'ASK_ROLE'; editField = 'roles'; }
+        else if (lower.includes('learning') || lower.includes('interest')) { editStep = 'ASK_INTERESTS'; editField = 'interests'; }
+        else if (lower.includes('connection') || lower.includes('goal')) { editStep = 'ASK_CONNECTION_GOALS'; editField = 'connectionGoals'; }
+        else if (lower.includes('conference') || lower.includes('event')) { editStep = 'ASK_EVENTS'; editField = 'events'; }
+        else if (lower.includes('personal') || lower.includes('link') || lower.includes('social')) { editStep = 'ASK_SOCIALS'; editField = 'socials'; }
+        else if (lower.includes('telegram')) { editStep = 'ASK_TELEGRAM_HANDLE'; editField = 'telegramHandle'; }
+        else if (lower.includes('gender')) { editStep = 'ASK_GENDER'; editField = 'gender'; }
+        else if (lower.includes('notification') || lower.includes('collab')) { editStep = 'ASK_NOTIFICATIONS'; editField = 'notifications'; }
+        
+        if (editStep) {
+          await updateState(editStep, { isEditing: true, editingField: editField });
+          // Get the appropriate message for the edit step
+          const editMsgs = getPlatformMessages(userLang, userRoles);
+          if (editStep === 'ASK_NAME') responseText = editMsgs.GREETING;
+          else if (editStep === 'ASK_LOCATION') responseText = editMsgs.LOCATION;
+          else if (editStep === 'ASK_EMAIL') responseText = editMsgs.EMAIL;
+          else if (editStep === 'ASK_ROLE') responseText = editMsgs.ROLES;
+          else if (editStep === 'ASK_INTERESTS') responseText = editMsgs.INTERESTS;
+          else if (editStep === 'ASK_CONNECTION_GOALS') responseText = editMsgs.GOALS;
+          else if (editStep === 'ASK_EVENTS') responseText = editMsgs.EVENTS;
+          else if (editStep === 'ASK_SOCIALS') responseText = editMsgs.SOCIALS;
+          else if (editStep === 'ASK_TELEGRAM_HANDLE') responseText = editMsgs.TELEGRAM;
+          else if (editStep === 'ASK_GENDER') responseText = editMsgs.GENDER;
+          else if (editStep === 'ASK_NOTIFICATIONS') responseText = editMsgs.NOTIFICATIONS;
+        } else {
+          // Invalid edit field - show confirmation again
+          responseText = generateConfirmationSummary(state.profile, msgs);
+        }
+      } else {
+        // User input doesn't match confirm/edit - show confirmation again
+        responseText = generateConfirmationSummary(state.profile, msgs);
+      }
     } else if (state.step === 'COMPLETED') {
       // ==================== COMPLETED USER COMMANDS ====================
       
@@ -369,6 +1171,27 @@ export async function processWebChatMessage(
       const isHistoryRequest = lowerText.includes('history') || lowerText.includes('my profile') || lowerText.includes('my matches') || lowerText.includes('show profile');
       const isLanguageChange = lowerText.includes('change language') || lowerText.includes('cambiar idioma') || lowerText.includes('mudar idioma') || lowerText.includes('changer de langue');
       const isHelpRequest = lowerText === 'help' || lowerText === '?' || lowerText.includes('what can you do');
+      const isUpdateRequest = lowerText === 'update' || 
+        lowerText === 'edit' ||
+        lowerText.startsWith('update ') || 
+        lowerText.startsWith('edit ') ||
+        lowerText.includes('edit my') || 
+        lowerText.includes('change my') ||
+        lowerText.includes('edit profile') ||
+        lowerText.includes('change details') ||
+        lowerText.includes('update profile') ||
+        lowerText.includes('edit details') ||
+        lowerText.includes('modify profile') ||
+        lowerText.includes('change profile');
+      
+      // Feature request detection (matches Telegram)
+      const isFeatureRequest = lowerText.includes('feature request') || lowerText.includes('suggest a feature') || 
+        lowerText.includes('i would like') || lowerText.includes('can you') || lowerText.includes('could you') ||
+        (lowerText.includes('feature') && (lowerText.includes('want') || lowerText.includes('like') || lowerText.includes('suggest')));
+      const hasFeatureDetails = messageText.length > 30 || 
+        lowerText.includes('can you') || lowerText.includes('could you') || 
+        lowerText.includes('i would like') || lowerText.includes('i want') ||
+        lowerText.includes('it should') || lowerText.includes('it would be');
       
       // Knowledge question detection
       const knowledgeKeywords = [
@@ -394,106 +1217,285 @@ export async function processWebChatMessage(
           `🌍 "${phrases.lang}" - Switch to another language\n` +
           `💡 "${phrases.feature}" - Tell me what features you'd like`;
       } else if (isMatchRequest) {
-        // Simplified matching for web API - returns profile info for matching
-        const myInterests = state.profile.interests || [];
-        const myRoles = state.profile.roles || [];
-        
-        if (myInterests.length === 0 && myRoles.length === 0) {
-          responseText = "I don't have enough info about your interests yet to match you. Try 'restart' to update your profile! 💜";
-        } else {
-          // Query database for matches
-          try {
-            const db = runtime.databaseAdapter as any;
-            if (db && db.query) {
-              let previousMatchIds: string[] = [];
-              try {
-                const prevMatches = await db.query(
-                  `SELECT matched_user_id FROM matches WHERE user_id = $1::text`,
-                  [userId]
-                );
-                previousMatchIds = (prevMatches.rows || []).map((r: any) => r.matched_user_id);
-              } catch (e) { /* no previous matches */ }
-              
-              const res = await db.query(`SELECT key, value FROM cache WHERE key LIKE 'onboarding_%'`);
-              let candidates: any[] = [];
-              
-              for (const row of (res.rows || [])) {
-                const otherUserId = row.key.replace('onboarding_', '');
-                if (otherUserId === userId) continue;
-                if (previousMatchIds.includes(otherUserId)) continue;
-                
+        // ==================== MATCHING WITH TRACKING (matches Telegram exactly) ====================
+        try {
+          const myInterests = state.profile.interests || [];
+          const myRoles = state.profile.roles || [];
+          
+          if (myInterests.length === 0 && myRoles.length === 0) {
+            responseText = "I don't have enough info about your interests yet to match you. Try 'restart' to update your profile! 💜";
+          } else {
+            let candidates: any[] = [];
+            let matchedUserId: string | null = null;
+            
+            // Query database for other completed profiles
+            try {
+              const db = runtime.databaseAdapter as any;
+              if (db && db.query) {
+                // Use new weighted matching engine
                 try {
-                  const otherState = typeof row.value === 'string' ? JSON.parse(row.value) : row.value;
-                  if (otherState.step !== 'COMPLETED' || !otherState.profile) continue;
+                  const { findMatches } = await import('./matchingEngine.js');
                   
-                  const otherInterests = otherState.profile.interests || [];
-                  const otherRoles = otherState.profile.roles || [];
-                  const common = myInterests.filter((i: string) => 
-                    otherInterests.some((oi: string) => oi.toLowerCase().includes(i.toLowerCase())) ||
-                    otherRoles.some((or: string) => or.toLowerCase().includes(i.toLowerCase()))
+                  // Get previous matches to exclude (matches Telegram exactly)
+                  let previousMatchIds: string[] = [];
+                  try {
+                    const databaseType = (process.env.DATABASE_TYPE || 'postgres').toLowerCase();
+                    const isMongo = databaseType === 'mongodb' || databaseType === 'mongo';
+                    
+                    if (isMongo && db.getDb) {
+                      const mongoDb = await db.getDb();
+                      const prevMatches = await mongoDb.collection('matches').find({ user_id: userId }).toArray();
+                      previousMatchIds = prevMatches.map((m: any) => m.matched_user_id);
+                    } else {
+                      const prevMatches = await db.query(
+                        `SELECT matched_user_id FROM matches WHERE user_id = $1::text`,
+                        [userId]
+                      );
+                      previousMatchIds = (prevMatches.rows || []).map((r: any) => r.matched_user_id);
+                    }
+                  } catch (e) { 
+                    console.log('[Manual Match] Could not get previous matches:', e);
+                  }
+                  
+                  console.log('[Manual Match] 🔍 Calling matching engine...');
+                  const matchCandidates = await findMatches(
+                    runtime,
+                    userId,
+                    state.profile,
+                    previousMatchIds,
+                    { minScoreThreshold: 70 } // Slightly lower threshold for manual requests
                   );
+                  console.log(`[Manual Match] Matching engine returned ${matchCandidates.length} candidate(s)`);
                   
-                  if (common.length > 0) {
-                    candidates.push({ 
-                      id: otherUserId, 
-                      profile: otherState.profile, 
-                      commonCount: common.length, 
-                      commonInterests: common 
+                  // Convert to old format for compatibility
+                  for (const match of matchCandidates) {
+                    candidates.push({
+                      id: match.userId,
+                      profile: match.profile,
+                      score: match.score,
+                      reason: match.icebreaker || match.reason
                     });
                   }
-                } catch (parseErr) { /* skip */ }
+                } catch (engineErr) {
+                  console.log('[Matching] New engine failed, using fallback:', engineErr);
+                  // Fallback to simple matching if engine fails
+                  // Get previous matches for fallback
+                  let fallbackPreviousMatchIds: string[] = [];
+                  const databaseType = (process.env.DATABASE_TYPE || 'postgres').toLowerCase();
+                  const isMongo = databaseType === 'mongodb' || databaseType === 'mongo';
+                  
+                  try {
+                    if (isMongo && db.getDb) {
+                      const mongoDb = await db.getDb();
+                      const prevMatches = await mongoDb.collection('matches').find({ user_id: userId }).toArray();
+                      fallbackPreviousMatchIds = prevMatches.map((m: any) => m.matched_user_id);
+                    } else {
+                      const prevMatches = await db.query(
+                        `SELECT matched_user_id FROM matches WHERE user_id = $1::text`,
+                        [userId]
+                      );
+                      fallbackPreviousMatchIds = (prevMatches.rows || []).map((r: any) => r.matched_user_id);
+                    }
+                  } catch (e) { 
+                    console.log('[Manual Match Fallback] Could not get previous matches:', e);
+                  }
+                  
+                  // Fallback: simple interest-based matching
+                  const cacheCollection = isMongo && db.getDb ? (await db.getDb()).collection('cache') : null;
+                  const allKeys = isMongo && cacheCollection
+                    ? await cacheCollection.find({ key: { $regex: /^onboarding_/ } }).toArray()
+                    : (await db.query(`SELECT key FROM cache WHERE key LIKE 'onboarding_%'`)).rows || [];
+                  
+                  for (const keyDoc of allKeys) {
+                    try {
+                      const key = isMongo ? keyDoc.key : keyDoc.key;
+                      const otherUserId = key.replace('onboarding_', '');
+                      if (otherUserId === userId || fallbackPreviousMatchIds.includes(otherUserId)) continue;
+                      
+                      const otherState = isMongo 
+                        ? (typeof keyDoc.value === 'string' ? JSON.parse(keyDoc.value) : keyDoc.value)
+                        : (typeof keyDoc.value === 'string' ? JSON.parse(keyDoc.value) : keyDoc.value);
+                      
+                      if (!otherState || otherState.step !== 'COMPLETED' || !otherState.profile) continue;
+                      
+                      const otherInterests = otherState.profile.interests || [];
+                      const otherRoles = otherState.profile.roles || [];
+                      const common = myInterests.filter((i: string) => 
+                        otherInterests.some((oi: string) => oi.toLowerCase().includes(i.toLowerCase())) ||
+                        otherRoles.some((or: string) => or.toLowerCase().includes(i.toLowerCase()))
+                      );
+                      
+                      if (common.length > 0) {
+                        candidates.push({
+                          id: otherUserId,
+                          profile: otherState.profile,
+                          score: common.length,
+                          reason: `Shared interests: ${common.join(', ')}`
+                        });
+                      }
+                    } catch (e) { /* skip invalid entries */ }
+                  }
+                }
+              }
+            } catch (dbErr) {
+              console.log('[Web Chat API] Database query error:', dbErr);
+            }
+            
+            if (candidates.length === 0) {
+              // Send email notification to members@si3.space with user info
+              try {
+                const { sendNoMatchNotification } = await import('./featureRequest.js');
+                await sendNoMatchNotification(userId, state.profile, runtime);
+                console.log('[No Match] ✅ Sent no-match notification email');
+              } catch (emailError: any) {
+                console.log('[No Match] ⚠️ Could not send no-match notification email:', emailError.message);
+                // Continue even if email fails
               }
               
-              if (candidates.length > 0) {
-                candidates.sort((a, b) => b.commonCount - a.commonCount);
-                const topMatch = candidates[0];
-                
-                // Record match
-                const { v4: uuidv4 } = await import('uuid');
-                await db.query(
-                  `INSERT INTO matches (id, user_id, matched_user_id, room_id, match_date, status) VALUES ($1, $2::text, $3::text, $4::text, NOW(), 'pending')`,
-                  [uuidv4(), userId, topMatch.id, `web_${userId}`]
-                );
-                
-                responseText = `🎉 I found a great match for you!\n\n` +
-                  `Meet ${topMatch.profile.name || 'Anonymous'} from ${topMatch.profile.location || 'Earth'}.\n` +
-                  `Roles: ${(topMatch.profile.roles || []).join(', ') || 'Not specified'}\n` +
-                  `Interests: ${(topMatch.profile.interests || []).slice(0, 3).join(', ') || 'Not specified'}\n` +
-                  `${topMatch.profile.telegramHandle ? `Telegram: @${topMatch.profile.telegramHandle}` : ''}\n\n` +
-                  `💡 You both share interests in: ${topMatch.commonInterests.join(', ')}\n\n` +
-                  `Reach out and connect! 🤝💜`;
-              } else {
-                // Send email notification to members@si3.space with user info
-                try {
-                  const { sendNoMatchNotification } = await import('./featureRequest.js');
-                  const profile = state.profile || {};
-                  await sendNoMatchNotification(userId, profile, runtime);
-                  console.log('[Web Chat No Match] ✅ Sent no-match notification email');
-                } catch (emailError: any) {
-                  console.log('[Web Chat No Match] ⚠️ Could not send no-match notification email:', emailError.message);
-                  // Continue even if email fails
-                }
-                
-                responseText = "I couldn't find a match within the current pool, but don't worry! 💜\n\nSI<3> will explore potential matches within its broader network and reach out if we find someone great for you.\n\nIn the meantime, feel free to share any specific connection requests with us at members@si3.space. 🚀";
-              }
+              responseText = "I couldn't find a match within the current pool, but don't worry! 💜\n\nSI<3> will explore potential matches within its broader network and reach out if we find someone great for you.\n\nIn the meantime, feel free to share any specific connection requests with us at members@si3.space. 🚀";
             } else {
-              responseText = "Matching is currently unavailable. Please try again later! 💜";
+              const topMatch = candidates.sort((a, b) => b.score - a.score)[0];
+              matchedUserId = topMatch.id;
+              
+              // ==================== RECORD MATCH IN DATABASE (matches Telegram exactly) ====================
+              try {
+                const { v4: uuidv4 } = await import('uuid');
+                const matchId = uuidv4();
+                const db = runtime.databaseAdapter as any;
+                if (db) {
+                  const databaseType = (process.env.DATABASE_TYPE || 'postgres').toLowerCase();
+                  const isMongo = databaseType === 'mongodb' || databaseType === 'mongo';
+                  const matchDate = new Date();
+                  
+                  if (isMongo && db.getDb) {
+                    const mongoDb = await db.getDb();
+                    // Record the match
+                    await mongoDb.collection('matches').insertOne({
+                      id: matchId,
+                      user_id: userId,
+                      matched_user_id: matchedUserId,
+                      room_id: `web_${userId}`,
+                      match_date: matchDate,
+                      status: 'pending'
+                    });
+                    
+                    // Schedule 3-day follow-up
+                    const followUpDate = new Date();
+                    followUpDate.setDate(followUpDate.getDate() + 3);
+                    await mongoDb.collection('follow_ups').insertOne({
+                      id: uuidv4(),
+                      match_id: matchId,
+                      user_id: userId,
+                      type: '3_day_checkin',
+                      scheduled_for: followUpDate,
+                      status: 'pending'
+                    });
+                  } else if (db.query) {
+                    // Record the match (PostgreSQL)
+                    await db.query(
+                      `INSERT INTO matches (id, user_id, matched_user_id, room_id, match_date, status) VALUES ($1, $2::text, $3::text, $4::text, NOW(), 'pending')`,
+                      [matchId, userId, matchedUserId, `web_${userId}`]
+                    );
+                    
+                    // Schedule 3-day follow-up
+                    const followUpDate = new Date();
+                    followUpDate.setDate(followUpDate.getDate() + 3);
+                    await db.query(
+                      `INSERT INTO follow_ups (id, match_id, user_id, type, scheduled_for, status) VALUES ($1, $2, $3::text, '3_day_checkin', $4, 'pending')`,
+                      [uuidv4(), matchId, userId, followUpDate]
+                    );
+                  }
+                  console.log('[Match Tracker] ✅ Match recorded and follow-up scheduled');
+                }
+              } catch (trackErr) {
+                console.log('[Match Tracker] Could not record match:', trackErr);
+              }
+              
+              // Use icebreaker if available, otherwise use reason
+              const matchMessage = topMatch.reason.includes('Shared interests') 
+                ? topMatch.reason 
+                : topMatch.reason; // Will be replaced with icebreaker from engine
+              
+              // Determine platform for matched user
+              const matchRoles = topMatch.profile.roles || [];
+              const matchIsGrow3dge = matchRoles.includes('partner');
+              const matchIsSiHer = matchRoles.includes('team');
+              const matchHasBoth = matchIsGrow3dge && matchIsSiHer;
+              
+              let platformText = '';
+              if (matchHasBoth) {
+                platformText = 'Platform: SI Her & Grow3dge Member\n';
+              } else if (matchIsGrow3dge) {
+                platformText = 'Platform: Grow3dge Member\n';
+              } else if (matchIsSiHer) {
+                platformText = 'Platform: SI Her Member\n';
+              }
+              
+              responseText = `🚀 I found a match for you!\n\n` +
+                `Meet ${topMatch.profile.name || 'Anonymous'} from ${topMatch.profile.location || 'Earth'}.\n` +
+                (platformText ? `${platformText}` : '') +
+                `Roles: ${topMatch.profile.roles?.join(', ') || 'Not specified'}\n` +
+                `Interests: ${topMatch.profile.interests?.join(', ') || 'Not specified'}\n` +
+                (topMatch.profile.telegramHandle ? `Telegram: @${topMatch.profile.telegramHandle}\n` : '') +
+                `\n💡 ${matchMessage}\n\n` +
+                `I've saved this match. I'll check in with you in 3 days to see if you connected! 🤝`;
             }
-          } catch (matchErr) {
-            console.error('[Web Chat API] Match error:', matchErr);
-            responseText = "I had trouble finding matches. Please try again! 💜";
           }
+        } catch (matchErr: any) {
+          console.error('[Web Chat API] Match error:', matchErr);
+          responseText = "I had trouble finding matches right now. Please try again later! 💜";
         }
       } else if (isHistoryRequest) {
-        responseText = `📋 Your Grow3dge Profile:\n\n` +
-          `Name: ${state.profile.name || 'Not set'}\n` +
-          `Location: ${state.profile.location || 'Not set'}\n` +
-          `Roles: ${(state.profile.roles || []).join(', ') || 'Not set'}\n` +
-          `Interests: ${(state.profile.interests || []).join(', ') || 'Not set'}\n` +
-          `Goals: ${(state.profile.connectionGoals || []).join(', ') || 'Not set'}\n` +
-          `Telegram: @${state.profile.telegramHandle || 'Not set'}\n` +
-          `Language: ${state.profile.language || 'en'}\n\n` +
-          `Say "find me a match" to connect with someone! 🤝💜`;
+        // ==================== PROFILE WITH MATCH HISTORY (matches Telegram) ====================
+        const p = state.profile;
+        
+        // Fetch match history
+        let matchCount = 0;
+        let matchList = '';
+        try {
+          const db = runtime.databaseAdapter as any;
+          if (db) {
+            const databaseType = (process.env.DATABASE_TYPE || 'postgres').toLowerCase();
+            const isMongo = databaseType === 'mongodb' || databaseType === 'mongo';
+            
+            let matches: any[] = [];
+            if (isMongo && db.getDb) {
+              const mongoDb = await db.getDb();
+              matches = await mongoDb.collection('matches')
+                .find({ user_id: userId })
+                .sort({ match_date: -1 })
+                .limit(5)
+                .toArray();
+              matchCount = matches.length;
+            } else if (db.query) {
+              const matchRes = await db.query(
+                `SELECT * FROM matches WHERE user_id = $1::text ORDER BY match_date DESC LIMIT 5`,
+                [userId]
+              );
+              matches = matchRes.rows || [];
+              matchCount = matches.length;
+            }
+            
+            if (matchCount > 0) {
+              matchList = '\n\nRecent Matches:\n';
+              for (const match of matches) {
+                const statusEmoji = match.status === 'connected' ? '✅' : match.status === 'not_interested' ? '❌' : '⏳';
+                const date = new Date(match.match_date).toLocaleDateString();
+                matchList += `${statusEmoji} ${date} - ${match.status}\n`;
+              }
+            }
+          }
+        } catch (e) { 
+          console.log('[Profile History] Could not fetch matches:', e);
+        }
+        
+        // Use formatProfileForDisplay to ensure actual values are shown
+        const { formatProfileForDisplay } = await import('../plugins/onboarding/utils.js');
+        const profileText = formatProfileForDisplay(p, p.language || 'en');
+        responseText = profileText +
+          `\n\nTotal Matches: ${matchCount}` +
+          matchList +
+          `\n\n✅ Onboarding: Completed\n\nTo update any field, say "update" or "update [field name]".`;
       } else if (isLanguageChange) {
         let newLang: 'en' | 'es' | 'pt' | 'fr' | null = null;
         if (lowerText.includes('english') || lowerText.includes('inglés') || lowerText.includes('inglês')) newLang = 'en';
@@ -516,6 +1518,137 @@ export async function processWebChatMessage(
           fr: `Excellente question! 🧠\n\nJ'activerai bientôt mes capacités de partage de connaissances entre pairs, où vous pourrez apprendre d'autres membres de la communauté qui sont experts dans ces sujets.\n\nPour l'instant, je me concentre sur la création de connexions significatives au sein de la communauté SI<3>. Voulez-vous que je vous trouve une connexion? Dites simplement "trouve-moi une connexion"! 🤝💜`
         };
         responseText = langResponses[state.profile.language || 'en'] || langResponses.en;
+      } else if (isUpdateRequest) {
+        // ==================== PROFILE UPDATE FEATURE (matches Telegram) ====================
+        const updateFields: Record<string, { step: string, prompt: string, number: number }> = {
+          'name': { step: 'UPDATING_NAME', prompt: 'What would you like to change your name to?', number: 1 },
+          'location': { step: 'UPDATING_LOCATION', prompt: 'What is your new location (city and country)?', number: 2 },
+          'roles': { step: 'UPDATING_ROLES', prompt: msgs.ROLES, number: 3 },
+          'interests': { step: 'UPDATING_INTERESTS', prompt: msgs.INTERESTS, number: 4 },
+          'goals': { step: 'UPDATING_GOALS', prompt: msgs.GOALS, number: 5 },
+          'events': { step: 'UPDATING_EVENTS', prompt: 'What events will you be attending? (event name, date, location)', number: 6 },
+          'socials': { step: 'UPDATING_SOCIALS', prompt: 'Share your social media links:', number: 7 },
+          'telegram': { step: 'UPDATING_TELEGRAM', prompt: 'What is your Telegram handle? (e.g., @username)', number: 8 },
+          'diversity': { step: 'UPDATING_DIVERSITY', prompt: 'Would you like to be (anonymously) included within our diversity research?\n\n1. Yes\n2. No\n3. Not sure yet\n\nPlease reply with the number (for example: 1)', number: 9 },
+          'notifications': { step: 'UPDATING_NOTIFICATIONS', prompt: msgs.NOTIFICATIONS, number: 10 }
+        };
+        
+        // Check for number input (1-10)
+        const numberMatch = lowerText.match(/\b([1-9]|10)\b/);
+        let fieldToUpdate: string | null = null;
+        
+        if (numberMatch) {
+          // User provided a number
+          const fieldNumber = parseInt(numberMatch[1]);
+          const fieldEntry = Object.entries(updateFields).find(([_, info]) => info.number === fieldNumber);
+          if (fieldEntry) {
+            fieldToUpdate = fieldEntry[0];
+          }
+        } else {
+          // Check for field name in text
+          for (const [field, _] of Object.entries(updateFields)) {
+            if (lowerText.includes(field) || 
+                (field === 'name' && (lowerText.includes('name') || lowerText.includes('nombre'))) ||
+                (field === 'location' && (lowerText.includes('location') || lowerText.includes('ubicación') || lowerText.includes('localização'))) ||
+                (field === 'roles' && (lowerText.includes('role') || lowerText.includes('rol'))) ||
+                (field === 'interests' && (lowerText.includes('interest') || lowerText.includes('interés'))) ||
+                (field === 'goals' && lowerText.includes('goal')) ||
+                (field === 'events' && (lowerText.includes('event') || lowerText.includes('conference'))) ||
+                (field === 'socials' && (lowerText.includes('social') || lowerText.includes('link'))) ||
+                (field === 'telegram' && lowerText.includes('telegram')) ||
+                (field === 'diversity' && (lowerText.includes('diversity') || lowerText.includes('diversidad'))) ||
+                (field === 'notifications' && (lowerText.includes('notification') || lowerText.includes('collab')))) {
+              fieldToUpdate = field;
+              break;
+            }
+          }
+        }
+        
+        if (fieldToUpdate) {
+          // They specified a field - go directly to updating it
+          const updateInfo = updateFields[fieldToUpdate];
+          await updateState(updateInfo.step, {});
+          responseText = updateInfo.prompt;
+        } else {
+          // They just said "update" - ask what they want to update with numbered list
+          await updateState('AWAITING_UPDATE_FIELD', {});
+          responseText = `What would you like to update? 📝\n\n` +
+            `1. Name\n` +
+            `2. Location\n` +
+            `3. Professional role(s)\n` +
+            `4. Professional interests\n` +
+            `5. Professional goals\n` +
+            `6. Events & conferences attending\n` +
+            `7. Personal social and/or digital links\n` +
+            `8. Telegram handle\n` +
+            `9. Diversity research interest\n` +
+            `10. Collaboration notifications\n\n` +
+            `Just type the field number(s) (e.g. 1, 3).`;
+        }
+      } else if (isFeatureRequest) {
+        // Feature request handling (matches Telegram)
+        if (hasFeatureDetails) {
+          // User provided details in the same message - send directly
+          try {
+            const { sendFeatureRequest } = await import('./featureRequest.js');
+            await sendFeatureRequest(userId, state.profile.name || 'Anonymous', messageText, messageText);
+            
+            // Also save to database
+            try {
+              const db = runtime.databaseAdapter as any;
+              if (db && db.query) {
+                const { v4: uuidv4 } = await import('uuid');
+                await db.query(
+                  `INSERT INTO feature_requests (id, user_id, user_name, request_text, created_at) VALUES ($1, $2::text, $3, $4, NOW())`,
+                  [uuidv4(), userId, state.profile.name || 'Anonymous', messageText]
+                );
+              } else if (db && db.getDb) {
+                const mongoDb = await db.getDb();
+                const featureCollection = mongoDb.collection('feature_requests');
+                await featureCollection.insertOne({
+                  userId: userId,
+                  userName: state.profile.name || 'Anonymous',
+                  requestText: messageText,
+                  createdAt: new Date()
+                });
+              }
+            } catch (dbErr) {
+              console.log('[Web Chat API] Could not save feature request to DB:', dbErr);
+            }
+            
+            // Check if email was sent successfully
+            let emailSent = false;
+            try {
+              // Email sending is already done above, check if it succeeded
+              emailSent = true; // Assume success if no error was thrown
+            } catch (e) {
+              emailSent = false;
+            }
+            
+            if (emailSent) {
+              responseText = `Thank you for your suggestion, ${state.profile.name || 'Anonymous'}! 💜\n\n` +
+                `I've sent your request to tech@si3.space:\n"${messageText.substring(0, 200)}${messageText.length > 200 ? '...' : ''}"\n\n` +
+                `The SI<3> team reviews all suggestions. Your feedback helps make me better! 🚀`;
+            } else {
+              responseText = `Thank you for your suggestion, ${state.profile.name || 'Anonymous'}! 💜\n\n` +
+                `I've recorded your request:\n"${messageText.substring(0, 200)}${messageText.length > 200 ? '...' : ''}"\n\n` +
+                `The SI<3> team reviews all suggestions. Your feedback helps make me better! 🚀`;
+            }
+          } catch (error: any) {
+            console.error('[Web Chat API] Error sending feature request:', error);
+            responseText = "I encountered an issue sending your feature request. Please try again later. 💜";
+          }
+        } else {
+          // User just mentioned feature request without details - ask for details
+          await updateState('AWAITING_FEATURE_DETAILS', {});
+          const langPrompts: Record<string, string> = {
+            en: `Great! I'd love to hear your suggestion. 💡\n\nPlease tell me more about the feature you'd like to see. What would you like me to be able to do?`,
+            es: `¡Genial! Me encantaría escuchar tu sugerencia. 💡\n\nPor favor, cuéntame más sobre la función que te gustaría ver. ¿Qué te gustaría que pudiera hacer?`,
+            pt: `Ótimo! Adoraria ouvir sua sugestão. 💡\n\nPor favor, me conte mais sobre a função que você gostaria de ver. O que você gostaria que eu pudesse fazer?`,
+            fr: `Excellent! J'aimerais entendre votre suggestion. 💡\n\nVeuillez me dire plus sur la fonctionnalité que vous aimeriez voir. Qu'aimeriez-vous que je puisse faire?`
+          };
+          responseText = langPrompts[state.profile.language || 'en'] || langPrompts.en;
+        }
       } else {
         // General chat - use OpenAI
         const systemPrompt = `You are Kaia, the SI<3> community matchmaker assistant. 
