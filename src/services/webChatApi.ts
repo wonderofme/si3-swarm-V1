@@ -752,6 +752,45 @@ export async function processWebChatMessage(
         // User wants to continue with existing profile
         if (existingUserId && existingProfile) {
           console.log(`[Web Chat API] Loading existing profile from user ${existingUserId}`);
+          console.log(`[Web Chat API] Linking web userId ${userId} to original userId ${existingUserId}`);
+          
+          // Create mapping from web userId to original userId (matches Telegram behavior)
+          try {
+            const db = runtime.databaseAdapter as any;
+            const databaseType = (process.env.DATABASE_TYPE || 'postgres').toLowerCase();
+            const isMongo = databaseType === 'mongodb' || databaseType === 'mongo';
+            
+            if (isMongo && db.getDb) {
+              const mongoDb = await db.getDb();
+              await mongoDb.collection('user_mappings').updateOne(
+                { platform_user_id: userId },
+                { 
+                  $set: { 
+                    primary_user_id: existingUserId,
+                    platform: 'web',
+                    updated_at: new Date()
+                  },
+                  $setOnInsert: {
+                    created_at: new Date()
+                  }
+                },
+                { upsert: true }
+              );
+              console.log(`[Web Chat API] ✅ Created user mapping: ${userId} → ${existingUserId}`);
+            } else if (db.query) {
+              await db.query(
+                `INSERT INTO user_mappings (platform_user_id, primary_user_id, platform, created_at, updated_at)
+                 VALUES ($1::text, $2::text, 'web', NOW(), NOW())
+                 ON CONFLICT (platform_user_id) DO UPDATE SET primary_user_id = $2::text, updated_at = NOW()`,
+                [userId, existingUserId]
+              );
+              console.log(`[Web Chat API] ✅ Created user mapping: ${userId} → ${existingUserId}`);
+            }
+          } catch (mappingError) {
+            console.error('[Web Chat API] Error creating user mapping:', mappingError);
+            // Continue even if mapping fails - profile linking still works via returned userId
+          }
+          
           const { formatProfileForDisplay } = await import('../plugins/onboarding/utils.js');
           
           // IMPORTANT: Use the original userId, not the current one
