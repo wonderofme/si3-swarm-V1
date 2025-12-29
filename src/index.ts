@@ -1577,12 +1577,23 @@ async function startAgents() {
                           let si3Roles: string[] = [];
                           
                           try {
-                            const si3User = await findSi3UserByEmail(emailText, 'si3Users', 'email');
+                            console.log(`[Telegram Chat ID Capture] Checking SI<3> database for user roles...`);
+                            // Add timeout to prevent hanging
+                            const si3User = await Promise.race([
+                              findSi3UserByEmail(emailText, 'si3Users', 'email'),
+                              new Promise<null>((_, reject) => 
+                                setTimeout(() => reject(new Error('SI<3> database lookup timeout')), 10000)
+                              )
+                            ]).catch((err) => {
+                              console.error(`[Telegram Chat ID Capture] SI<3> database error/timeout:`, err.message);
+                              return null;
+                            });
+                            
                             if (si3User) {
                               si3Roles = si3User.roles || [];
                               console.log(`[Telegram Chat ID Capture] Found SI<3> user with roles: ${si3Roles.join(', ')}`);
                             } else {
-                              console.log(`[Telegram Chat ID Capture] Email ${emailText} not found in SI<3> database`);
+                              console.log(`[Telegram Chat ID Capture] Email ${emailText} not found in SI<3> database (or timeout)`);
                             }
                           } catch (error: any) {
                             console.error('[Telegram Chat ID Capture] Error searching SI<3> database:', error.message);

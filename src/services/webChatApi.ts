@@ -211,12 +211,23 @@ export async function processWebChatMessage(
       let si3Roles: string[] = [];
       
       try {
-        const si3User = await findSi3UserByEmail(emailText, 'si3Users', 'email');
+        console.log(`[Web Chat API] Checking SI<3> database for user roles...`);
+        // Add timeout to prevent hanging
+        const si3User = await Promise.race([
+          findSi3UserByEmail(emailText, 'si3Users', 'email'),
+          new Promise<null>((_, reject) => 
+            setTimeout(() => reject(new Error('SI<3> database lookup timeout')), 10000)
+          )
+        ]).catch((err) => {
+          console.error(`[Web Chat API] SI<3> database error/timeout:`, err.message);
+          return null;
+        });
+        
         if (si3User) {
           si3Roles = si3User.roles || [];
           console.log(`[Web Chat API] Found SI<3> user with roles: ${si3Roles.join(', ')}`);
         } else {
-          console.log(`[Web Chat API] Email ${emailText} not found in SI<3> database`);
+          console.log(`[Web Chat API] Email ${emailText} not found in SI<3> database (or timeout)`);
         }
       } catch (error: any) {
         console.error('[Web Chat API] Error searching SI<3> database:', error.message);
