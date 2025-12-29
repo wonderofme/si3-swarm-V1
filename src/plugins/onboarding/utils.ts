@@ -113,21 +113,27 @@ export async function updateOnboardingStep(
   
   // Also save as a persistent memory log (so we have history)
   // Mark as agent message to prevent it from triggering LLM responses
-  await runtime.messageManager.createMemory({
-    id: undefined, // auto-gen
-    userId: runtime.agentId, // Use agent ID so it's not treated as a user message
-    agentId: runtime.agentId,
-    roomId: roomId,
-    content: {
-      text: `Onboarding Update: ${step}`,
-      data: newState,
-      type: ONBOARDING_MEMORY_TYPE,
-      metadata: {
-        isInternalUpdate: true,
-        actualUserId: userId // Store actual user ID in metadata for reference
+  try {
+    await runtime.messageManager.createMemory({
+      id: undefined, // auto-gen
+      userId: runtime.agentId, // Use agent ID so it's not treated as a user message
+      agentId: runtime.agentId,
+      roomId: roomId,
+      content: {
+        text: `Onboarding Update: ${step}`,
+        data: newState,
+        type: ONBOARDING_MEMORY_TYPE,
+        metadata: {
+          isInternalUpdate: true,
+          actualUserId: userId // Store actual user ID in metadata for reference
+        }
       }
-    }
-  });
+    });
+  } catch (error: any) {
+    // Non-critical: Memory creation may fail if database adapter doesn't support getMemoryById
+    // This is okay - the cache update above is the primary persistence mechanism
+    console.log(`[Onboarding Utils] Could not create memory log (non-critical): ${error.message}`);
+  }
 }
 
 export async function getUserProfile(runtime: IAgentRuntime, userId: UUID): Promise<UserProfile> {

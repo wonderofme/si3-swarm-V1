@@ -1353,7 +1353,8 @@ async function startAgents() {
                   const openaiKey = process.env.OPENAI_API_KEY;
                   if (openaiKey && kaiaRuntimeForOnboardingCheck) {
                       // Use cache-only state management to avoid database issues
-                      const { getMessages } = await import('./plugins/onboarding/translations.js');
+                      const { getMessages, getPlatformMessages } = await import('./plugins/onboarding/translations.js');
+                      const { findSi3UserByEmail } = await import('./services/si3Database.js');
                       
                       const userId = update.message?.from?.id?.toString() || chatId;
                       
@@ -1531,7 +1532,9 @@ async function startAgents() {
                       // Handle onboarding flow directly
                       let responseText = '';
                       const lowerText = messageText.toLowerCase().trim();
-                      const msgs = getMessages(state.profile.language || 'en');
+                      // Use si3Roles (from SI<3> database) for platform detection, not user-entered roles
+                      const platformRoles = state.profile.si3Roles || [];
+                      const msgs = getPlatformMessages(state.profile.language || 'en', platformRoles);
                       
                       // Check for restart commands
                       const isRestart = lowerText.includes('restart') || lowerText.includes('start over') || lowerText.includes('begin again');
@@ -1554,7 +1557,7 @@ async function startAgents() {
                         else if (lowerText.includes('4') || lowerText.includes('français') || lowerText.includes('french')) lang = 'fr';
                         
                         await updateState('ASK_NAME', { language: lang });
-                        const newMsgs = getMessages(lang);
+                        const newMsgs = getPlatformMessages(lang, platformRoles);
                         responseText = newMsgs.GREETING;
                         console.log('[Telegram Chat ID Capture] 📋 Language set to:', lang);
                       } else if (state.step === 'ASK_NAME') {
@@ -1570,7 +1573,23 @@ async function startAgents() {
                           responseText = `${msgs.EMAIL}\n\n⚠️ Please enter a valid email address (e.g., name@example.com)`;
                           console.log('[Telegram Chat ID Capture] ⚠️ Invalid email format');
                         } else {
-                          // Check if email exists in database (could be from web onboarding)
+                          // First, check SI<3> database for user roles (determines Grow3dge vs SI Her questions)
+                          let si3Roles: string[] = [];
+                          
+                          try {
+                            const si3User = await findSi3UserByEmail(emailText, 'si3Users', 'email');
+                            if (si3User) {
+                              si3Roles = si3User.roles || [];
+                              console.log(`[Telegram Chat ID Capture] Found SI<3> user with roles: ${si3Roles.join(', ')}`);
+                            } else {
+                              console.log(`[Telegram Chat ID Capture] Email ${emailText} not found in SI<3> database`);
+                            }
+                          } catch (error: any) {
+                            console.error('[Telegram Chat ID Capture] Error searching SI<3> database:', error.message);
+                            // Continue with onboarding even if SI<3> lookup fails
+                          }
+                          
+                          // Check if email exists in Kaia database (could be from web onboarding)
                           try {
                             const db = kaiaRuntimeForOnboardingCheck.databaseAdapter as any;
                             const databaseType = (process.env.DATABASE_TYPE || 'postgres').toLowerCase();
@@ -1638,13 +1657,24 @@ async function startAgents() {
                               await updateState('ASK_PROFILE_CHOICE', {
                                 email: emailText,
                                 existingUserId: existingUser.userId,
-                                existingProfile: existingUser.profile
+                                existingProfile: existingUser.profile,
+                                // Only save SI<3> roles for platform detection (Grow3dge vs SI Her)
+                                // Don't pre-fill interests - user will answer with platform-specific questions
+                                si3Roles: si3Roles.length > 0 ? si3Roles : undefined
                               });
                               responseText = `${msgs.PROFILE_EXISTS}\n\n${msgs.PROFILE_CHOICE}`;
                               console.log('[Telegram Chat ID Capture] 📋 Asking for profile choice');
                             } else {
                               // Email doesn't exist - continue with onboarding
-                              await updateState('ASK_LOCATION', { email: emailText });
+                              // Only save SI<3> roles for platform detection (Grow3dge vs SI Her)
+                              // Don't pre-fill interests - user will answer with platform-specific questions
+                              const profileUpdate: any = { email: emailText };
+                              if (si3Roles.length > 0) {
+                                // Save SI<3> roles to determine which platform questions to show
+                                profileUpdate.si3Roles = si3Roles;
+                              }
+                              
+                              await updateState('ASK_LOCATION', profileUpdate);
                               responseText = msgs.LOCATION;
                               console.log('[Telegram Chat ID Capture] 📋 Email saved (new user):', emailText);
                             }

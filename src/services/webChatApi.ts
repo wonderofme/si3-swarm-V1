@@ -117,8 +117,9 @@ export async function processWebChatMessage(
     let responseText = '';
     const lowerText = messageText.toLowerCase().trim();
     const userLang = state.profile.language || 'en';
-    const userRoles = state.profile.roles || [];
-    const msgs = getPlatformMessages(userLang, userRoles);
+    // Use si3Roles (from SI<3> database) for platform detection, not user-entered roles
+    const platformRoles = state.profile.si3Roles || [];
+    const msgs = getPlatformMessages(userLang, platformRoles);
     
     // Check for restart commands
     const isRestart = lowerText.includes('restart') || lowerText.includes('start over') || lowerText.includes('begin again');
@@ -206,18 +207,13 @@ export async function processWebChatMessage(
       
       const isEditing = state.profile.isEditing || false;
       
-      // First, check SI<3> database for user roles
-      let si3User = null;
+      // First, check SI<3> database for user roles (determines Grow3dge vs SI Her questions)
       let si3Roles: string[] = [];
-      let si3Interests: string[] = [];
-      let si3PersonalValues: string[] = [];
       
       try {
-        si3User = await findSi3UserByEmail(emailText, 'si3Users', 'email');
+        const si3User = await findSi3UserByEmail(emailText, 'si3Users', 'email');
         if (si3User) {
           si3Roles = si3User.roles || [];
-          si3Interests = si3User.interests || [];
-          si3PersonalValues = si3User.personalValues || [];
           console.log(`[Web Chat API] Found SI<3> user with roles: ${si3Roles.join(', ')}`);
         } else {
           console.log(`[Web Chat API] Email ${emailText} not found in SI<3> database`);
@@ -333,25 +329,21 @@ export async function processWebChatMessage(
               email: emailText,
               existingUserId: existingUser.userId,
               existingProfile: existingUser.profile,
-              roles: si3Roles.length > 0 ? si3Roles : undefined,
-              interests: si3Interests.length > 0 ? si3Interests : undefined,
-              personalValues: si3PersonalValues.length > 0 ? si3PersonalValues : undefined
+              // Only save SI<3> roles for platform detection (Grow3dge vs SI Her)
+              // Don't pre-fill interests - user will answer with platform-specific questions
+              si3Roles: si3Roles.length > 0 ? si3Roles : undefined
             });
             responseText = `${msgs.PROFILE_EXISTS}\n\n${msgs.PROFILE_CHOICE}`;
             console.log(`[Web Chat API] Set responseText for ASK_PROFILE_CHOICE`);
           } else if (!state.profile.isEditing) {
             // Email doesn't exist - continue with onboarding
-            // Include roles and interests from SI<3> if found
+            // Only save SI<3> roles for platform detection (Grow3dge vs SI Her)
+            // Don't pre-fill interests - user will answer with platform-specific questions
             console.log(`[Web Chat API] Email ${emailText} not found, continuing with new profile`);
             const profileUpdate: any = { email: emailText };
             if (si3Roles.length > 0) {
-              profileUpdate.roles = si3Roles;
-            }
-            if (si3Interests.length > 0) {
-              profileUpdate.interests = si3Interests;
-            }
-            if (si3PersonalValues.length > 0) {
-              profileUpdate.personalValues = si3PersonalValues;
+              // Save SI<3> roles to determine which platform questions to show
+              profileUpdate.si3Roles = si3Roles;
             }
             
             await updateState('ASK_LOCATION', profileUpdate);
@@ -1143,7 +1135,7 @@ export async function processWebChatMessage(
         if (editStep) {
           await updateState(editStep, { isEditing: true, editingField: editField });
           // Get the appropriate message for the edit step
-          const editMsgs = getPlatformMessages(userLang, userRoles);
+          const editMsgs = getPlatformMessages(userLang, platformRoles);
           if (editStep === 'ASK_NAME') responseText = editMsgs.GREETING;
           else if (editStep === 'ASK_LOCATION') responseText = editMsgs.LOCATION;
           else if (editStep === 'ASK_EMAIL') responseText = editMsgs.EMAIL;

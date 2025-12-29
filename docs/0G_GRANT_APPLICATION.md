@@ -1,15 +1,10 @@
 # 0G Foundation Grant Application - Technical Submission
 ## SI<3> Ecosystem: Agent Kaia + OG.AI Integration
 
-**Note**: This document provides technical details for the grant application. Team background, funding details, and contact information will be provided separately.
----
-
 ## Project Overview and Objectives
 
 ### Mission
 SI<3> Ecosystem is building a decentralized, AI-powered matchmaking platform that connects Web3 builders, investors, and community members across the SI<3> network. Our flagship product, **Agent Kaia**, is an intelligent matchmaking bot that uses AI to facilitate meaningful connections within the SI<3> community, including Grow3dge (partnership program) and SI Her DAO members.
-
-### Project Objectives
 
 #### Primary Objectives
 1. **Integrate 0G Infrastructure with Agent Kaia** to enable verifiable, decentralized matchmaking records and cross-platform identity
@@ -23,10 +18,6 @@ SI<3> Ecosystem is building a decentralized, AI-powered matchmaking platform tha
 - **Ecosystem Growth**: Support 10 0G projects through our Growth Incubator program
 - **Decentralized Knowledge**: Share SI<3> knowledge base with 0G ecosystem agents
 
-### Target Users
-- **SI<3> Community Members**: Grow3dge partners, SI Her DAO members, and ecosystem participants
-- **0G Ecosystem Projects**: 10 selected projects participating in the Growth Incubator
-- **Web3 Builders**: Founders, developers, investors, and community leaders seeking connections
 
 ---
 
@@ -247,39 +238,6 @@ export class ReputationService {
 
 ---
 
-## 6-Month Growth Incubator Program
-
-### Program Overview
-We will invite **10 0G ecosystem projects** to participate in SI<3>'s 6-month Growth Incubator program, providing them with:
-
-1. **Strategic Growth Support**
-   - Access to SI<3> network of partners, investors, and community members
-   - Growth marketing strategies and tools
-   - Partnership development support
-
-2. **Agent Kaia Integration**
-   - Custom onboarding for each project's community
-   - Matchmaking with SI<3> ecosystem members
-   - Analytics and engagement tracking
-
-3. **0G Infrastructure Benefits**
-   - Verifiable credentials for project members
-   - Cross-platform identity integration
-   - Ecosystem-wide recognition
-
-4. **Community Access**
-   - Grow3dge program benefits
-   - SI Her DAO resources
-   - Networking events and conferences
-
-### Selection Criteria
-- Projects building on or integrating with 0G infrastructure
-- Alignment with SI<3> mission and values
-- Potential for meaningful ecosystem collaboration
-- Commitment to 6-month program participation
-
----
-
 ## Technical Implementation Details
 
 ### 0G SDK Integration
@@ -331,166 +289,75 @@ const ogClient = new OGClient({
 
 #### Ayoola Opere - Software Engineer & Technical Lead
 
-Ayoola is a full-stack software engineer who has developed Agent Kaia from conception to production. He built the platform using Node.js, TypeScript, and the ElizaOS framework, implementing the matching engine, cross-platform identity system, and role-based onboarding flows. The system is currently deployed on Akash Network.
-
-His experience includes full-stack development with React, Next.js, and Node.js, AI/ML integration with OpenAI and other providers, database systems (MongoDB, PostgreSQL), and deploying applications to production environments including decentralized cloud infrastructure.
+Ayoola is a full-stack software engineer who has developed Agent Kaia from conception to production. His experience includes full-stack development with React, Next.js, and Node.js, AI/ML integration with OpenAI and other providers, database systems (MongoDB, PostgreSQL), and deploying applications to production environments including decentralized cloud infrastructure.
 
 ---
 
-## Implementation Milestones and Deliverables
+## Funding Requirements and Milestones
+
+### Implementation Milestones
 
 #### Milestone 1: Match Records Integration (Weeks 1-2)
 **Deliverables**:
-- ✅ 0G adapter service implemented
-- ✅ Dual-write strategy (MongoDB + 0G) operational
-- ✅ Match records stored on-chain
-- ✅ Transaction monitoring dashboard
+- 0G adapter service implemented
+- Dual-write strategy (MongoDB + 0G) operational
+- Match records stored on-chain
+- Transaction monitoring dashboard
 
 **Success Criteria**:
 - 100% of matches recorded on 0G blockchain
 - Transaction success rate > 95%
 - Match record latency < 2s
 
----
-
 #### Milestone 2: Cross-Platform Identity (Weeks 3-4)
 **Deliverables**:
-- ✅ Primary identity storage on 0G
-- ✅ Platform linking system operational
-- ✅ Identity resolution service
-- ✅ Cross-platform profile synchronization
+- Primary identity storage on 0G
+- Platform linking system operational
+- Identity resolution service
+- Cross-platform profile synchronization
 
 **Success Criteria**:
 - Users can switch platforms without re-onboarding
 - Identity resolution < 500ms
 - 100% of new users get 0G identity
 
----
-
 #### Milestone 3: Onboarding Credentials (Weeks 5-6)
 **Deliverables**:
-- ✅ Credential issuance system
-- ✅ On-chain credential storage
-- ✅ Credential verification service
-- ✅ User credential dashboard
+- Credential issuance system
+- On-chain credential storage
+- Credential verification service
+- User credential dashboard
 
 **Success Criteria**:
 - 100% of completed onboardings receive credentials
 - Credential verification working
 - Users can prove SI<3> membership
 
----
-
 #### Milestone 4: OG.AI Integration (Weeks 7-8)
 **Deliverables**:
-- ✅ OG.AI SDK integrated
-- ✅ Knowledge sharing endpoints
-- ✅ Cross-agent communication
-- ✅ Enhanced AI capabilities
+- OG.AI SDK integrated
+- Knowledge sharing endpoints
+- Cross-agent communication
+- Enhanced AI capabilities
 
 **Success Criteria**:
 - OG.AI integration operational
 - Knowledge sharing functional
 - Cross-agent queries working
 
----
-
 #### Milestone 5: Growth Incubator Launch (Weeks 9-12)
 **Deliverables**:
-- ✅ 10 0G projects selected
-- ✅ Incubator program launched
-- ✅ Projects onboarded to Agent Kaia
-- ✅ First cohort matches completed
+- 10 0G projects selected
+- Incubator program launched
+- Projects onboarded to Agent Kaia
+- First cohort matches completed
 
 **Success Criteria**:
 - 10 projects participating
 - All projects integrated with Agent Kaia
 - First matches generated for cohort
 
----
+### Funding Requirements
 
-## Budget Considerations
+**Note**: Specific funding amounts, payment schedules, and budget breakdown will be provided separately by the grant applicant.
 
-### Development & Integration (Estimated 60% of budget)
-- 0G infrastructure integration
-- OG.AI integration
-- Testing and optimization
-- Documentation
-
-### Growth Incubator Program (Estimated 30% of budget)
-- Program management
-- Resources and tools
-- Events and networking
-
-### Operations & Maintenance (Estimated 10% of budget)
-- Infrastructure costs
-- Monitoring and support
-
----
-
-## Success Metrics
-
-### Technical Metrics
-- 0G transaction success rate > 95%
-- Match record latency < 2s (including 0G write)
-- Identity resolution < 500ms
-- Credential issuance success rate: 100%
-
-### Business Metrics
-- Cross-platform user adoption: 50%+ users on multiple platforms
-- Verifiable match verification usage: 30%+ users verify matches
-- Growth Incubator participation: 10 projects
-- Ecosystem integration: 5+ cross-agent interactions per week
-
-### Community Metrics
-- User satisfaction with verifiable credentials
-- Match success rate improvement
-- Community engagement increase
-- Ecosystem collaboration events
-
----
-
-## Risk Mitigation
-
-### Technical Risks
-- **0G Network Downtime**: Fallback to MongoDB-only mode, no service interruption
-- **High Gas Costs**: Batch transactions, optimize writes, cost monitoring
-- **Latency Issues**: Async writes, caching strategy, performance optimization
-
-### Operational Risks
-- **Key Management**: Secure environment variable storage, key rotation
-- **Transaction Monitoring**: Automated alerts for failures, retry mechanisms
-- **Data Consistency**: Dual-write validation, reconciliation processes
-
-### Program Risks
-- **Project Participation**: Clear selection criteria, commitment agreements
-- **Timeline Delays**: Buffer time in schedule, agile development approach
-- **Integration Complexity**: Phased rollout, extensive testing
-
----
-
-## Long-Term Vision
-
-### Beyond Grant Period
-1. **Reputation System**: Build on-chain reputation scores based on match success and community contributions
-2. **Knowledge Base Migration**: Fully migrate SI<3> knowledge base to 0G decentralized storage
-3. **Agent Coordination**: Enable multi-agent workflows and cross-ecosystem matching
-4. **Community Governance**: Implement decentralized governance for matching rules and features
-5. **Ecosystem Expansion**: Integrate with additional Web3 platforms and services
-
-### Sustainability
-- Revenue model: Premium features, enterprise matching services
-- Community funding: DAO treasury contributions
-- Partnership revenue: Growth Incubator program fees
-- Ecosystem grants: Continued support for 0G ecosystem projects
-
----
-
-## Conclusion
-
-This grant application represents a significant step forward in building a verifiable, decentralized matchmaking ecosystem. By integrating 0G infrastructure with Agent Kaia, we will:
-
-1. **Enable Trust**: Users can verify their matches and credentials independently
-2. **Improve Experience**: Seamless cross-platform identity eliminates friction
-3. **Support Ecosystem**: Growth Incubator program helps 10 0G projects grow
-4. **Build Foundation**: Creates infrastructure for future decentralized features

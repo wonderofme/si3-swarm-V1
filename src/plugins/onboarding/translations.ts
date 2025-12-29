@@ -90,7 +90,7 @@ Reply with the number (for example: 1)`,
 10. Other
 
 Reply with the number before the role (for example: 1, 4). If you have a role that is not listed, type that as text (for example: 1,4 and xx)`,
-    INTERESTS: `As I am getting to know you better, can you please share what you are excited to explore in the Grow3dge program? You can select more than one topic.
+    INTERESTS: `As I am getting to know you better, can you please share what you are excited to explore? You can select more than one topic.
 
 1. Web3 Growth Marketing
 2. Sales, BD & Partnerships
@@ -113,7 +113,7 @@ Reply with the number before the topic (for example: 2,3). If you have a topic t
 6. New job opportunities
 
 Reply with the number before the connection type (for example: 3, 4). If you have a connection type that is not listed, type that as text (for example 3,4 and Cybersecurity).`,
-    EVENTS: `I am also able to match you with other Grow3dge members that are attending the same events and conferences.
+    EVENTS: `I am also able to match you with other SI<3> members that are attending the same events and conferences.
 
 Can you share any events that you will be attending coming up (event name, date, and location)? (optional)
 
@@ -641,55 +641,17 @@ Please reply with the number (for example: 1)`,
       PROFILE_TITLE: `💜 Your Si Her DAO Profile:`
     };
   } else if (isSiHer && isGrow3dge) {
-    // User has both roles - default to Grow3dge flow
+    // User has BOTH roles - use generic/default questions (not tailored to either platform)
     return {
       ...baseMessages,
-      INTERESTS: `As I am getting to know you better, can you please share what you are excited to explore in the Grow3dge program? You can select more than one topic.
-
-1. Web3 Growth Marketing
-2. Sales, BD & Partnerships
-3. Education 3.0
-4. AI
-5. Cybersecurity
-6. DAO's
-7. Tokenomics
-8. Fundraising
-9. DeepTech
-
-Reply with the number before the topic (for example: 2,3). If you have a topic that is not listed, type that as text (for example: 2,3 and DevRel)`,
-      GOALS: `I'd love to help you find the right connections - what are you looking for? 🤝
-
-1. Startups to invest in
-2. Investors/grant programs
-3. Growth tools, strategies, and/or support
-4. Sales/BD tools, strategies and/or support
-5. Communities and/or DAO's to join
-6. New job opportunities
-
-Reply with the number before the connection type (for example: 3, 4). If you have a connection type that is not listed, type that as text (for example 3,4 and Cybersecurity).`,
-      EVENTS: `I am also able to match you with other Grow3dge members that are attending the same events and conferences.
-
-Can you share any events that you will be attending coming up (event name, date, and location)? (optional)
-
-To move on to the next question, type 'Next'`,
-      SOCIALS: `Can you share your digital links and/or social media profiles so we can share those with your matches? (optional)
-
-To move on to the next question, type 'Next'`,
-      NOTIFICATIONS: `One last thing…would you be interested in receiving notifications for project and mission collaboration opportunities initiated by SI<3> and its ecosystem partners?
-
-1. Yes!
-2. No, thanks
-3. Not sure yet, check in with me another time
-
-Please reply with the number (for example: 1)`,
-      PROFILE_TITLE: `💜 Your Grow3dge Profile:`
+      PROFILE_TITLE: `💜 Your SI<3> Profile:`
     };
   }
   
-  // Default (no platform detected)
+  // Default (NEITHER platform detected) - use generic/default questions
   return {
     ...baseMessages,
-    PROFILE_TITLE: `💜 Your Profile:`
+    PROFILE_TITLE: `💜 Your SI<3> Profile:`
   };
 }
 
