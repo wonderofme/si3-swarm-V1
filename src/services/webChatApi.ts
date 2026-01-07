@@ -1,6 +1,8 @@
 import { AgentRuntime } from '@elizaos/core';
 import { getMessages, getPlatformMessages } from '../plugins/onboarding/translations.js';
 import { findSi3UserByEmail } from './si3Database.js';
+import { saveUserToSiuDatabase, findSiuUserByWallet, isWalletRegistered } from './siuDatabaseService.js';
+import { validateSiuName, checkSiuNameAvailability, validateWalletAddress } from './siuNameService.js';
 
 // API key for authentication (should be set in environment)
 const API_KEY = process.env.WEB_API_KEY || process.env.JWT_SECRET || 'default-api-key';
@@ -19,6 +21,10 @@ export interface ChatResponse {
   profile?: any;
   onboardingStatus?: string;
   error?: string;
+  // NEW: Signals for frontend
+  requiresWalletConnection?: boolean; // Tell frontend to show wallet connect modal
+  siuNameClaimed?: string; // Confirmed SI U name after claiming
+  walletConnected?: boolean; // Confirm wallet was connected
 }
 
 /**
@@ -43,11 +49,24 @@ function parseNumberedList(text: string, numberMap: Record<string, string>): str
 
 /**
  * Generate confirmation summary text (matches Telegram flow)
+ * Now includes wallet and SI U name fields
  */
 function generateConfirmationSummary(profile: any, msgs: any): string {
-  return `${msgs.SUMMARY_TITLE}\n\n` +
-    `${msgs.SUMMARY_NAME} ${profile.name || msgs.SUMMARY_NOT_PROVIDED}\n` +
-    `${msgs.SUMMARY_LOCATION} ${profile.location || msgs.SUMMARY_NOT_PROVIDED}\n` +
+  let summary = `${msgs.SUMMARY_TITLE}\n\n` +
+    `${msgs.SUMMARY_NAME} ${profile.name || msgs.SUMMARY_NOT_PROVIDED}\n`;
+  
+  // Add wallet address if present
+  if (profile.walletAddress) {
+    const shortWallet = `${profile.walletAddress.slice(0, 6)}...${profile.walletAddress.slice(-4)}`;
+    summary += `${msgs.SUMMARY_WALLET || 'Wallet:'} ${shortWallet}\n`;
+  }
+  
+  // Add SI U name if present
+  if (profile.siuName) {
+    summary += `${msgs.SUMMARY_SIU_NAME || 'SI U Name:'} ${profile.siuName}\n`;
+  }
+  
+  summary += `${msgs.SUMMARY_LOCATION} ${profile.location || msgs.SUMMARY_NOT_PROVIDED}\n` +
     `${msgs.SUMMARY_EMAIL} ${profile.email || msgs.SUMMARY_NOT_PROVIDED}\n` +
     `${msgs.SUMMARY_ROLES} ${(profile.roles || []).join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
     `${msgs.SUMMARY_INTERESTS} ${(profile.interests || []).join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
@@ -59,8 +78,17 @@ function generateConfirmationSummary(profile: any, msgs: any): string {
     (profile.diversityResearchInterest ? `${msgs.SUMMARY_DIVERSITY} ${profile.diversityResearchInterest}\n` : '') +
     `${msgs.SUMMARY_NOTIFICATIONS} ${profile.notifications || msgs.SUMMARY_NOT_PROVIDED}\n\n` +
     `${msgs.EDIT_NAME}\n` +
-    `${msgs.EDIT_LOCATION}\n` +
-    `${msgs.EDIT_ROLES}\n` +
+    `${msgs.EDIT_LOCATION}\n`;
+  
+  // Add edit options for wallet and SI U name if applicable
+  if (profile.walletAddress) {
+    summary += `${msgs.EDIT_WALLET || 'Edit wallet'}\n`;
+  }
+  if (profile.siuName) {
+    summary += `${msgs.EDIT_SIU_NAME || 'Edit SI U name'}\n`;
+  }
+  
+  summary += `${msgs.EDIT_ROLES}\n` +
     `${msgs.EDIT_INTERESTS}\n` +
     `${msgs.EDIT_GOALS}\n` +
     `${msgs.EDIT_EVENTS}\n` +
@@ -69,6 +97,8 @@ function generateConfirmationSummary(profile: any, msgs: any): string {
     `${msgs.EDIT_GENDER}\n` +
     `${msgs.EDIT_NOTIFICATIONS}\n\n` +
     `${msgs.CONFIRM}`;
+  
+  return summary;
 }
 
 /**
@@ -193,9 +223,145 @@ export async function processWebChatMessage(
         await updateState('CONFIRMATION', { name, isEditing: false, editingField: undefined });
         responseText = generateConfirmationSummary({ ...state.profile, name }, msgs);
       } else {
-        await updateState('ASK_EMAIL', { name });
-        responseText = msgs.EMAIL;
+        // NEW: Go to entry method selection (wallet vs email)
+        await updateState('ASK_ENTRY_METHOD', { name, onboardingStartedAt: new Date() });
+        responseText = msgs.ENTRY_METHOD;
       }
+    } else if (state.step === 'ASK_ENTRY_METHOD') {
+      // NEW: User chooses wallet or email entry
+      const choice = messageText.trim();
+      
+      if (choice === '1' || lowerText.includes('wallet') || lowerText.includes('connect')) {
+        // User chose wallet
+        await updateState('ASK_WALLET_CONNECTION', { entryMethod: 'wallet' });
+        responseText = msgs.WALLET_CONNECTION;
+        // Signal frontend to show wallet connection UI
+        return {
+          success: true,
+          response: responseText,
+          userId,
+          profile: state.profile,
+          onboardingStatus: 'ASK_WALLET_CONNECTION',
+          requiresWalletConnection: true
+        };
+      } else if (choice === '2' || lowerText.includes('email') || lowerText.includes('continue')) {
+        // User chose email
+        await updateState('ASK_EMAIL', { entryMethod: 'email' });
+        responseText = msgs.EMAIL;
+      } else {
+        // Invalid choice - ask again
+        responseText = msgs.ENTRY_METHOD;
+      }
+    } else if (state.step === 'ASK_WALLET_CONNECTION') {
+      // NEW: Handle wallet address from frontend
+      // Frontend sends wallet address after successful connection
+      const walletAddress = messageText.trim();
+      
+      // Validate wallet address format
+      const walletValidation = validateWalletAddress(walletAddress);
+      if (!walletValidation.valid) {
+        responseText = walletValidation.error || 'Invalid wallet address. Please try again.';
+        return {
+          success: true,
+          response: responseText,
+          userId,
+          profile: state.profile,
+          onboardingStatus: 'ASK_WALLET_CONNECTION',
+          requiresWalletConnection: true
+        };
+      }
+      
+      // Check if wallet is already registered
+      try {
+        const walletExists = await isWalletRegistered(walletAddress);
+        if (walletExists) {
+          responseText = msgs.WALLET_ALREADY_REGISTERED;
+          // Allow them to try another wallet or switch to email
+          await updateState('ASK_ENTRY_METHOD', { walletAddress: undefined, entryMethod: undefined });
+          responseText += '\n\n' + msgs.ENTRY_METHOD;
+          return {
+            success: true,
+            response: responseText,
+            userId,
+            profile: state.profile,
+            onboardingStatus: 'ASK_ENTRY_METHOD'
+          };
+        }
+      } catch (err) {
+        console.log('[Web Chat API] Could not check wallet registration:', err);
+        // Continue anyway - will catch during save
+      }
+      
+      // Wallet connected successfully - proceed to SI U name
+      const connectedMsg = msgs.WALLET_CONNECTED.replace('{walletAddress}', 
+        `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`);
+      await updateState('ASK_SIU_NAME', { walletAddress });
+      responseText = connectedMsg + '\n\n' + msgs.SIU_NAME;
+      return {
+        success: true,
+        response: responseText,
+        userId,
+        profile: { ...state.profile, walletAddress },
+        onboardingStatus: 'ASK_SIU_NAME',
+        walletConnected: true
+      };
+    } else if (state.step === 'ASK_SIU_NAME') {
+      // NEW: Handle SI U name claiming
+      const desiredName = messageText.trim();
+      
+      // Skip if user wants to skip
+      if (isNext) {
+        await updateState('ASK_EMAIL', {});
+        responseText = msgs.EMAIL;
+        return {
+          success: true,
+          response: responseText,
+          userId,
+          profile: state.profile,
+          onboardingStatus: 'ASK_EMAIL'
+        };
+      }
+      
+      // Validate SI U name format
+      const validation = validateSiuName(desiredName);
+      if (!validation.valid) {
+        responseText = msgs.SIU_NAME_INVALID;
+        return {
+          success: true,
+          response: responseText,
+          userId,
+          profile: state.profile,
+          onboardingStatus: 'ASK_SIU_NAME'
+        };
+      }
+      
+      const formattedName = validation.formatted!;
+      
+      // Check availability
+      const availability = await checkSiuNameAvailability(formattedName);
+      if (!availability.available) {
+        responseText = msgs.SIU_NAME_TAKEN.replace('{siuName}', formattedName);
+        return {
+          success: true,
+          response: responseText,
+          userId,
+          profile: state.profile,
+          onboardingStatus: 'ASK_SIU_NAME'
+        };
+      }
+      
+      // Name is available - claim it and proceed
+      const claimedMsg = msgs.SIU_NAME_CLAIMED.replace('{siuName}', formattedName);
+      await updateState('ASK_EMAIL', { siuName: formattedName });
+      responseText = claimedMsg + '\n\n' + msgs.EMAIL;
+      return {
+        success: true,
+        response: responseText,
+        userId,
+        profile: { ...state.profile, siuName: formattedName },
+        onboardingStatus: 'ASK_EMAIL',
+        siuNameClaimed: formattedName
+      };
     } else if (state.step === 'ASK_EMAIL') {
       // Validate email format
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -546,29 +712,60 @@ export async function processWebChatMessage(
       else if (lowerText.includes('2') || lowerText.includes('no')) notifications = 'No';
       else if (lowerText.includes('3')) notifications = 'Check later';
       
-      await updateState('COMPLETED', { notifications, onboardingCompletedAt: new Date() });
+      const completedProfile = {
+        ...state.profile,
+        notifications,
+        onboardingCompletedAt: new Date(),
+        onboardingSource: 'web' as const,
+        userTier: 'explorer' as const  // Default all users to explorer tier
+      };
+      
+      await updateState('COMPLETED', completedProfile);
+      
+      // NEW: Save to SI U database
+      try {
+        if (completedProfile.email) {
+          const saved = await saveUserToSiuDatabase(
+            runtime,
+            completedProfile.email,
+            completedProfile,
+            userId,
+            'web'
+          );
+          if (saved) {
+            console.log(`[Web Chat API] ✅ Saved user ${completedProfile.email} to SI U database`);
+          } else {
+            console.error(`[Web Chat API] ❌ Failed to save user to SI U database`);
+          }
+        }
+      } catch (siuError) {
+        console.error('[Web Chat API] Error saving to SI U database:', siuError);
+        // Continue even if SI U save fails - we have the cache
+      }
       
       // Send completion message with profile (matches Telegram exactly)
       const { formatProfileForDisplay } = await import('../plugins/onboarding/utils.js');
-      const profileText = formatProfileForDisplay(state.profile, state.profile.language || 'en');
+      const profileText = formatProfileForDisplay(completedProfile, completedProfile.language || 'en');
       responseText = msgs.COMPLETION + '\n\n' + profileText;
     } else if (state.step === 'AWAITING_UPDATE_FIELD') {
       // User is choosing which field to update (matches Telegram)
       const updateFields: Record<string, { step: string, prompt: string, number: number }> = {
         'name': { step: 'UPDATING_NAME', prompt: 'What would you like to change your name to?', number: 1 },
         'location': { step: 'UPDATING_LOCATION', prompt: 'What is your new location (city and country)?', number: 2 },
-        'roles': { step: 'UPDATING_ROLES', prompt: msgs.ROLES, number: 3 },
-        'interests': { step: 'UPDATING_INTERESTS', prompt: msgs.INTERESTS, number: 4 },
-        'goals': { step: 'UPDATING_GOALS', prompt: msgs.GOALS, number: 5 },
-        'events': { step: 'UPDATING_EVENTS', prompt: 'What events will you be attending? (event name, date, location)', number: 6 },
-        'socials': { step: 'UPDATING_SOCIALS', prompt: 'Share your social media links:', number: 7 },
-        'telegram': { step: 'UPDATING_TELEGRAM', prompt: 'What is your Telegram handle? (e.g., @username)', number: 8 },
-        'diversity': { step: 'UPDATING_DIVERSITY', prompt: 'Would you like to be (anonymously) included within our diversity research?\n\n1. Yes\n2. No\n3. Not sure yet\n\nPlease reply with the number (for example: 1)', number: 9 },
-        'notifications': { step: 'UPDATING_NOTIFICATIONS', prompt: msgs.NOTIFICATIONS, number: 10 }
+        'wallet': { step: 'UPDATING_WALLET', prompt: 'Please enter your new wallet address (0x...):', number: 3 },
+        'siuName': { step: 'UPDATING_SIU_NAME', prompt: msgs.SIU_NAME || 'What SI U name would you like to claim? (e.g., yourname.siu)', number: 4 },
+        'roles': { step: 'UPDATING_ROLES', prompt: msgs.ROLES, number: 5 },
+        'interests': { step: 'UPDATING_INTERESTS', prompt: msgs.INTERESTS, number: 6 },
+        'goals': { step: 'UPDATING_GOALS', prompt: msgs.GOALS, number: 7 },
+        'events': { step: 'UPDATING_EVENTS', prompt: 'What events will you be attending? (event name, date, location)', number: 8 },
+        'socials': { step: 'UPDATING_SOCIALS', prompt: 'Share your social media links:', number: 9 },
+        'telegram': { step: 'UPDATING_TELEGRAM', prompt: 'What is your Telegram handle? (e.g., @username)', number: 10 },
+        'diversity': { step: 'UPDATING_DIVERSITY', prompt: 'Would you like to be (anonymously) included within our diversity research?\n\n1. Yes\n2. No\n3. Not sure yet\n\nPlease reply with the number (for example: 1)', number: 11 },
+        'notifications': { step: 'UPDATING_NOTIFICATIONS', prompt: msgs.NOTIFICATIONS, number: 12 }
       };
       
-      // Check for number input (1-10)
-      const numberMatch = lowerText.match(/\b([1-9]|10)\b/);
+      // Check for number input (1-12)
+      const numberMatch = lowerText.match(/\b([1-9]|1[0-2])\b/);
       let fieldToUpdate: string | null = null;
       
       if (numberMatch) {
@@ -583,6 +780,8 @@ export async function processWebChatMessage(
           if (lowerText.includes(field) || 
               (field === 'name' && (lowerText.includes('name') || lowerText.includes('nombre'))) ||
               (field === 'location' && (lowerText.includes('location') || lowerText.includes('ubicación') || lowerText.includes('localização'))) ||
+              (field === 'wallet' && lowerText.includes('wallet')) ||
+              (field === 'siuName' && (lowerText.includes('siu') || lowerText.includes('username'))) ||
               (field === 'roles' && (lowerText.includes('role') || lowerText.includes('rol'))) ||
               (field === 'interests' && (lowerText.includes('interest') || lowerText.includes('interés'))) ||
               (field === 'goals' && lowerText.includes('goal')) ||
@@ -606,15 +805,90 @@ export async function processWebChatMessage(
         responseText = `What would you like to update? 📝\n\n` +
           `1. Name\n` +
           `2. Location\n` +
-          `3. Professional role(s)\n` +
-          `4. Professional interests\n` +
-          `5. Professional goals\n` +
-          `6. Events & conferences attending\n` +
-          `7. Personal social and/or digital links\n` +
-          `8. Telegram handle\n` +
-          `9. Diversity research interest\n` +
-          `10. Collaboration notifications\n\n` +
+          `3. Wallet address\n` +
+          `4. SI U name\n` +
+          `5. Professional role(s)\n` +
+          `6. Professional interests\n` +
+          `7. Professional goals\n` +
+          `8. Events & conferences attending\n` +
+          `9. Personal social and/or digital links\n` +
+          `10. Telegram handle\n` +
+          `11. Diversity research interest\n` +
+          `12. Collaboration notifications\n\n` +
           `Just type the field number(s) (e.g. 1, 3).`;
+      }
+    } else if (state.step === 'UPDATING_WALLET') {
+      // Handle wallet update
+      const newWalletAddress = messageText.trim();
+      const walletValidation = validateWalletAddress(newWalletAddress);
+      
+      if (!walletValidation.valid) {
+        responseText = walletValidation.error || 'Invalid wallet address. Please enter a valid Ethereum address (0x...):';
+      } else {
+        // Check if wallet is already registered (by someone else)
+        try {
+          const walletExists = await isWalletRegistered(newWalletAddress);
+          if (walletExists) {
+            const existingUser = await findSiuUserByWallet(newWalletAddress);
+            if (existingUser && existingUser.email !== state.profile.email) {
+              responseText = 'This wallet address is already registered with another account. Please use a different wallet address.';
+              return { success: true, response: responseText, userId, profile: state.profile, onboardingStatus: 'UPDATING_WALLET' };
+            }
+          }
+        } catch (err) {
+          console.log('[Web Chat API] Could not check wallet registration:', err);
+        }
+        
+        // Update the profile
+        const { updateOnboardingStep } = await import('../plugins/onboarding/utils.js');
+        const updatedProfile = { ...state.profile, walletAddress: newWalletAddress };
+        await updateOnboardingStep(runtime, userId as any, userId as any, 'COMPLETED', updatedProfile);
+        await updateState('COMPLETED', updatedProfile);
+        
+        // Also update SI U database
+        if (state.profile.email) {
+          try {
+            const { updateSiuUserProfile } = await import('./siuDatabaseService.js');
+            await updateSiuUserProfile(state.profile.email, { wallet_address: newWalletAddress, isWalletVerified: true });
+          } catch (err) {
+            console.error('[Web Chat API] Error updating SI U database:', err);
+          }
+        }
+        
+        responseText = `✅ Your wallet address has been updated!\n\nSay "my profile" to see your updated profile! 💜`;
+      }
+    } else if (state.step === 'UPDATING_SIU_NAME') {
+      // Handle SI U name update
+      const validation = validateSiuName(messageText);
+      
+      if (!validation.valid) {
+        responseText = validation.error || 'Invalid SI U name. Please try again:';
+      } else {
+        const formattedName = validation.formatted!;
+        
+        // Check availability
+        const availability = await checkSiuNameAvailability(formattedName);
+        if (!availability.available) {
+          responseText = `${formattedName} is already taken. Please choose a different name:`;
+        } else {
+          // Update the profile
+          const { updateOnboardingStep } = await import('../plugins/onboarding/utils.js');
+          const updatedProfile = { ...state.profile, siuName: formattedName };
+          await updateOnboardingStep(runtime, userId as any, userId as any, 'COMPLETED', updatedProfile);
+          await updateState('COMPLETED', updatedProfile);
+          
+          // Also update SI U database
+          if (state.profile.email) {
+            try {
+              const { updateSiuUserProfile } = await import('./siuDatabaseService.js');
+              await updateSiuUserProfile(state.profile.email, { siuName: formattedName, username: formattedName });
+            } catch (err) {
+              console.error('[Web Chat API] Error updating SI U database:', err);
+            }
+          }
+          
+          responseText = `🎉 Your SI U name has been updated to ${formattedName}!\n\nSay "my profile" to see your updated profile! 💜`;
+        }
       }
     } else if (state.step.startsWith('UPDATING_')) {
       // Handle update for specific field (matches Telegram)
@@ -1261,18 +1535,20 @@ export async function processWebChatMessage(
         const updateFields: Record<string, { step: string, prompt: string, number: number }> = {
           'name': { step: 'UPDATING_NAME', prompt: 'What would you like to change your name to?', number: 1 },
           'location': { step: 'UPDATING_LOCATION', prompt: 'What is your new location (city and country)?', number: 2 },
-          'roles': { step: 'UPDATING_ROLES', prompt: msgs.ROLES, number: 3 },
-          'interests': { step: 'UPDATING_INTERESTS', prompt: msgs.INTERESTS, number: 4 },
-          'goals': { step: 'UPDATING_GOALS', prompt: msgs.GOALS, number: 5 },
-          'events': { step: 'UPDATING_EVENTS', prompt: 'What events will you be attending? (event name, date, location)', number: 6 },
-          'socials': { step: 'UPDATING_SOCIALS', prompt: 'Share your social media links:', number: 7 },
-          'telegram': { step: 'UPDATING_TELEGRAM', prompt: 'What is your Telegram handle? (e.g., @username)', number: 8 },
-          'diversity': { step: 'UPDATING_DIVERSITY', prompt: 'Would you like to be (anonymously) included within our diversity research?\n\n1. Yes\n2. No\n3. Not sure yet\n\nPlease reply with the number (for example: 1)', number: 9 },
-          'notifications': { step: 'UPDATING_NOTIFICATIONS', prompt: msgs.NOTIFICATIONS, number: 10 }
+          'wallet': { step: 'UPDATING_WALLET', prompt: 'Please enter your new wallet address (0x...):', number: 3 },
+          'siuName': { step: 'UPDATING_SIU_NAME', prompt: msgs.SIU_NAME || 'What SI U name would you like to claim? (e.g., yourname.siu)', number: 4 },
+          'roles': { step: 'UPDATING_ROLES', prompt: msgs.ROLES, number: 5 },
+          'interests': { step: 'UPDATING_INTERESTS', prompt: msgs.INTERESTS, number: 6 },
+          'goals': { step: 'UPDATING_GOALS', prompt: msgs.GOALS, number: 7 },
+          'events': { step: 'UPDATING_EVENTS', prompt: 'What events will you be attending? (event name, date, location)', number: 8 },
+          'socials': { step: 'UPDATING_SOCIALS', prompt: 'Share your social media links:', number: 9 },
+          'telegram': { step: 'UPDATING_TELEGRAM', prompt: 'What is your Telegram handle? (e.g., @username)', number: 10 },
+          'diversity': { step: 'UPDATING_DIVERSITY', prompt: 'Would you like to be (anonymously) included within our diversity research?\n\n1. Yes\n2. No\n3. Not sure yet\n\nPlease reply with the number (for example: 1)', number: 11 },
+          'notifications': { step: 'UPDATING_NOTIFICATIONS', prompt: msgs.NOTIFICATIONS, number: 12 }
         };
         
-        // Check for number input (1-10)
-        const numberMatch = lowerText.match(/\b([1-9]|10)\b/);
+        // Check for number input (1-12)
+        const numberMatch = lowerText.match(/\b([1-9]|1[0-2])\b/);
         let fieldToUpdate: string | null = null;
         
         if (numberMatch) {
@@ -1288,6 +1564,8 @@ export async function processWebChatMessage(
             if (lowerText.includes(field) || 
                 (field === 'name' && (lowerText.includes('name') || lowerText.includes('nombre'))) ||
                 (field === 'location' && (lowerText.includes('location') || lowerText.includes('ubicación') || lowerText.includes('localização'))) ||
+                (field === 'wallet' && lowerText.includes('wallet')) ||
+                (field === 'siuName' && (lowerText.includes('siu') || lowerText.includes('username'))) ||
                 (field === 'roles' && (lowerText.includes('role') || lowerText.includes('rol'))) ||
                 (field === 'interests' && (lowerText.includes('interest') || lowerText.includes('interés'))) ||
                 (field === 'goals' && lowerText.includes('goal')) ||
@@ -1313,14 +1591,16 @@ export async function processWebChatMessage(
           responseText = `What would you like to update? 📝\n\n` +
             `1. Name\n` +
             `2. Location\n` +
-            `3. Professional role(s)\n` +
-            `4. Professional interests\n` +
-            `5. Professional goals\n` +
-            `6. Events & conferences attending\n` +
-            `7. Personal social and/or digital links\n` +
-            `8. Telegram handle\n` +
-            `9. Diversity research interest\n` +
-            `10. Collaboration notifications\n\n` +
+            `3. Wallet address\n` +
+            `4. SI U name\n` +
+            `5. Professional role(s)\n` +
+            `6. Professional interests\n` +
+            `7. Professional goals\n` +
+            `8. Events & conferences attending\n` +
+            `9. Personal social and/or digital links\n` +
+            `10. Telegram handle\n` +
+            `11. Diversity research interest\n` +
+            `12. Collaboration notifications\n\n` +
             `Just type the field number(s) (e.g. 1, 3).`;
         }
       } else if (isFeatureRequest) {

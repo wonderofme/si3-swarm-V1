@@ -151,6 +151,33 @@ ${msgs.LOCATION}
 After sending this message, wait for the user's response with their location or "Next" to skip.]`;
   }
   
+  // ASK_ENTRY_METHOD step (NEW)
+  if (step === 'ASK_ENTRY_METHOD') {
+    return `[ONBOARDING STEP: ASK_ENTRY_METHOD - Send this EXACT message word-for-word. Do not modify, paraphrase, or add anything:
+
+${msgs.ENTRY_METHOD}
+
+After sending this message, wait for the user's response with a number (1 or 2).]`;
+  }
+  
+  // ASK_WALLET_CONNECTION step (NEW)
+  if (step === 'ASK_WALLET_CONNECTION') {
+    return `[ONBOARDING STEP: ASK_WALLET_CONNECTION - Send this EXACT message word-for-word. Do not modify, paraphrase, or add anything:
+
+${msgs.WALLET_CONNECTION}
+
+After sending this message, wait for wallet connection from the frontend. The frontend will send the wallet address.]`;
+  }
+  
+  // ASK_SIU_NAME step (NEW)
+  if (step === 'ASK_SIU_NAME') {
+    return `[ONBOARDING STEP: ASK_SIU_NAME - Send this EXACT message word-for-word. Do not modify, paraphrase, or add anything:
+
+${msgs.SIU_NAME}
+
+After sending this message, wait for the user's response with their desired SI U name.]`;
+  }
+  
   // ASK_EMAIL step
   if (step === 'ASK_EMAIL') {
     return `[ONBOARDING STEP: ASK_EMAIL - Send this EXACT message word-for-word. Do not modify, paraphrase, or add anything:

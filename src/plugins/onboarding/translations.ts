@@ -45,7 +45,20 @@ export interface Messages {
   EDIT_NOTIFICATIONS: string;
   CONFIRM: string;
   NEXT_INSTRUCTION: string;
-  PROFILE_TITLE: string; // Platform-specific profile title (e.g., "Your Grow3dge Profile" or "Your Si Her DAO Profile")
+  PROFILE_TITLE: string;
+  // NEW: SI U onboarding messages
+  ENTRY_METHOD: string;
+  WALLET_CONNECTION: string;
+  WALLET_CONNECTED: string;
+  WALLET_ALREADY_REGISTERED: string;
+  SIU_NAME: string;
+  SIU_NAME_INVALID: string;
+  SIU_NAME_TAKEN: string;
+  SIU_NAME_CLAIMED: string;
+  SUMMARY_WALLET: string;
+  SUMMARY_SIU_NAME: string;
+  EDIT_WALLET: string;
+  EDIT_SIU_NAME: string;
 }
 
 const translations: Record<LanguageCode, Messages> = {
@@ -167,7 +180,48 @@ In the meantime, I will let you know when I have a member match for you.`,
     EDIT_NOTIFICATIONS: `Edit notifications for collabs`,
     CONFIRM: `✅ Confirm`,
     NEXT_INSTRUCTION: `To move on to the next question, type 'Next'`,
-    PROFILE_TITLE: `💜 Your Grow3dge Profile:`
+    PROFILE_TITLE: `💜 Your Grow3dge Profile:`,
+    // NEW: SI U onboarding messages
+    ENTRY_METHOD: `Welcome to SI U! 🎉 How would you like to sign up?
+
+1. Connect Wallet (Recommended)
+2. Continue with Email
+
+Reply with the number (for example: 1)`,
+    WALLET_CONNECTION: `Great! Please connect your wallet to continue.
+
+Your wallet address will be securely linked to your SI U profile. This allows you to access exclusive features and claim your SI U name.
+
+[The frontend will display wallet connection options]`,
+    WALLET_CONNECTED: `✅ Wallet connected successfully!
+
+Wallet: {walletAddress}`,
+    WALLET_ALREADY_REGISTERED: `This wallet address is already registered with another account. Please use a different wallet or continue with email.`,
+    SIU_NAME: `Now let's claim your SI U name! 🏷️
+
+Your SI U name is your unique identity across the SI<3> ecosystem (e.g., yourname.siu).
+
+What SI U name would you like to claim?
+
+Rules:
+• 3-20 characters
+• Letters and numbers only
+• Not case sensitive
+
+Example: If you type "myname", you'll get myname.siu`,
+    SIU_NAME_INVALID: `Sorry, that SI U name is not valid. Please choose a name that:
+• Has 3-20 characters
+• Contains only letters and numbers (no spaces or special characters)
+
+Try again:`,
+    SIU_NAME_TAKEN: `Sorry, {siuName} is already taken. Please choose a different name:`,
+    SIU_NAME_CLAIMED: `🎉 Congrats! You've claimed {siuName}!
+
+This is your unique identity in the SI<3> ecosystem.`,
+    SUMMARY_WALLET: `Wallet:`,
+    SUMMARY_SIU_NAME: `SI U Name:`,
+    EDIT_WALLET: `Edit wallet`,
+    EDIT_SIU_NAME: `Edit SI U name`
   },
   es: {
     GREETING: `¡Hola! Soy la Agente Kaia, creada por SI<3>. Soy tu guía amigable para ayudarte a navegar Web3. Estoy aquí para apoyarte a hacer conexiones significativas y compartir conocimientos útiles y oportunidades dentro de nuestra red de miembros. 💜
@@ -287,7 +341,48 @@ Mientras tanto, te avisaré cuando tenga una conexión de miembro para ti.`,
     EDIT_NOTIFICATIONS: `Editar notificaciones para colaboraciones`,
     CONFIRM: `✅ Confirmar`,
     NEXT_INSTRUCTION: `Para pasar a la siguiente pregunta, escribe 'Next'`,
-    PROFILE_TITLE: `💜 Tu Perfil de Grow3dge:`
+    PROFILE_TITLE: `💜 Tu Perfil de Grow3dge:`,
+    // NEW: SI U onboarding messages
+    ENTRY_METHOD: `¡Bienvenido a SI U! 🎉 ¿Cómo te gustaría registrarte?
+
+1. Conectar Billetera (Recomendado)
+2. Continuar con Correo Electrónico
+
+Responde con el número (por ejemplo: 1)`,
+    WALLET_CONNECTION: `¡Genial! Por favor conecta tu billetera para continuar.
+
+Tu dirección de billetera se vinculará de forma segura a tu perfil de SI U. Esto te permite acceder a funciones exclusivas y reclamar tu nombre SI U.
+
+[El frontend mostrará las opciones de conexión de billetera]`,
+    WALLET_CONNECTED: `✅ ¡Billetera conectada exitosamente!
+
+Billetera: {walletAddress}`,
+    WALLET_ALREADY_REGISTERED: `Esta dirección de billetera ya está registrada con otra cuenta. Por favor usa una billetera diferente o continúa con correo electrónico.`,
+    SIU_NAME: `¡Ahora reclamemos tu nombre SI U! 🏷️
+
+Tu nombre SI U es tu identidad única en el ecosistema SI<3> (por ejemplo, tunombre.siu).
+
+¿Qué nombre SI U te gustaría reclamar?
+
+Reglas:
+• 3-20 caracteres
+• Solo letras y números
+• No distingue mayúsculas de minúsculas
+
+Ejemplo: Si escribes "minombre", obtendrás minombre.siu`,
+    SIU_NAME_INVALID: `Lo siento, ese nombre SI U no es válido. Por favor elige un nombre que:
+• Tenga 3-20 caracteres
+• Contenga solo letras y números (sin espacios ni caracteres especiales)
+
+Intenta de nuevo:`,
+    SIU_NAME_TAKEN: `Lo siento, {siuName} ya está tomado. Por favor elige un nombre diferente:`,
+    SIU_NAME_CLAIMED: `🎉 ¡Felicidades! ¡Has reclamado {siuName}!
+
+Esta es tu identidad única en el ecosistema SI<3>.`,
+    SUMMARY_WALLET: `Billetera:`,
+    SUMMARY_SIU_NAME: `Nombre SI U:`,
+    EDIT_WALLET: `Editar billetera`,
+    EDIT_SIU_NAME: `Editar nombre SI U`
   },
   pt: {
     GREETING: `Olá! Sou a Agente Kaia, criada pela SI<3>. Sou sua guia amigável para ajudá-lo a navegar na Web3. Estou aqui para apoiá-lo a fazer conexões significativas e compartilhar conhecimentos úteis e oportunidades dentro de nossa rede de membros. 💜
@@ -407,7 +502,48 @@ Enquanto isso, avisarei quando tiver uma conexão de membro para você.`,
     EDIT_NOTIFICATIONS: `Editar notificações para colaborações`,
     CONFIRM: `✅ Confirmar`,
     NEXT_INSTRUCTION: `Para passar para a próxima pergunta, digite 'Next'`,
-    PROFILE_TITLE: `💜 Seu Perfil Grow3dge:`
+    PROFILE_TITLE: `💜 Seu Perfil Grow3dge:`,
+    // NEW: SI U onboarding messages
+    ENTRY_METHOD: `Bem-vindo ao SI U! 🎉 Como você gostaria de se cadastrar?
+
+1. Conectar Carteira (Recomendado)
+2. Continuar com E-mail
+
+Responda com o número (por exemplo: 1)`,
+    WALLET_CONNECTION: `Ótimo! Por favor conecte sua carteira para continuar.
+
+Seu endereço de carteira será vinculado de forma segura ao seu perfil SI U. Isso permite que você acesse recursos exclusivos e reivindique seu nome SI U.
+
+[O frontend exibirá as opções de conexão de carteira]`,
+    WALLET_CONNECTED: `✅ Carteira conectada com sucesso!
+
+Carteira: {walletAddress}`,
+    WALLET_ALREADY_REGISTERED: `Este endereço de carteira já está registrado com outra conta. Por favor use uma carteira diferente ou continue com e-mail.`,
+    SIU_NAME: `Agora vamos reivindicar seu nome SI U! 🏷️
+
+Seu nome SI U é sua identidade única no ecossistema SI<3> (por exemplo, seunome.siu).
+
+Qual nome SI U você gostaria de reivindicar?
+
+Regras:
+• 3-20 caracteres
+• Apenas letras e números
+• Não diferencia maiúsculas de minúsculas
+
+Exemplo: Se você digitar "meunome", você terá meunome.siu`,
+    SIU_NAME_INVALID: `Desculpe, esse nome SI U não é válido. Por favor escolha um nome que:
+• Tenha 3-20 caracteres
+• Contenha apenas letras e números (sem espaços ou caracteres especiais)
+
+Tente novamente:`,
+    SIU_NAME_TAKEN: `Desculpe, {siuName} já está em uso. Por favor escolha um nome diferente:`,
+    SIU_NAME_CLAIMED: `🎉 Parabéns! Você reivindicou {siuName}!
+
+Esta é sua identidade única no ecossistema SI<3>.`,
+    SUMMARY_WALLET: `Carteira:`,
+    SUMMARY_SIU_NAME: `Nome SI U:`,
+    EDIT_WALLET: `Editar carteira`,
+    EDIT_SIU_NAME: `Editar nome SI U`
   },
   fr: {
     GREETING: `Bonjour! Je suis l'Agent Kaia, créée par SI<3>. Je suis votre guide amical pour vous aider à naviguer dans Web3. Je suis là pour vous soutenir dans la création de connexions significatives et partager des connaissances utiles et des opportunités au sein de notre réseau de membres. 💜
@@ -527,7 +663,48 @@ En attendant, je vous informerai lorsque j'aurai une correspondance de membre po
     EDIT_NOTIFICATIONS: `Modifier les notifications pour collaborations`,
     CONFIRM: `✅ Confirmer`,
     NEXT_INSTRUCTION: `Pour passer à la question suivante, tapez 'Next'`,
-    PROFILE_TITLE: `💜 Votre Profil Grow3dge:`
+    PROFILE_TITLE: `💜 Votre Profil Grow3dge:`,
+    // NEW: SI U onboarding messages
+    ENTRY_METHOD: `Bienvenue sur SI U! 🎉 Comment souhaitez-vous vous inscrire?
+
+1. Connecter Portefeuille (Recommandé)
+2. Continuer avec E-mail
+
+Répondez avec le numéro (par exemple: 1)`,
+    WALLET_CONNECTION: `Super! Veuillez connecter votre portefeuille pour continuer.
+
+Votre adresse de portefeuille sera liée de manière sécurisée à votre profil SI U. Cela vous permet d'accéder aux fonctionnalités exclusives et de réclamer votre nom SI U.
+
+[Le frontend affichera les options de connexion du portefeuille]`,
+    WALLET_CONNECTED: `✅ Portefeuille connecté avec succès!
+
+Portefeuille: {walletAddress}`,
+    WALLET_ALREADY_REGISTERED: `Cette adresse de portefeuille est déjà enregistrée avec un autre compte. Veuillez utiliser un autre portefeuille ou continuer avec e-mail.`,
+    SIU_NAME: `Maintenant réclamons votre nom SI U! 🏷️
+
+Votre nom SI U est votre identité unique dans l'écosystème SI<3> (par exemple, votrenom.siu).
+
+Quel nom SI U souhaitez-vous réclamer?
+
+Règles:
+• 3-20 caractères
+• Lettres et chiffres uniquement
+• Pas sensible à la casse
+
+Exemple: Si vous tapez "monnom", vous obtiendrez monnom.siu`,
+    SIU_NAME_INVALID: `Désolé, ce nom SI U n'est pas valide. Veuillez choisir un nom qui:
+• A 3-20 caractères
+• Contient uniquement des lettres et des chiffres (pas d'espaces ni de caractères spéciaux)
+
+Réessayez:`,
+    SIU_NAME_TAKEN: `Désolé, {siuName} est déjà pris. Veuillez choisir un autre nom:`,
+    SIU_NAME_CLAIMED: `🎉 Félicitations! Vous avez réclamé {siuName}!
+
+C'est votre identité unique dans l'écosystème SI<3>.`,
+    SUMMARY_WALLET: `Portefeuille:`,
+    SUMMARY_SIU_NAME: `Nom SI U:`,
+    EDIT_WALLET: `Modifier le portefeuille`,
+    EDIT_SIU_NAME: `Modifier le nom SI U`
   }
 };
 

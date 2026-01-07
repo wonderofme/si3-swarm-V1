@@ -814,7 +814,9 @@ async function startAgents() {
         chat: 'POST /api/chat',
         history: 'GET /api/history/:userId',
         health: 'GET /api/health',
-        metrics: 'GET /api/metrics'
+        metrics: 'GET /api/metrics',
+        analytics: 'GET /api/analytics',
+        analyticsQuick: 'GET /api/analytics/quick'
       }
     });
   });
@@ -855,6 +857,155 @@ async function startAgents() {
       console.error('[Metrics API] Error:', error);
       res.status(500).json({ 
         error: 'Failed to fetch metrics',
+        message: error.message 
+      });
+    }
+  });
+  
+  // ==================== ANALYTICS API ENDPOINTS ====================
+  
+  // Full Analytics API - Comprehensive dashboard data
+  app.get('/api/analytics', async (req, res) => {
+    try {
+      // API key authentication
+      const apiKey = process.env.WEB_API_KEY;
+      if (apiKey && apiKey !== 'disabled') {
+        const providedKey = req.headers['x-api-key'] || 
+                           req.headers['authorization']?.replace('Bearer ', '');
+        if (providedKey !== apiKey) {
+          return res.status(401).json({ error: 'Unauthorized' });
+        }
+      }
+      
+      // Optional date range filtering
+      const startDate = req.query.startDate 
+        ? new Date(req.query.startDate as string)
+        : undefined;
+      const endDate = req.query.endDate
+        ? new Date(req.query.endDate as string)
+        : undefined;
+      
+      if (startDate && isNaN(startDate.getTime())) {
+        return res.status(400).json({ error: 'Invalid startDate format. Use ISO 8601 (YYYY-MM-DD)' });
+      }
+      if (endDate && isNaN(endDate.getTime())) {
+        return res.status(400).json({ error: 'Invalid endDate format. Use ISO 8601 (YYYY-MM-DD)' });
+      }
+      
+      const { getFullAnalytics } = await import('./services/analyticsApi.js');
+      const analytics = await getFullAnalytics(kaiaRuntime, startDate, endDate);
+      
+      res.json(analytics);
+    } catch (error: any) {
+      console.error('[Analytics API] Error:', error);
+      res.status(500).json({ 
+        error: 'Failed to fetch analytics',
+        message: error.message 
+      });
+    }
+  });
+  
+  // Quick Stats API - For dashboard widgets
+  app.get('/api/analytics/quick', async (req, res) => {
+    try {
+      // API key authentication
+      const apiKey = process.env.WEB_API_KEY;
+      if (apiKey && apiKey !== 'disabled') {
+        const providedKey = req.headers['x-api-key'] || 
+                           req.headers['authorization']?.replace('Bearer ', '');
+        if (providedKey !== apiKey) {
+          return res.status(401).json({ error: 'Unauthorized' });
+        }
+      }
+      
+      const { getQuickStats } = await import('./services/analyticsApi.js');
+      const stats = await getQuickStats(kaiaRuntime);
+      
+      res.json({
+        ...stats,
+        timestamp: new Date().toISOString()
+      });
+    } catch (error: any) {
+      console.error('[Analytics API] Quick stats error:', error);
+      res.status(500).json({ 
+        error: 'Failed to fetch quick stats',
+        message: error.message 
+      });
+    }
+  });
+  
+  // SI U Name availability check
+  app.get('/api/siu/name/check', async (req, res) => {
+    try {
+      const name = req.query.name as string;
+      if (!name) {
+        return res.status(400).json({ error: 'Name query parameter is required' });
+      }
+      
+      const { checkSiuNameAvailability, validateSiuName } = await import('./services/siuNameService.js');
+      
+      // Validate format first
+      const validation = validateSiuName(name);
+      if (!validation.valid) {
+        return res.json({ 
+          available: false, 
+          valid: false,
+          error: validation.error 
+        });
+      }
+      
+      // Check availability
+      const result = await checkSiuNameAvailability(validation.formatted!);
+      
+      res.json({
+        available: result.available,
+        valid: true,
+        formattedName: validation.formatted,
+        message: result.message
+      });
+    } catch (error: any) {
+      console.error('[SI U Name API] Error:', error);
+      res.status(500).json({ 
+        error: 'Failed to check name availability',
+        message: error.message 
+      });
+    }
+  });
+  
+  // Wallet registration check
+  app.get('/api/wallet/check', async (req, res) => {
+    try {
+      const address = req.query.address as string;
+      if (!address) {
+        return res.status(400).json({ error: 'Address query parameter is required' });
+      }
+      
+      const { validateWalletAddress } = await import('./services/siuNameService.js');
+      const { isWalletRegistered, findSiuUserByWallet } = await import('./services/siuDatabaseService.js');
+      
+      // Validate format
+      const validation = validateWalletAddress(address);
+      if (!validation.valid) {
+        return res.json({ 
+          valid: false,
+          error: validation.error 
+        });
+      }
+      
+      // Check if registered
+      const registered = await isWalletRegistered(address);
+      const user = registered ? await findSiuUserByWallet(address) : null;
+      
+      res.json({
+        valid: true,
+        registered,
+        userId: user?.email || null,
+        siuName: user?.siuName || null
+      });
+    } catch (error: any) {
+      console.error('[Wallet API] Error:', error);
+      res.status(500).json({ 
+        error: 'Failed to check wallet',
         message: error.message 
       });
     }

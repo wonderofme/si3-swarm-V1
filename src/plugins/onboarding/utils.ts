@@ -181,13 +181,31 @@ export function formatProfileForDisplay(profile: UserProfile, lang: string = 'en
     return String(arr);
   };
   
+  // Helper to format wallet address (show shortened version)
+  const formatWallet = (address?: string): string => {
+    if (!address) return msgs.SUMMARY_NOT_PROVIDED;
+    return `${address.slice(0, 6)}...${address.slice(-4)}`;
+  };
+  
   // Get platform-specific messages based on user roles
   const userRoles = profile.roles || [];
   const platformMsgs = getPlatformMessages(lang as LanguageCode, userRoles);
   
-  return `${platformMsgs.PROFILE_TITLE}\n\n` +
-    `${msgs.SUMMARY_NAME} ${profile.name || msgs.SUMMARY_NOT_PROVIDED}\n` +
-    `${msgs.SUMMARY_LOCATION} ${profile.location || msgs.SUMMARY_NOT_PROVIDED}\n` +
+  // Build profile text with optional wallet/SI U name fields
+  let profileText = `${platformMsgs.PROFILE_TITLE}\n\n` +
+    `${msgs.SUMMARY_NAME} ${profile.name || msgs.SUMMARY_NOT_PROVIDED}\n`;
+  
+  // Add wallet if present
+  if (profile.walletAddress) {
+    profileText += `${(msgs as any).SUMMARY_WALLET || 'Wallet:'} ${formatWallet(profile.walletAddress)}\n`;
+  }
+  
+  // Add SI U name if present
+  if (profile.siuName) {
+    profileText += `${(msgs as any).SUMMARY_SIU_NAME || 'SI U Name:'} ${profile.siuName}\n`;
+  }
+  
+  profileText += `${msgs.SUMMARY_LOCATION} ${profile.location || msgs.SUMMARY_NOT_PROVIDED}\n` +
     `${msgs.SUMMARY_EMAIL} ${profile.email || msgs.SUMMARY_NOT_PROVIDED}\n` +
     `${msgs.SUMMARY_ROLES} ${formatArray(profile.roles)}\n` +
     `${msgs.SUMMARY_INTERESTS} ${formatArray(profile.interests)}\n` +
@@ -197,5 +215,7 @@ export function formatProfileForDisplay(profile: UserProfile, lang: string = 'en
     `${msgs.SUMMARY_TELEGRAM} ${profile.telegramHandle ? '@' + profile.telegramHandle : msgs.SUMMARY_NOT_PROVIDED}\n` +
     `${msgs.SUMMARY_DIVERSITY} ${profile.diversityResearchInterest || msgs.SUMMARY_NOT_PROVIDED}\n` +
     `${msgs.SUMMARY_NOTIFICATIONS} ${profile.notifications || msgs.SUMMARY_NOT_PROVIDED}`;
+  
+  return profileText;
 }
 
