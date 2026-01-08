@@ -137,7 +137,12 @@ export async function processWebChatMessage(
     const updateState = async (newStep: string, profileUpdate: any = {}) => {
       const newState = {
         step: newStep,
-        profile: { ...state.profile, ...profileUpdate }
+        profile: { 
+          ...state.profile, 
+          ...profileUpdate,
+          // Ensure onboardingSource is always set to 'web' for web users
+          onboardingSource: 'web' as const
+        }
       };
       await runtime.cacheManager.set(`onboarding_${userId}`, newState);
       state = newState;

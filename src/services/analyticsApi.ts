@@ -223,11 +223,15 @@ async function getCacheOnboardingStats(
           totalInProgress++;
           stepCounts[value.step] = (stepCounts[value.step] || 0) + 1;
           
-          // Check source (userId pattern)
+          // Check source: prefer onboardingSource from profile, fallback to userId pattern
+          const profile = value.profile || {};
+          const onboardingSource = profile.onboardingSource;
           const userId = doc.key.replace('onboarding_', '');
-          if (userId.startsWith('web_')) {
+          
+          if (onboardingSource === 'web' || (!onboardingSource && userId.startsWith('web_'))) {
             webCount++;
           } else {
+            // telegram source or default (Telegram userIds don't start with web_)
             telegramCount++;
           }
         } catch (e) {
@@ -249,10 +253,15 @@ async function getCacheOnboardingStats(
           totalInProgress++;
           stepCounts[value.step] = (stepCounts[value.step] || 0) + 1;
           
+          // Check source: prefer onboardingSource from profile, fallback to userId pattern
+          const profile = value.profile || {};
+          const onboardingSource = profile.onboardingSource;
           const userId = row.key.replace('onboarding_', '');
-          if (userId.startsWith('web_')) {
+          
+          if (onboardingSource === 'web' || (!onboardingSource && userId.startsWith('web_'))) {
             webCount++;
           } else {
+            // telegram source or default (Telegram userIds don't start with web_)
             telegramCount++;
           }
         } catch (e) {
