@@ -192,6 +192,12 @@ Reply with the number (for example: 1)`,
 
 Your wallet address will be securely linked to your SI U profile. This allows you to access exclusive features and claim your SI U name.
 
+💡 **Connection options:**
+• **Desktop:** Connect via browser extension (MetaMask, etc.)
+• **Mobile:** WalletConnect will open your wallet app directly
+• **Can't connect?** You can manually enter your wallet address
+• **Or continue with email** if wallet connection isn't available
+
 [The frontend will display wallet connection options]`,
     WALLET_CONNECTED: `✅ Wallet connected successfully!
 
@@ -352,6 +358,12 @@ Responde con el número (por ejemplo: 1)`,
     WALLET_CONNECTION: `¡Genial! Por favor conecta tu billetera para continuar.
 
 Tu dirección de billetera se vinculará de forma segura a tu perfil de SI U. Esto te permite acceder a funciones exclusivas y reclamar tu nombre SI U.
+
+💡 **Opciones de conexión:**
+• **Escritorio:** Conecta mediante extensión del navegador (MetaMask, etc.)
+• **Móvil:** WalletConnect abrirá tu aplicación de billetera directamente
+• **¿No puedes conectar?** Puedes ingresar manualmente tu dirección de billetera
+• **O continúa con correo electrónico** si la conexión de billetera no está disponible
 
 [El frontend mostrará las opciones de conexión de billetera]`,
     WALLET_CONNECTED: `✅ ¡Billetera conectada exitosamente!
@@ -514,6 +526,12 @@ Responda com o número (por exemplo: 1)`,
 
 Seu endereço de carteira será vinculado de forma segura ao seu perfil SI U. Isso permite que você acesse recursos exclusivos e reivindique seu nome SI U.
 
+💡 **Opções de conexão:**
+• **Desktop:** Conecte via extensão do navegador (MetaMask, etc.)
+• **Mobile:** WalletConnect abrirá seu aplicativo de carteira diretamente
+• **Não consegue conectar?** Você pode inserir manualmente seu endereço de carteira
+• **Ou continue com e-mail** se a conexão da carteira não estiver disponível
+
 [O frontend exibirá as opções de conexão de carteira]`,
     WALLET_CONNECTED: `✅ Carteira conectada com sucesso!
 
@@ -674,6 +692,12 @@ Répondez avec le numéro (par exemple: 1)`,
     WALLET_CONNECTION: `Super! Veuillez connecter votre portefeuille pour continuer.
 
 Votre adresse de portefeuille sera liée de manière sécurisée à votre profil SI U. Cela vous permet d'accéder aux fonctionnalités exclusives et de réclamer votre nom SI U.
+
+💡 **Options de connexion:**
+• **Bureau:** Connectez-vous via l'extension du navigateur (MetaMask, etc.)
+• **Mobile:** WalletConnect ouvrira votre application de portefeuille directement
+• **Vous ne pouvez pas vous connecter?** Vous pouvez saisir manuellement votre adresse de portefeuille
+• **Ou continuez avec e-mail** si la connexion du portefeuille n'est pas disponible
 
 [Le frontend affichera les options de connexion du portefeuille]`,
     WALLET_CONNECTED: `✅ Portefeuille connecté avec succès!

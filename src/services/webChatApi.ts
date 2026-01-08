@@ -257,10 +257,14 @@ export async function processWebChatMessage(
       // Frontend sends wallet address after successful connection
       const walletAddress = messageText.trim();
       
-      // Check if user is responding to the "wallet already registered" prompt
-      // They can choose: 1 = try different wallet, 2 = switch to email
-      if (lowerText === '1' || lowerText.includes('different wallet') || lowerText.includes('try another')) {
-        // User wants to try a different wallet - ask them to connect again
+      // Check if user is responding to wallet connection prompts
+      // They can choose: 1 = try again (different wallet or retry), 2 = switch to email
+      if (lowerText === '1' || 
+          lowerText.includes('different wallet') || 
+          lowerText.includes('try another') ||
+          lowerText.includes('try again') ||
+          lowerText.includes('retry')) {
+        // User wants to try wallet connection again - ask them to connect again
         // Preserve all profile data including name, entryMethod, etc.
         const preservedProfile = {
           ...state.profile,
@@ -300,8 +304,9 @@ export async function processWebChatMessage(
       
       // Validate wallet address format (only if it looks like a wallet address)
       // If it's just "1" or "2", we've already handled it above
-      if (!walletAddress.startsWith('0x') && walletAddress.length < 20) {
-        // Doesn't look like a wallet address - might be a response to the prompt
+      // Check if input doesn't look like a wallet address at all
+      if (!walletAddress.startsWith('0x') || walletAddress.length < 20) {
+        // Doesn't look like a valid wallet address - might be a response to the prompt
         // If we're here and it's not "1" or "2", ask them to connect wallet or switch to email
         responseText = 'Please connect your wallet or choose an option:\n\n' +
           '1. Try a different wallet\n' +
@@ -320,7 +325,11 @@ export async function processWebChatMessage(
       // Validate wallet address format
       const walletValidation = validateWalletAddress(walletAddress);
       if (!walletValidation.valid) {
-        responseText = walletValidation.error || 'Invalid wallet address. Please try again.';
+        responseText = (walletValidation.error || 'Invalid wallet address. Please try again.') + 
+          '\n\nOr choose an option:\n' +
+          '1. Try connecting/entering your wallet again\n' +
+          '2. Continue with email\n\n' +
+          'Reply with the number (for example: 2)';
         return {
           success: true,
           response: responseText,
