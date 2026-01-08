@@ -453,12 +453,134 @@ export const continueOnboardingAction: Action = {
             // Continue with onboarding even if SI<3> lookup fails
           }
           
-          // Check if email already exists in Kaia database
+          // INTENTION: 
+          // 1. If user completed Kaia onboarding (in SI U database) -> grant Telegram access
+          // 2. If user is SI<3> member but hasn't done Kaia onboarding -> pre-fill and continue in Telegram
+          // 3. If not found anywhere -> direct to web onboarding
+          
+          // Check SI U database first (where completed Kaia users are saved)
+          let siuUser = null;
+          try {
+            const { findSiuUserByEmail } = await import('../../services/siuDatabaseService.js');
+            siuUser = await findSiuUserByEmail(emailText);
+            
+            if (siuUser && siuUser.onboardingCompletedAt) {
+              // User completed Kaia onboarding - load their profile and grant Telegram access
+              console.log(`[Onboarding Action] ✅ Found user in SI U database who completed Kaia onboarding: ${emailText}`);
+              
+              // Convert SI U database format to UserProfile format
+              const loadedProfile: any = {
+                name: siuUser.name || siuUser.username,
+                email: siuUser.email,
+                language: siuUser.language || 'en',
+                location: siuUser.location,
+                gender: siuUser.gender,
+                entryMethod: siuUser.entryMethod || 'email',
+                walletAddress: siuUser.wallet_address,
+                siuName: siuUser.siuName || siuUser.username,
+                userTier: siuUser.userTier || 'explorer',
+                roles: siuUser.roles || [],
+                interests: siuUser.interests || [],
+                connectionGoals: siuUser.connectionGoals || [],
+                events: siuUser.events || [],
+                socials: siuUser.digitalLinks || [],
+                telegramHandle: siuUser.telegramHandle,
+                diversityResearchInterest: siuUser.diversityResearchInterest,
+                notifications: siuUser.notificationSettings ? 
+                  (siuUser.notificationSettings.emailUpdates ? 'Yes' : 'No') : 'Not sure',
+                onboardingCompletedAt: siuUser.onboardingCompletedAt,
+                onboardingSource: siuUser.onboardingSource || 'web',
+                isConfirmed: true
+              };
+              
+              // Load profile into cache and set state to COMPLETED
+              await updateOnboardingStep(runtime, message.userId, roomId, 'COMPLETED', loadedProfile);
+              
+              // Welcome them to Telegram
+              const welcomeMessages: Record<string, string> = {
+                en: `Welcome to Telegram, ${loadedProfile.name || 'there'}! 👋\n\nI recognized your email from your Kaia onboarding. You're all set to use me here on Telegram! 💜\n\nYou can:\n• Say "find me a match" to connect with someone\n• Say "my profile" to view your profile\n• Say "update" to edit your profile\n• Just chat with me!`,
+                es: `¡Bienvenido a Telegram, ${loadedProfile.name || 'allí'}! 👋\n\nReconocí tu correo electrónico de tu registro en Kaia. ¡Ya estás listo para usarme aquí en Telegram! 💜\n\nPuedes:\n• Di "encuéntrame una conexión" para conectar con alguien\n• Di "mi perfil" para ver tu perfil\n• Di "actualizar" para editar tu perfil\n• ¡Solo chatea conmigo!`,
+                pt: `Bem-vindo ao Telegram, ${loadedProfile.name || 'aí'}! 👋\n\nReconheci seu e-mail do seu registro no Kaia. Você está pronto para me usar aqui no Telegram! 💜\n\nVocê pode:\n• Diga "encontre uma conexão" para conectar com alguém\n• Diga "meu perfil" para ver seu perfil\n• Diga "atualizar" para editar seu perfil\n• Apenas converse comigo!`,
+                fr: `Bienvenue sur Telegram, ${loadedProfile.name || 'là'}! 👋\n\nJ'ai reconnu votre e-mail de votre inscription Kaia. Vous êtes prêt à m'utiliser ici sur Telegram! 💜\n\nVous pouvez:\n• Dites "trouvez-moi une connexion" pour vous connecter avec quelqu'un\n• Dites "mon profil" pour voir votre profil\n• Dites "mettre à jour" pour modifier votre profil\n• Discutez simplement avec moi!`
+              };
+              
+              await sendDirectTelegramMessage(
+                runtime,
+                roomId,
+                message.userId,
+                welcomeMessages[loadedProfile.language || 'en'] || welcomeMessages.en
+              );
+              if (roomId) recordActionExecution(roomId);
+              console.log('[Onboarding Action] ✅ Loaded Kaia user profile - Telegram access granted');
+              return true;
+            }
+          } catch (siuError) {
+            console.error('[Onboarding Action] Error checking SI U database:', siuError);
+            // Continue to check SI<3> database
+          }
+          
+          // Check if user is SI<3> member but hasn't completed Kaia onboarding
+          // siuUser will be null if not found, or will exist but onboardingCompletedAt will be falsy if not completed
+          if (si3User && (!siuUser || !siuUser.onboardingCompletedAt)) {
+            // User is SI<3> member - pre-fill their data and continue onboarding in Telegram
+            console.log(`[Onboarding Action] Found SI<3> member who hasn't completed Kaia onboarding - pre-filling and continuing in Telegram`);
+            
+            // Pre-fill profile with SI<3> data
+            const preFilledProfile: any = {
+              email: emailText,
+              name: si3User.name || si3User.username || profile.name,
+              location: si3User.location || profile.location,
+              roles: si3Roles.length > 0 ? si3Roles : (si3User.roles || []),
+              interests: si3Interests.length > 0 ? si3Interests : (si3User.interests || []),
+              personalValues: si3PersonalValues.length > 0 ? si3PersonalValues : (si3User.personalValues || []),
+              si3Roles: si3Roles, // Save for platform detection
+              onboardingSource: 'telegram' // Track that they're completing via Telegram
+            };
+            
+            // Determine next step based on what we have
+            // Skip steps for data we already have from SI<3>
+            let nextStep: OnboardingStep = 'ASK_LOCATION';
+            
+            if (preFilledProfile.location) {
+              // We have location, skip to roles
+              nextStep = 'ASK_ROLE';
+            }
+            
+            // If we have roles from SI<3>, we can pre-fill them but still ask to confirm/add more
+            if (preFilledProfile.roles && preFilledProfile.roles.length > 0) {
+              // We have roles, but we'll still ask to confirm/add more
+              // The roles question will show their existing roles
+            }
+            
+            // Update state with pre-filled data
+            await updateOnboardingStep(runtime, message.userId, roomId, nextStep, preFilledProfile);
+            if (roomId) recordActionExecution(roomId);
+            
+            // Welcome message recognizing them as SI<3> member
+            const welcomeMessages: Record<string, string> = {
+              en: `Welcome back! 👋 I recognize you from SI<3>. I've pre-filled some of your information to make this quick.\n\nLet's continue with your Kaia onboarding!`,
+              es: `¡Bienvenido de nuevo! 👋 Te reconozco de SI<3>. He prellenado parte de tu información para que sea rápido.\n\n¡Continuemos con tu registro en Kaia!`,
+              pt: `Bem-vindo de volta! 👋 Reconheço você do SI<3>. Preenchi algumas de suas informações para tornar isso rápido.\n\nVamos continuar com seu registro no Kaia!`,
+              fr: `Bon retour! 👋 Je vous reconnais de SI<3>. J'ai pré-rempli certaines de vos informations pour que ce soit rapide.\n\nContinuons avec votre inscription Kaia!`
+            };
+            
+            await sendDirectTelegramMessage(
+              runtime,
+              roomId,
+              message.userId,
+              welcomeMessages[userLang] || welcomeMessages.en
+            );
+            console.log('[Onboarding Action] ✅ Pre-filled SI<3> member data - continuing onboarding in Telegram');
+            // LLM will send the next question via provider
+            return true;
+          }
+          
+          // Check if email already exists in Kaia cache (fallback for edge cases)
           const existingUser = await findUserByEmail(runtime, emailText);
           
           if (existingUser && existingUser.userId !== message.userId) {
-            // Email exists for a different user - ask if they want to continue or recreate
-            console.log(`[Onboarding Action] Email ${emailText} exists for user ${existingUser.userId}`);
+            // Email exists in cache for a different user - ask if they want to continue
+            console.log(`[Onboarding Action] Email ${emailText} exists in cache for user ${existingUser.userId}`);
             await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_PROFILE_CHOICE', { 
               email: emailText,
               existingUserId: existingUser.userId,
@@ -468,29 +590,26 @@ export const continueOnboardingAction: Action = {
               personalValues: si3PersonalValues.length > 0 ? si3PersonalValues : undefined
             });
             if (roomId) recordActionExecution(roomId);
-            // LLM will send the profile choice question via provider
             console.log('[Onboarding Action] State updated to ASK_PROFILE_CHOICE - LLM will send message via provider');
           } else {
-            // Email doesn't exist or is for current user - continue with onboarding
-            // Include roles and interests from SI<3> if found
-            const profileUpdate: any = { email: emailText };
-            if (si3Roles.length > 0) {
-              profileUpdate.roles = si3Roles;
-            }
-            if (si3Interests.length > 0) {
-              profileUpdate.interests = si3Interests;
-            }
-            if (si3PersonalValues.length > 0) {
-              profileUpdate.personalValues = si3PersonalValues;
-            }
+            // User not found in SI U or SI<3> - direct them to web onboarding
+            const redirectMessages: Record<string, string> = {
+              en: `Hi! 👋\n\nTo use me on Telegram, you'll need to complete onboarding first.\n\nPlease visit our web platform to create your profile, then come back here to Telegram!\n\nOnce you've completed onboarding, I'll recognize you by your email and you'll have full access here. 💜`,
+              es: `¡Hola! 👋\n\nPara usarme en Telegram, primero necesitas completar el registro.\n\nPor favor visita nuestra plataforma web para crear tu perfil, ¡luego regresa aquí a Telegram!\n\nUna vez que hayas completado el registro, te reconoceré por tu correo electrónico y tendrás acceso completo aquí. 💜`,
+              pt: `Olá! 👋\n\nPara me usar no Telegram, você precisará completar o registro primeiro.\n\nPor favor, visite nossa plataforma web para criar seu perfil, depois volte aqui para o Telegram!\n\nDepois de completar o registro, eu te reconhecerei pelo seu e-mail e você terá acesso completo aqui. 💜`,
+              fr: `Bonjour! 👋\n\nPour m'utiliser sur Telegram, vous devez d'abord compléter l'inscription.\n\nVeuillez visiter notre plateforme web pour créer votre profil, puis revenez ici sur Telegram!\n\nUne fois que vous aurez complété l'inscription, je vous reconnaîtrai par votre e-mail et vous aurez un accès complet ici. 💜`
+            };
             
-            await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_LOCATION', profileUpdate);
+            await sendDirectTelegramMessage(
+              runtime,
+              roomId,
+              message.userId,
+              redirectMessages[userLang] || redirectMessages.en
+            );
             if (roomId) recordActionExecution(roomId);
-            // LLM will send the location question via provider
-            console.log('[Onboarding Action] State updated to ASK_LOCATION - LLM will send message via provider');
-            if (si3Roles.length > 0) {
-              console.log(`[Onboarding Action] User roles from SI<3>: ${si3Roles.join(', ')}`);
-            }
+            console.log('[Onboarding Action] ⚠️ User not found in SI U or SI<3> database - directing to web onboarding');
+            // Don't continue onboarding - they need to complete on web first
+            return true;
           }
         }
         break;

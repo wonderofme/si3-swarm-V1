@@ -2148,11 +2148,41 @@ async function startAgents() {
                         else if (lowerText.includes('2') || lowerText.includes('no')) notifications = 'No';
                         else if (lowerText.includes('3')) notifications = 'Check later';
                         
-                        await updateState('COMPLETED', { notifications, onboardingCompletedAt: new Date() });
+                        const completedProfile = {
+                          ...state.profile,
+                          notifications,
+                          onboardingCompletedAt: new Date(),
+                          onboardingSource: 'telegram' as const,
+                          userTier: 'explorer' as const  // Default all users to explorer tier
+                        };
+                        
+                        await updateState('COMPLETED', completedProfile);
+                        
+                        // NEW: Save to SI U database (for SI<3> members who complete onboarding in Telegram)
+                        try {
+                          if (completedProfile.email) {
+                            const { saveUserToSiuDatabase } = await import('./services/siuDatabaseService.js');
+                            const saved = await saveUserToSiuDatabase(
+                              kaiaRuntimeForOnboardingCheck,
+                              completedProfile.email,
+                              completedProfile,
+                              userId,
+                              'telegram'
+                            );
+                            if (saved) {
+                              console.log(`[Telegram Chat ID Capture] ✅ Saved user ${completedProfile.email} to SI U database`);
+                            } else {
+                              console.error(`[Telegram Chat ID Capture] ❌ Failed to save user to SI U database`);
+                            }
+                          }
+                        } catch (siuError) {
+                          console.error('[Telegram Chat ID Capture] Error saving to SI U database:', siuError);
+                          // Continue even if SI U save fails - we have the cache
+                        }
                         
                         // Send completion message with profile
                         const { formatProfileForDisplay } = await import('./plugins/onboarding/utils.js');
-                        const profileText = formatProfileForDisplay(state.profile, state.profile.language || 'en');
+                        const profileText = formatProfileForDisplay(completedProfile, completedProfile.language || 'en');
                         responseText = msgs.COMPLETION + '\n\n' + profileText;
                         
                         // Track that we just sent a profile message to prevent LLM duplicates
