@@ -84,6 +84,21 @@ export async function updateOnboardingStep(
   if (step === 'COMPLETED' && !currentProfile.onboardingCompletedAt) {
     newState.profile.onboardingCompletedAt = new Date();
   }
+  
+  // Set profile updated timestamp if profile fields changed (for background match checker)
+  if (profileUpdate && Object.keys(profileUpdate).length > 0) {
+    // Check if matching-relevant fields changed
+    const matchingFields = ['roles', 'interests', 'connectionGoals', 'location', 'personalValues'];
+    const hasMatchingFieldChange = matchingFields.some(field => 
+      profileUpdate[field as keyof typeof profileUpdate] !== undefined
+    );
+    
+    if (hasMatchingFieldChange) {
+      newState.profile.profileUpdatedAt = new Date();
+      // Background match checker will pick up this timestamp and check for new matches
+      // Immediate check on onboarding completion is already handled in index.ts
+    }
+  }
 
   // Save to Cache (Primary persistence for state machine) using primary userId
   // CacheManager handles JSON stringification internally

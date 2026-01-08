@@ -64,6 +64,7 @@ export interface UserProfile {
   onboardingCompletedAt?: Date;
   onboardingStartedAt?: Date;  // NEW: For time-to-completion analytics
   onboardingSource?: 'telegram' | 'web';  // NEW: Track source
+  profileUpdatedAt?: Date;  // NEW: Timestamp when profile was last updated (for background match checker)
   existingUserId?: string; // Used temporarily during ASK_PROFILE_CHOICE
   existingProfile?: UserProfile; // Used temporarily during ASK_PROFILE_CHOICE
   si3Roles?: string[];  // Roles from SI3 database (for platform detection)

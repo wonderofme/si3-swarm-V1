@@ -136,27 +136,40 @@ async function checkForNewMatches(
         fr: `🎉 Nouvelle connexion trouvée!\n\nJ'ai trouvé quelqu'un qui pourrait être une excellente connexion pour vous:\n\n${newUserProfile.name} de ${newUserProfile.location || 'la communauté'}${platformText}Rôles: ${(newUserProfile.roles || []).join(', ') || 'Non spécifié'}\nIntérêts: ${(newUserProfile.interests || []).slice(0, 3).join(', ') || 'Non spécifié'}\n${newUserProfile.telegramHandle ? `Telegram: @${newUserProfile.telegramHandle}\n` : ''}\n💡 ${matchMessage}\n\nDites "trouve-moi une connexion" pour plus! 🤝`
       };
       
-      // Record match in database to prevent duplicates
+      // Record match in database to prevent duplicates and mark as notified
       try {
         const matchDate = new Date();
+        const notifiedAt = new Date(); // Mark as notified immediately
         if (isMongo && db.getDb) {
           const mongoDb = await db.getDb();
-          await mongoDb.collection('matches').insertOne({
-            user_id: match.userId,
-            matched_user_id: newUserId,
-            room_id: String(match.userId), // For private chats, room_id = user_id
-            match_date: matchDate,
-            status: 'pending',
-            score: match.score,
-            reason: match.icebreaker || match.reason
-          });
+          await mongoDb.collection('matches').updateOne(
+            {
+              user_id: match.userId,
+              matched_user_id: newUserId
+            },
+            {
+              $set: {
+                user_id: match.userId,
+                matched_user_id: newUserId,
+                room_id: String(match.userId), // For private chats, room_id = user_id
+                match_date: matchDate,
+                status: 'pending',
+                score: match.score,
+                reason: match.icebreaker || match.reason,
+                notified_at: notifiedAt // Mark as notified
+              }
+            },
+            { upsert: true }
+          );
         } else {
           // PostgreSQL: user_id might be UUID or TEXT depending on schema
           // Cast to TEXT to handle both cases (Telegram user IDs are strings)
           await db.query(
-            `INSERT INTO matches (user_id, matched_user_id, room_id, match_date, status, score, reason) 
-             VALUES ($1::text, $2::text, $3::text, $4, $5, $6, $7)`,
-            [match.userId, newUserId, String(match.userId), matchDate, 'pending', match.score, match.icebreaker || match.reason]
+            `INSERT INTO matches (user_id, matched_user_id, room_id, match_date, status, score, reason, notified_at) 
+             VALUES ($1::text, $2::text, $3::text, $4, $5, $6, $7, $8)
+             ON CONFLICT (user_id, matched_user_id) 
+             DO UPDATE SET notified_at = $8, score = $6, reason = $7`,
+            [match.userId, newUserId, String(match.userId), matchDate, 'pending', match.score, match.icebreaker || match.reason, notifiedAt]
           );
         }
         console.log(`[Real-Time Matching] ✅ Recorded match in database: ${match.userId} <-> ${newUserId}`);
@@ -232,6 +245,8 @@ async function runMigrations(db: DatabaseAdapter) {
         await db.query(`CREATE INDEX IF NOT EXISTS idx_matches_matched_user_id ON matches(matched_user_id)`);
         await db.query(`CREATE INDEX IF NOT EXISTS idx_matches_room_id ON matches(room_id)`);
         await db.query(`CREATE INDEX IF NOT EXISTS idx_matches_match_date ON matches(match_date)`);
+        await db.query(`CREATE INDEX IF NOT EXISTS idx_matches_notified_at ON matches(notified_at)`);
+        await db.query(`CREATE INDEX IF NOT EXISTS idx_matches_user_matched ON matches(user_id, matched_user_id)`);
 
         // Create indexes for follow_ups collection
         await db.query(`CREATE INDEX IF NOT EXISTS idx_follow_ups_user_id ON follow_ups(user_id)`);
@@ -284,6 +299,15 @@ async function runMigrations(db: DatabaseAdapter) {
           IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='matches' AND column_name='match_date') THEN
             ALTER TABLE matches ADD COLUMN match_date TIMESTAMPTZ DEFAULT NOW();
           END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='matches' AND column_name='notified_at') THEN
+            ALTER TABLE matches ADD COLUMN notified_at TIMESTAMPTZ;
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='matches' AND column_name='score') THEN
+            ALTER TABLE matches ADD COLUMN score NUMERIC;
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='matches' AND column_name='reason') THEN
+            ALTER TABLE matches ADD COLUMN reason TEXT;
+          END IF;
         END $$;
       `);
 
@@ -320,7 +344,22 @@ async function runMigrations(db: DatabaseAdapter) {
         CREATE INDEX IF NOT EXISTS idx_user_mappings_primary_user_id ON user_mappings(primary_user_id);
       `);
 
-      // 5. Create indexes (safe to run if exists)
+      // 5. Create unique constraint/index on matches to prevent duplicates
+      // Use unique index (works with ON CONFLICT)
+      await db.query(`
+        DO $$ 
+        BEGIN 
+          IF NOT EXISTS (
+            SELECT 1 FROM pg_indexes 
+            WHERE indexname = 'matches_user_matched_unique'
+          ) THEN
+            CREATE UNIQUE INDEX matches_user_matched_unique 
+            ON matches(user_id, matched_user_id);
+          END IF;
+        END $$;
+      `);
+
+      // 6. Create indexes (safe to run if exists)
       await db.query(`
         CREATE INDEX IF NOT EXISTS idx_matches_user_id ON matches(user_id);
         CREATE INDEX IF NOT EXISTS idx_follow_ups_scheduled_for ON follow_ups(scheduled_for) WHERE status = 'pending';
@@ -3517,6 +3556,16 @@ PERSONALITY:
   }
 
   console.log('Kaia, MoonDAO, and SI<3> runtimes started.');
+  
+  // ==================== BACKGROUND MATCH CHECKER ====================
+  // Check for new matches every hour and notify users immediately
+  try {
+    const { startBackgroundMatchChecker } = await import('./services/backgroundMatchChecker.js');
+    startBackgroundMatchChecker(kaiaRuntime);
+  } catch (error) {
+    console.error('[Background Match Checker] Failed to start:', error);
+    // Non-fatal, continue without background checker
+  }
   
   // ==================== SCHEDULED FOLLOW-UPS SYSTEM ====================
   // Check for due follow-ups every 5 minutes and send reminder messages
