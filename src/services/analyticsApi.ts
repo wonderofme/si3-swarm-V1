@@ -93,6 +93,15 @@ export interface MatchAnalytics {
     interest: string;
     matchCount: number;
   }>;
+  // NEW: Conversion metrics
+  totalCompletedUsers: number; // Total users who completed onboarding
+  usersWithAtLeastOneMatch: number; // Users who got at least one match
+  matchSuccessRate: number; // % of completed users who got at least one match
+  usersWhoRequestedMatch: number; // Users who requested a match (inferred from matches)
+  timeToFirstMatch: {
+    averageDays: number; // Average days from onboarding completion to first match
+    averageHours: number; // Average hours from onboarding completion to first match
+  };
 }
 
 export interface FullAnalytics {
@@ -404,6 +413,8 @@ async function getMatchAnalytics(
     let uniqueUsers = new Set<string>();
     const byDate: Array<{ date: string; matches: number; connections: number }> = [];
     const interestCounts: Record<string, number> = {};
+    // Track first match date for each user (for time-to-first-match calculation)
+    const userFirstMatchDates = new Map<string, Date>();
 
     // Build date filter
     const dateFilter: any = {};
@@ -429,6 +440,16 @@ async function getMatchAnalytics(
       const allMatches = await matchesCollection.find(dateFilter).toArray();
       for (const match of allMatches) {
         uniqueUsers.add(match.user_id);
+        
+        // NEW: Track first match date for each user
+        if (match.match_date) {
+          const matchDate = new Date(match.match_date);
+          if (!userFirstMatchDates.has(match.user_id) || 
+              matchDate < userFirstMatchDates.get(match.user_id)!) {
+            userFirstMatchDates.set(match.user_id, matchDate);
+          }
+        }
+        
         if (match.room_id?.startsWith('web_')) {
           webMatches++;
         } else {
@@ -473,9 +494,19 @@ async function getMatchAnalytics(
         else if (row.status === 'not_interested') notInterestedCount = parseInt(row.count);
       }
 
-      const allMatchesResult = await db.query(`SELECT user_id, room_id FROM matches`);
+      const allMatchesResult = await db.query(`SELECT user_id, room_id, match_date FROM matches`);
       for (const row of allMatchesResult.rows || []) {
         uniqueUsers.add(row.user_id);
+        
+        // NEW: Track first match date for each user
+        if (row.match_date) {
+          const matchDate = new Date(row.match_date);
+          if (!userFirstMatchDates.has(row.user_id) || 
+              matchDate < userFirstMatchDates.get(row.user_id)!) {
+            userFirstMatchDates.set(row.user_id, matchDate);
+          }
+        }
+        
         if (row.room_id?.startsWith('web_')) {
           webMatches++;
         } else {
@@ -510,6 +541,95 @@ async function getMatchAnalytics(
       ? totalMatches / uniqueUsers.size 
       : 0;
 
+    // NEW: Get total completed users from onboarding analytics
+    const onboardingAnalytics = await getOnboardingAnalytics(runtime, startDate, endDate);
+    const totalCompletedUsers = onboardingAnalytics.totalCompleted;
+    const usersWithAtLeastOneMatch = uniqueUsers.size;
+    
+    // NEW: Calculate match success rate
+    const matchSuccessRate = totalCompletedUsers > 0
+      ? (usersWithAtLeastOneMatch / totalCompletedUsers) * 100
+      : 0;
+    
+    // NEW: Users who requested match (inferred from having matches)
+    const usersWhoRequestedMatch = usersWithAtLeastOneMatch;
+    
+    // NEW: Calculate time-to-first-match
+    // Get onboarding completion dates from SI U database
+    let timeToFirstMatchDays: number[] = [];
+    try {
+      const { getSi3Database } = await import('./si3Database.js');
+      const si3Db = await getSi3Database();
+      
+      if (si3Db) {
+        const siuCollection = si3Db.collection('test-si3Users');
+        
+        // Get onboarding dates for users who have matches
+        for (const userId of uniqueUsers) {
+          try {
+            // Try to find user by email or userId in SI U database
+            // Note: userId might be different format, so we'll check matches for user_id
+            let userEmail: string | null = null;
+            
+            // Get user email from matches (if stored) or try to find in cache
+            if (isMongo && db.getDb) {
+              const mongoDb = await db.getDb();
+              const matchesCollection = mongoDb.collection('matches');
+              const userMatch = await matchesCollection.findOne({ user_id: userId });
+              
+              // Try to get user profile from cache to find email
+              const cacheCollection = mongoDb.collection('cache');
+              const cacheEntry = await cacheCollection.findOne({ key: `onboarding_${userId}` });
+              if (cacheEntry) {
+                const profile = typeof cacheEntry.value === 'string' 
+                  ? JSON.parse(cacheEntry.value) 
+                  : cacheEntry.value;
+                userEmail = profile?.profile?.email || profile?.email;
+              }
+            } else if (db.query) {
+              // PostgreSQL: try to get from cache
+              const cacheResult = await db.query(
+                `SELECT value FROM cache WHERE key = $1`,
+                [`onboarding_${userId}`]
+              );
+              if (cacheResult.rows?.[0]) {
+                const profile = typeof cacheResult.rows[0].value === 'string'
+                  ? JSON.parse(cacheResult.rows[0].value)
+                  : cacheResult.rows[0].value;
+                userEmail = profile?.profile?.email || profile?.email;
+              }
+            }
+            
+            if (userEmail) {
+              const siuUser = await siuCollection.findOne({ 
+                email: userEmail.toLowerCase().trim() 
+              });
+              
+              if (siuUser && siuUser.onboardingCompletedAt && userFirstMatchDates.has(userId)) {
+                const onboardingDate = new Date(siuUser.onboardingCompletedAt);
+                const firstMatchDate = userFirstMatchDates.get(userId)!;
+                const diffMs = firstMatchDate.getTime() - onboardingDate.getTime();
+                const diffDays = diffMs / (1000 * 60 * 60 * 24);
+                if (diffDays >= 0 && diffDays < 365) { // Valid range: 0 to 1 year
+                  timeToFirstMatchDays.push(diffDays);
+                }
+              }
+            }
+          } catch (err) {
+            // Skip if can't find user
+            console.log(`[Analytics] Could not get onboarding date for user ${userId}:`, err);
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[Analytics] Error calculating time-to-first-match:', err);
+    }
+    
+    const averageDays = timeToFirstMatchDays.length > 0
+      ? timeToFirstMatchDays.reduce((a, b) => a + b, 0) / timeToFirstMatchDays.length
+      : 0;
+    const averageHours = averageDays * 24;
+
     // Top matching interests (would need match reason parsing)
     // For now, return empty - could be enhanced later
     const topMatchingInterests: Array<{ interest: string; matchCount: number }> = [];
@@ -529,7 +649,16 @@ async function getMatchAnalytics(
         not_interested: notInterestedCount
       },
       byDate,
-      topMatchingInterests
+      topMatchingInterests,
+      // NEW: Conversion metrics
+      totalCompletedUsers,
+      usersWithAtLeastOneMatch,
+      matchSuccessRate: Math.round(matchSuccessRate * 100) / 100,
+      usersWhoRequestedMatch,
+      timeToFirstMatch: {
+        averageDays: Math.round(averageDays * 100) / 100,
+        averageHours: Math.round(averageHours * 100) / 100
+      }
     };
   } catch (error) {
     console.error('[Analytics API] Error getting match stats:', error);
@@ -541,7 +670,16 @@ async function getMatchAnalytics(
       averageMatchesPerUser: 0,
       byStatus: { pending: 0, connected: 0, not_interested: 0 },
       byDate: [],
-      topMatchingInterests: []
+      topMatchingInterests: [],
+      // NEW: Default values for conversion metrics
+      totalCompletedUsers: 0,
+      usersWithAtLeastOneMatch: 0,
+      matchSuccessRate: 0,
+      usersWhoRequestedMatch: 0,
+      timeToFirstMatch: {
+        averageDays: 0,
+        averageHours: 0
+      }
     };
   }
 }

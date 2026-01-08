@@ -15,6 +15,7 @@ export interface SiuUserDocument {
   name?: string;
   language?: string;
   location?: string;
+  gender?: string;
   entryMethod?: 'wallet' | 'email';
   siuName?: string;
   wallet_address?: string;

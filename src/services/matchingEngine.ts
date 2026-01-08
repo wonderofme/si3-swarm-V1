@@ -30,12 +30,12 @@ export interface MatchingConfig {
 }
 
 const DEFAULT_CONFIG: MatchingConfig = {
-  minScoreThreshold: 75,
+  minScoreThreshold: 60, // Lowered from 75 to increase match frequency
   intentWeight: 0.6,
   interestWeight: 0.3,
   eventWeight: 0.1,
   highDemandRoles: ['Investor/Grant Program Operator'],
-  highDemandThreshold: 90
+  highDemandThreshold: 75 // Lowered from 90 to reduce barrier for high-demand roles
 };
 
 // Intent Matrix: Maps Connection Goals to Matching Roles
@@ -446,7 +446,8 @@ export async function findMatches(
     let totalScore = 
       (intentScore * finalConfig.intentWeight) +
       (interestScore * finalConfig.interestWeight) +
-      (eventScore * finalConfig.eventWeight);
+      (eventScore * finalConfig.eventWeight) +
+      15; // Base 15 points for any completed profile (makes matching easier)
     
     // Event override: if events match, boost score significantly
     if (eventMatch) {

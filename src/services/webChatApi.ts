@@ -257,6 +257,66 @@ export async function processWebChatMessage(
       // Frontend sends wallet address after successful connection
       const walletAddress = messageText.trim();
       
+      // Check if user is responding to the "wallet already registered" prompt
+      // They can choose: 1 = try different wallet, 2 = switch to email
+      if (lowerText === '1' || lowerText.includes('different wallet') || lowerText.includes('try another')) {
+        // User wants to try a different wallet - ask them to connect again
+        // Preserve all profile data including name, entryMethod, etc.
+        const preservedProfile = {
+          ...state.profile,
+          entryMethod: state.profile.entryMethod || 'wallet' // Ensure entryMethod is preserved
+        };
+        await updateState('ASK_WALLET_CONNECTION', preservedProfile);
+        responseText = msgs.WALLET_CONNECTION;
+        return {
+          success: true,
+          response: responseText,
+          userId,
+          profile: preservedProfile,
+          onboardingStatus: 'ASK_WALLET_CONNECTION',
+          requiresWalletConnection: true
+        };
+      }
+      
+      // Check if user wants to switch to email (after wallet was already registered)
+      if (lowerText === '2' || lowerText.includes('email') || lowerText.includes('continue with email')) {
+        // User chose to switch to email after wallet failed
+        // Preserve all other profile data (name, etc.) but switch entry method
+        const preservedProfile = {
+          ...state.profile,
+          entryMethod: 'email',
+          walletAddress: undefined
+        };
+        await updateState('ASK_EMAIL', preservedProfile);
+        responseText = msgs.EMAIL;
+        return {
+          success: true,
+          response: responseText,
+          userId,
+          profile: preservedProfile,
+          onboardingStatus: 'ASK_EMAIL'
+        };
+      }
+      
+      // Validate wallet address format (only if it looks like a wallet address)
+      // If it's just "1" or "2", we've already handled it above
+      if (!walletAddress.startsWith('0x') && walletAddress.length < 20) {
+        // Doesn't look like a wallet address - might be a response to the prompt
+        // If we're here and it's not "1" or "2", ask them to connect wallet or switch to email
+        responseText = 'Please connect your wallet or choose an option:\n\n' +
+          '1. Try a different wallet\n' +
+          '2. Continue with email\n\n' +
+          'Reply with the number (for example: 1)';
+        return {
+          success: true,
+          response: responseText,
+          userId,
+          profile: state.profile,
+          onboardingStatus: 'ASK_WALLET_CONNECTION',
+          requiresWalletConnection: true
+        };
+      }
+      
       // Validate wallet address format
       const walletValidation = validateWalletAddress(walletAddress);
       if (!walletValidation.valid) {
@@ -275,17 +335,85 @@ export async function processWebChatMessage(
       try {
         const walletExists = await isWalletRegistered(walletAddress);
         if (walletExists) {
-          responseText = msgs.WALLET_ALREADY_REGISTERED;
-          // Allow them to try another wallet or switch to email
-          await updateState('ASK_ENTRY_METHOD', { walletAddress: undefined, entryMethod: undefined });
-          responseText += '\n\n' + msgs.ENTRY_METHOD;
-          return {
-            success: true,
-            response: responseText,
-            userId,
-            profile: state.profile,
-            onboardingStatus: 'ASK_ENTRY_METHOD'
-          };
+          // Check if this wallet belongs to an existing user with completed onboarding
+          const { findSiuUserByWallet } = await import('./siuDatabaseService.js');
+          const existingUser = await findSiuUserByWallet(walletAddress);
+          
+          if (existingUser && existingUser.onboardingCompletedAt) {
+            // This wallet belongs to a returning user - recognize them!
+            console.log(`[Web Chat API] ✅ Recognized returning user by wallet: ${existingUser.email || walletAddress}`);
+            
+            // Convert SI U database format to UserProfile format
+            // Use stored language, or preserve language from current conversation if already set
+            const loadedProfile: any = {
+              name: existingUser.name || existingUser.username,
+              email: existingUser.email,
+              language: existingUser.language || state.profile.language || userLang || 'en',
+              location: existingUser.location,
+              gender: existingUser.gender,
+              entryMethod: 'wallet',
+              walletAddress: existingUser.wallet_address || walletAddress,
+              siuName: existingUser.siuName || existingUser.username,
+              userTier: existingUser.userTier || 'explorer',
+              roles: existingUser.roles || [],
+              interests: existingUser.interests || [],
+              connectionGoals: existingUser.connectionGoals || [],
+              events: existingUser.events || [],
+              socials: existingUser.digitalLinks || [],
+              telegramHandle: existingUser.telegramHandle,
+              diversityResearchInterest: existingUser.diversityResearchInterest,
+              notifications: existingUser.notificationSettings ? 
+                (existingUser.notificationSettings.emailUpdates ? 'Yes' : 'No') : 'Not sure',
+              onboardingCompletedAt: existingUser.onboardingCompletedAt,
+              onboardingSource: existingUser.onboardingSource || 'web',
+              isConfirmed: true
+            };
+            
+            // Load profile into cache and set state to COMPLETED
+            await updateState('COMPLETED', loadedProfile);
+            
+            // Welcome them back
+            const welcomeMessages: Record<string, string> = {
+              en: `Welcome back, ${loadedProfile.name || 'there'}! 👋\n\nI recognized your wallet address. How can I help you today? 💜\n\nYou can:\n• Say "find me a match" to connect with someone\n• Say "my profile" to view your profile\n• Say "update" to edit your profile\n• Just chat with me!`,
+              es: `¡Bienvenido de nuevo, ${loadedProfile.name || 'allí'}! 👋\n\nReconocí tu dirección de billetera. ¿Cómo puedo ayudarte hoy? 💜\n\nPuedes:\n• Di "encuéntrame una conexión" para conectar con alguien\n• Di "mi perfil" para ver tu perfil\n• Di "actualizar" para editar tu perfil\n• ¡Solo chatea conmigo!`,
+              pt: `Bem-vindo de volta, ${loadedProfile.name || 'aí'}! 👋\n\nReconheci seu endereço de carteira. Como posso ajudá-lo hoje? 💜\n\nVocê pode:\n• Diga "encontre uma conexão" para conectar com alguém\n• Diga "meu perfil" para ver seu perfil\n• Diga "atualizar" para editar seu perfil\n• Apenas converse comigo!`,
+              fr: `Bon retour, ${loadedProfile.name || 'là'}! 👋\n\nJ'ai reconnu votre adresse de portefeuille. Comment puis-je vous aider aujourd'hui? 💜\n\nVous pouvez:\n• Dites "trouvez-moi une connexion" pour vous connecter avec quelqu'un\n• Dites "mon profil" pour voir votre profil\n• Dites "mettre à jour" pour modifier votre profil\n• Discutez simplement avec moi!`
+            };
+            
+            responseText = welcomeMessages[loadedProfile.language || 'en'] || welcomeMessages.en;
+            
+            return {
+              success: true,
+              response: responseText,
+              userId,
+              profile: loadedProfile,
+              onboardingStatus: 'COMPLETED',
+              walletConnected: true
+            };
+          } else {
+            // Wallet already registered to someone else - offer to try another wallet or switch to email
+            // Keep entryMethod as 'wallet' to remember their choice - explicitly preserve it
+            const preservedProfile = {
+              ...state.profile,
+              entryMethod: state.profile.entryMethod || 'wallet' // Ensure entryMethod is preserved
+            };
+            responseText = msgs.WALLET_ALREADY_REGISTERED + '\n\n' +
+              'What would you like to do?\n\n' +
+              '1. Try a different wallet\n' +
+              '2. Continue with email\n\n' +
+              'Reply with the number (for example: 1)';
+            // Stay in ASK_WALLET_CONNECTION state but remember they need to choose
+            // Explicitly preserve state to ensure entryMethod and other profile data is maintained
+            await updateState('ASK_WALLET_CONNECTION', preservedProfile);
+            return {
+              success: true,
+              response: responseText,
+              userId,
+              profile: preservedProfile,
+              onboardingStatus: 'ASK_WALLET_CONNECTION',
+              requiresWalletConnection: true
+            };
+          }
         }
       } catch (err) {
         console.log('[Web Chat API] Could not check wallet registration:', err);
@@ -293,15 +421,17 @@ export async function processWebChatMessage(
       }
       
       // Wallet connected successfully - proceed to SI U name
+      // Preserve all existing profile data including entryMethod
       const connectedMsg = msgs.WALLET_CONNECTED.replace('{walletAddress}', 
         `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`);
-      await updateState('ASK_SIU_NAME', { walletAddress });
+      const updatedProfile = { ...state.profile, walletAddress };
+      await updateState('ASK_SIU_NAME', updatedProfile);
       responseText = connectedMsg + '\n\n' + msgs.SIU_NAME;
       return {
         success: true,
         response: responseText,
         userId,
-        profile: { ...state.profile, walletAddress },
+        profile: updatedProfile,
         onboardingStatus: 'ASK_SIU_NAME',
         walletConnected: true
       };
@@ -309,9 +439,9 @@ export async function processWebChatMessage(
       // NEW: Handle SI U name claiming
       const desiredName = messageText.trim();
       
-      // Skip if user wants to skip
+      // Skip if user wants to skip - preserve all existing profile data
       if (isNext) {
-        await updateState('ASK_EMAIL', {});
+        await updateState('ASK_EMAIL', state.profile);
         responseText = msgs.EMAIL;
         return {
           success: true,
@@ -351,14 +481,16 @@ export async function processWebChatMessage(
       }
       
       // Name is available - claim it and proceed
+      // Preserve all existing profile data including walletAddress and entryMethod
       const claimedMsg = msgs.SIU_NAME_CLAIMED.replace('{siuName}', formattedName);
-      await updateState('ASK_EMAIL', { siuName: formattedName });
+      const updatedProfile = { ...state.profile, siuName: formattedName };
+      await updateState('ASK_EMAIL', updatedProfile);
       responseText = claimedMsg + '\n\n' + msgs.EMAIL;
       return {
         success: true,
         response: responseText,
         userId,
-        profile: { ...state.profile, siuName: formattedName },
+        profile: updatedProfile,
         onboardingStatus: 'ASK_EMAIL',
         siuNameClaimed: formattedName
       };
@@ -371,15 +503,77 @@ export async function processWebChatMessage(
         return { success: true, response: responseText };
       }
       
+      // Check if this email belongs to a returning user with completed onboarding
+      try {
+        const { findSiuUserByEmail } = await import('./siuDatabaseService.js');
+        const existingUser = await findSiuUserByEmail(emailText);
+        
+        if (existingUser && existingUser.onboardingCompletedAt && !state.profile.isEditing) {
+          // This email belongs to a returning user - recognize them!
+          console.log(`[Web Chat API] ✅ Recognized returning user by email: ${existingUser.email}`);
+          
+          // Convert SI U database format to UserProfile format
+          // Use stored language, or preserve language from current conversation if already set
+          const loadedProfile: any = {
+            name: existingUser.name || existingUser.username,
+            email: existingUser.email,
+            language: existingUser.language || state.profile.language || userLang || 'en',
+            location: existingUser.location,
+            gender: existingUser.gender,
+            entryMethod: existingUser.entryMethod || state.profile.entryMethod || 'email',
+            walletAddress: existingUser.wallet_address || state.profile.walletAddress,
+            siuName: existingUser.siuName || existingUser.username || state.profile.siuName,
+            userTier: existingUser.userTier || 'explorer',
+            roles: existingUser.roles || [],
+            interests: existingUser.interests || [],
+            connectionGoals: existingUser.connectionGoals || [],
+            events: existingUser.events || [],
+            socials: existingUser.digitalLinks || [],
+            telegramHandle: existingUser.telegramHandle,
+            diversityResearchInterest: existingUser.diversityResearchInterest,
+            notifications: existingUser.notificationSettings ? 
+              (existingUser.notificationSettings.emailUpdates ? 'Yes' : 'No') : 'Not sure',
+            onboardingCompletedAt: existingUser.onboardingCompletedAt,
+            onboardingSource: existingUser.onboardingSource || 'web',
+            isConfirmed: true
+          };
+          
+          // Load profile into cache and set state to COMPLETED
+          await updateState('COMPLETED', loadedProfile);
+          
+          // Welcome them back
+          const welcomeMessages: Record<string, string> = {
+            en: `Welcome back, ${loadedProfile.name || 'there'}! 👋\n\nI recognized your email address. How can I help you today? 💜\n\nYou can:\n• Say "find me a match" to connect with someone\n• Say "my profile" to view your profile\n• Say "update" to edit your profile\n• Just chat with me!`,
+            es: `¡Bienvenido de nuevo, ${loadedProfile.name || 'allí'}! 👋\n\nReconocí tu dirección de correo electrónico. ¿Cómo puedo ayudarte hoy? 💜\n\nPuedes:\n• Di "encuéntrame una conexión" para conectar con alguien\n• Di "mi perfil" para ver tu perfil\n• Di "actualizar" para editar tu perfil\n• ¡Solo chatea conmigo!`,
+            pt: `Bem-vindo de volta, ${loadedProfile.name || 'aí'}! 👋\n\nReconheci seu endereço de e-mail. Como posso ajudá-lo hoje? 💜\n\nVocê pode:\n• Diga "encontre uma conexão" para conectar com alguém\n• Diga "meu perfil" para ver seu perfil\n• Diga "atualizar" para editar seu perfil\n• Apenas converse comigo!`,
+            fr: `Bon retour, ${loadedProfile.name || 'là'}! 👋\n\nJ'ai reconnu votre adresse e-mail. Comment puis-je vous aider aujourd'hui? 💜\n\nVous pouvez:\n• Dites "trouvez-moi une connexion" pour vous connecter avec quelqu'un\n• Dites "mon profil" pour voir votre profil\n• Dites "mettre à jour" pour modifier votre profil\n• Discutez simplement avec moi!`
+          };
+          
+          responseText = welcomeMessages[loadedProfile.language || 'en'] || welcomeMessages.en;
+          
+          return {
+            success: true,
+            response: responseText,
+            userId,
+            profile: loadedProfile,
+            onboardingStatus: 'COMPLETED'
+          };
+        }
+      } catch (recognitionError) {
+        console.error('[Web Chat API] Error recognizing user by email:', recognitionError);
+        // Continue with normal onboarding flow if recognition fails
+      }
+      
       const isEditing = state.profile.isEditing || false;
       
-      // First, check SI<3> database for user roles (determines Grow3dge vs SI Her questions)
+      // First, check SI<3> database for user roles and profile data
       let si3Roles: string[] = [];
+      let si3User: any = null;
       
       try {
         console.log(`[Web Chat API] Checking SI<3> database for user roles...`);
         // Add timeout to prevent hanging
-        const si3User = await Promise.race([
+        si3User = await Promise.race([
           findSi3UserByEmail(emailText, 'si3Users', 'email'),
           new Promise<null>((_, reject) => 
             setTimeout(() => reject(new Error('SI<3> database lookup timeout')), 10000)
@@ -398,6 +592,82 @@ export async function processWebChatMessage(
       } catch (error: any) {
         console.error('[Web Chat API] Error searching SI<3> database:', error.message);
         // Continue with onboarding even if SI<3> lookup fails
+      }
+      
+      // Check if this is an SI<3> user who hasn't completed Kaia onboarding
+      // (They exist in SI<3> but not in SI U database with completed onboarding)
+      if (si3User && !isEditing) {
+        try {
+          const { findSiuUserByEmail } = await import('./siuDatabaseService.js');
+          const siuUser = await findSiuUserByEmail(emailText);
+          
+          // If they exist in SI<3> but NOT in SI U (or SI U onboarding not completed), pre-fill their data
+          if (!siuUser || !siuUser.onboardingCompletedAt) {
+            console.log(`[Web Chat API] Found SI<3> user who hasn't completed Kaia onboarding - pre-filling data`);
+            
+            // Pre-fill profile with SI<3> data
+            const preFilledProfile: any = {
+              email: emailText,
+              name: si3User.name || si3User.username || state.profile.name,
+              location: si3User.location || state.profile.location,
+              roles: si3User.roles || [],
+              interests: si3User.interests || [],
+              personalValues: si3User.personalValues || [],
+              si3Roles: si3Roles, // Save for platform detection
+              entryMethod: state.profile.entryMethod || 'email',
+              walletAddress: state.profile.walletAddress, // Preserve wallet if set
+              siuName: state.profile.siuName // Preserve SI U name if set
+            };
+            
+            // Determine next step based on what data we already have
+            // Skip steps for data we already have from SI<3>
+            let nextStep = 'ASK_LOCATION';
+            let nextMessage = msgs.LOCATION;
+            
+            // Check each field in order and skip to the first missing one
+            if (!preFilledProfile.location) {
+              // Missing location - ask for it
+              nextStep = 'ASK_LOCATION';
+              nextMessage = msgs.LOCATION;
+            } else if (!preFilledProfile.roles || preFilledProfile.roles.length === 0) {
+              // Has location but missing roles - ask for roles
+              nextStep = 'ASK_ROLE';
+              nextMessage = msgs.ROLES;
+            } else if (!preFilledProfile.interests || preFilledProfile.interests.length === 0) {
+              // Has roles but missing interests - ask for interests
+              nextStep = 'ASK_INTERESTS';
+              nextMessage = msgs.INTERESTS;
+            } else {
+              // Has location, roles, AND interests - skip to goals
+              nextStep = 'ASK_GOALS';
+              nextMessage = msgs.GOALS;
+            }
+            
+            // Update state with pre-filled data
+            await updateState(nextStep, preFilledProfile);
+            
+            // Welcome message recognizing them as SI<3> user
+            const welcomeMessages: Record<string, string> = {
+              en: `Welcome back! 👋 I recognize you from SI<3>. I've pre-filled some of your information to make this quick.\n\n${nextMessage}`,
+              es: `¡Bienvenido de nuevo! 👋 Te reconozco de SI<3>. He prellenado parte de tu información para que sea rápido.\n\n${nextMessage}`,
+              pt: `Bem-vindo de volta! 👋 Reconheço você do SI<3>. Preenchi algumas de suas informações para tornar isso rápido.\n\n${nextMessage}`,
+              fr: `Bon retour! 👋 Je vous reconnais de SI<3>. J'ai pré-rempli certaines de vos informations pour que ce soit rapide.\n\n${nextMessage}`
+            };
+            
+            responseText = welcomeMessages[userLang] || welcomeMessages.en;
+            
+            return {
+              success: true,
+              response: responseText,
+              userId,
+              profile: preFilledProfile,
+              onboardingStatus: nextStep
+            };
+          }
+        } catch (prefillError) {
+          console.error('[Web Chat API] Error pre-filling SI<3> user data:', prefillError);
+          // Continue with normal onboarding if pre-fill fails
+        }
       }
       
       // Check if email exists in Kaia database (could be from Telegram onboarding)
@@ -746,7 +1016,35 @@ export async function processWebChatMessage(
       // Send completion message with profile (matches Telegram exactly)
       const { formatProfileForDisplay } = await import('../plugins/onboarding/utils.js');
       const profileText = formatProfileForDisplay(completedProfile, completedProfile.language || 'en');
-      responseText = msgs.COMPLETION + '\n\n' + profileText;
+      
+      // NEW: Automatically check for matches and suggest them
+      let matchSuggestion = '';
+      try {
+        const { findMatches } = await import('./matchingEngine.js');
+        const matchCandidates = await findMatches(
+          runtime,
+          userId,
+          completedProfile,
+          [],
+          { minScoreThreshold: 55 } // Lower threshold for automatic suggestions
+        );
+        
+        if (matchCandidates.length > 0) {
+          const topMatch = matchCandidates[0];
+          const matchMessages: Record<string, string> = {
+            en: `\n\n🎯 Great news! I found ${matchCandidates.length} potential match${matchCandidates.length > 1 ? 'es' : ''} for you!\n\nWould you like me to introduce you to ${topMatch.profile.name || 'someone'}? Just say "yes" or "find me a match"! 💜`,
+            es: `\n\n🎯 ¡Excelentes noticias! ¡Encontré ${matchCandidates.length} conexión${matchCandidates.length > 1 ? 'es' : ''} potencial${matchCandidates.length > 1 ? 'es' : ''} para ti!\n\n¿Te gustaría que te presente a ${topMatch.profile.name || 'alguien'}? ¡Solo di "sí" o "encuéntrame una conexión"! 💜`,
+            pt: `\n\n🎯 Ótimas notícias! Encontrei ${matchCandidates.length} conexão${matchCandidates.length > 1 ? 'ões' : ''} potencial${matchCandidates.length > 1 ? 'is' : ''} para você!\n\nGostaria que eu te apresente ${topMatch.profile.name || 'alguém'}? Basta dizer "sim" ou "encontre uma conexão"! 💜`,
+            fr: `\n\n🎯 Excellente nouvelle! J'ai trouvé ${matchCandidates.length} connexion${matchCandidates.length > 1 ? 's' : ''} potentielle${matchCandidates.length > 1 ? 's' : ''} pour vous!\n\nVoulez-vous que je vous présente ${topMatch.profile.name || "quelqu'un"}? Dites simplement "oui" ou "trouvez-moi une connexion"! 💜`
+          };
+          matchSuggestion = matchMessages[completedProfile.language || 'en'] || matchMessages.en;
+        }
+      } catch (matchErr) {
+        console.error('[Web Chat API] Error checking for matches after onboarding:', matchErr);
+        // Don't fail onboarding if match check fails
+      }
+      
+      responseText = msgs.COMPLETION + '\n\n' + profileText + matchSuggestion;
     } else if (state.step === 'AWAITING_UPDATE_FIELD') {
       // User is choosing which field to update (matches Telegram)
       const updateFields: Record<string, { step: string, prompt: string, number: number }> = {
@@ -1193,7 +1491,41 @@ export async function processWebChatMessage(
         lowerText.includes('update profile') ||
         lowerText.includes('edit details') ||
         lowerText.includes('modify profile') ||
-        lowerText.includes('change profile');
+        lowerText.includes('change profile') ||
+        // NEW: Natural language correction phrases
+        lowerText.includes('correction') ||
+        lowerText.includes('i want to make a correction') ||
+        lowerText.includes('i need to correct') ||
+        lowerText.includes('i need to fix') ||
+        lowerText.includes('i want to fix') ||
+        lowerText.includes('fix my') ||
+        lowerText.includes('fix my profile') ||
+        lowerText.includes('wrong information') ||
+        lowerText.includes('that\'s wrong') ||
+        lowerText.includes('that is wrong') ||
+        lowerText.includes('i made a mistake') ||
+        lowerText.includes('i need to change') ||
+        lowerText.includes('i want to change') ||
+        lowerText.includes('change something') ||
+        lowerText.includes('update something') ||
+        lowerText.includes('correct my') ||
+        lowerText.includes('correct this') ||
+        lowerText.includes('fix this') ||
+        lowerText.includes('change this') ||
+        lowerText.includes('update this') ||
+        lowerText.includes('modify my') ||
+        lowerText.includes('revise my') ||
+        lowerText.includes('amend my') ||
+        lowerText.includes('adjust my') ||
+        lowerText.includes('i need to update') ||
+        lowerText.includes('i want to update') ||
+        lowerText.includes('i need to edit') ||
+        lowerText.includes('i want to edit') ||
+        lowerText.includes('can i change') ||
+        lowerText.includes('can i update') ||
+        lowerText.includes('can i edit') ||
+        lowerText.includes('can i fix') ||
+        lowerText.includes('can i correct');
       
       // Feature request detection (matches Telegram)
       const isFeatureRequest = lowerText.includes('feature request') || lowerText.includes('suggest a feature') || 
@@ -1275,7 +1607,7 @@ export async function processWebChatMessage(
                     userId,
                     state.profile,
                     previousMatchIds,
-                    { minScoreThreshold: 70 } // Slightly lower threshold for manual requests
+                    { minScoreThreshold: 55 } // Lower threshold for manual requests to increase matches
                   );
                   console.log(`[Manual Match] Matching engine returned ${matchCandidates.length} candidate(s)`);
                   
@@ -1668,6 +2000,66 @@ export async function processWebChatMessage(
           responseText = langPrompts[state.profile.language || 'en'] || langPrompts.en;
         }
       } else {
+        // NEW: Proactive match suggestion for general chat
+        // If user hasn't requested a match recently, suggest it occasionally
+        const shouldSuggestMatch = Math.random() < 0.15; // 15% chance to suggest matches
+        if (shouldSuggestMatch && !lowerText.includes('match') && !lowerText.includes('profile') && !lowerText.includes('update')) {
+          try {
+            const { findMatches } = await import('./matchingEngine.js');
+            
+            // Get previous matches to exclude
+            let previousMatchIds: string[] = [];
+            try {
+              const db = runtime.databaseAdapter as any;
+              const databaseType = (process.env.DATABASE_TYPE || 'postgres').toLowerCase();
+              const isMongo = databaseType === 'mongodb' || databaseType === 'mongo';
+              
+              if (isMongo && db.getDb) {
+                const mongoDb = await db.getDb();
+                const prevMatches = await mongoDb.collection('matches').find({ user_id: userId }).toArray();
+                previousMatchIds = prevMatches.map((m: any) => m.matched_user_id);
+              } else if (db.query) {
+                const prevMatches = await db.query(
+                  `SELECT matched_user_id FROM matches WHERE user_id = $1::text`,
+                  [userId]
+                );
+                previousMatchIds = (prevMatches.rows || []).map((r: any) => r.matched_user_id);
+              }
+            } catch (e) { 
+              console.log('[Proactive Match] Could not get previous matches:', e);
+            }
+            
+            const matchCandidates = await findMatches(
+              runtime,
+              userId,
+              state.profile,
+              previousMatchIds,
+              { minScoreThreshold: 55 } // Lower threshold for proactive suggestions
+            );
+            
+            if (matchCandidates.length > 0) {
+              const suggestionMessages: Record<string, string> = {
+                en: `By the way, I found ${matchCandidates.length} potential match${matchCandidates.length > 1 ? 'es' : ''} for you! Would you like me to introduce you? Just say "yes" or "find me a match"! 💜`,
+                es: `Por cierto, ¡encontré ${matchCandidates.length} conexión${matchCandidates.length > 1 ? 'es' : ''} potencial${matchCandidates.length > 1 ? 'es' : ''} para ti! ¿Te gustaría que te presente? ¡Solo di "sí" o "encuéntrame una conexión"! 💜`,
+                pt: `A propósito, encontrei ${matchCandidates.length} conexão${matchCandidates.length > 1 ? 'ões' : ''} potencial${matchCandidates.length > 1 ? 'is' : ''} para você! Gostaria que eu te apresente? Basta dizer "sim" ou "encontre uma conexão"! 💜`,
+                fr: `Au fait, j'ai trouvé ${matchCandidates.length} connexion${matchCandidates.length > 1 ? 's' : ''} potentielle${matchCandidates.length > 1 ? 's' : ''} pour vous! Voulez-vous que je vous présente? Dites simplement "oui" ou "trouvez-moi une connexion"! 💜`
+              };
+              
+              responseText = suggestionMessages[userLang] || suggestionMessages.en;
+              return {
+                success: true,
+                response: responseText,
+                userId,
+                profile: state.profile,
+                onboardingStatus: 'COMPLETED'
+              };
+            }
+          } catch (proactiveErr) {
+            console.error('[Web Chat API] Error in proactive match suggestion:', proactiveErr);
+            // Fall through to normal chat
+          }
+        }
+        
         // General chat - use OpenAI
         const systemPrompt = `You are Kaia, the SI<3> community matchmaker assistant. 
 

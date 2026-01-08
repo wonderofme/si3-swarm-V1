@@ -2426,7 +2426,41 @@ async function startAgents() {
                           lowerText.includes('update profile') ||
                           lowerText.includes('edit details') ||
                           lowerText.includes('modify profile') ||
-                          lowerText.includes('change profile');
+                          lowerText.includes('change profile') ||
+                          // NEW: Natural language correction phrases
+                          lowerText.includes('correction') ||
+                          lowerText.includes('i want to make a correction') ||
+                          lowerText.includes('i need to correct') ||
+                          lowerText.includes('i need to fix') ||
+                          lowerText.includes('i want to fix') ||
+                          lowerText.includes('fix my') ||
+                          lowerText.includes('fix my profile') ||
+                          lowerText.includes('wrong information') ||
+                          lowerText.includes('that\'s wrong') ||
+                          lowerText.includes('that is wrong') ||
+                          lowerText.includes('i made a mistake') ||
+                          lowerText.includes('i need to change') ||
+                          lowerText.includes('i want to change') ||
+                          lowerText.includes('change something') ||
+                          lowerText.includes('update something') ||
+                          lowerText.includes('correct my') ||
+                          lowerText.includes('correct this') ||
+                          lowerText.includes('fix this') ||
+                          lowerText.includes('change this') ||
+                          lowerText.includes('update this') ||
+                          lowerText.includes('modify my') ||
+                          lowerText.includes('revise my') ||
+                          lowerText.includes('amend my') ||
+                          lowerText.includes('adjust my') ||
+                          lowerText.includes('i need to update') ||
+                          lowerText.includes('i want to update') ||
+                          lowerText.includes('i need to edit') ||
+                          lowerText.includes('i want to edit') ||
+                          lowerText.includes('can i change') ||
+                          lowerText.includes('can i update') ||
+                          lowerText.includes('can i edit') ||
+                          lowerText.includes('can i fix') ||
+                          lowerText.includes('can i correct');
                         // Natural language feature request detection
                         const hasFeatureRequestKeywords = 
                           lowerText.includes('feature') || 
