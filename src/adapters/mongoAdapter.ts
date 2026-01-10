@@ -9,6 +9,7 @@ export class MongoAdapter implements DatabaseAdapter {
   private client: MongoClient;
   private db: Db | null = null;
   private connectionString: string;
+  private connectionPromise: Promise<Db> | null = null; // Prevent race conditions
 
   constructor(connectionString: string) {
     this.connectionString = connectionString;
@@ -43,54 +44,118 @@ export class MongoAdapter implements DatabaseAdapter {
   }
 
   /**
+   * Attempt to connect immediately (non-blocking, for startup warm-up)
+   * This helps detect connection issues early and warms up the connection pool
+   * Returns true if connection successful, false otherwise (doesn't throw)
+   */
+  async warmUpConnection(): Promise<boolean> {
+    if (this.db) {
+      return true; // Already connected
+    }
+
+    // If connection is already in progress, wait for it
+    if (this.connectionPromise) {
+      try {
+        await this.connectionPromise;
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
+    try {
+      console.log('[MongoDB Adapter] 🔥 Warming up connection on startup...');
+      // Create connection promise to prevent race conditions
+      this.connectionPromise = (async () => {
+        await this.client.connect();
+        const dbName = this.extractDbName(this.connectionString) || 'kaia';
+        this.db = this.client.db(dbName);
+        return this.db;
+      })();
+      
+      await this.connectionPromise;
+      console.log(`[MongoDB Adapter] ✅ Connection warmed up successfully (database: ${this.extractDbName(this.connectionString) || 'kaia'})`);
+      this.connectionPromise = null; // Clear promise after success
+      return true;
+    } catch (error: any) {
+      this.connectionPromise = null; // Clear promise on failure
+      const errorMessage = error?.message || error?.toString() || '';
+      const isReplicaSetError = 
+        errorMessage.includes('ReplicaSetNoPrimary') ||
+        errorMessage.includes('MongoServerSelectionError');
+      
+      if (isReplicaSetError) {
+        console.warn('[MongoDB Adapter] ⚠️ Connection warm-up failed (replica set issue) - will retry on first use');
+      } else {
+        console.warn('[MongoDB Adapter] ⚠️ Connection warm-up failed - will retry on first use:', errorMessage.substring(0, 200));
+      }
+      // Don't throw - this is non-blocking, connection will be retried when needed
+      return false;
+    }
+  }
+
+  /**
    * Get or create database connection
    * Made public for vector search operations
    */
   async getDb(): Promise<Db> {
-    if (!this.db) {
-      // Retry connection with exponential backoff
-      const maxRetries = 3;
-      let lastError: any = null;
-      
-      for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        try {
-          console.log(`[MongoDB Adapter] Attempting to connect to MongoDB (attempt ${attempt}/${maxRetries})...`);
+    if (this.db) {
+      return this.db; // Already connected
+    }
+
+    // If connection is already in progress (e.g., from warmUpConnection), wait for it
+    if (this.connectionPromise) {
+      return await this.connectionPromise;
+    }
+
+    // Retry connection with exponential backoff
+    const maxRetries = 3;
+    let lastError: any = null;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`[MongoDB Adapter] Attempting to connect to MongoDB (attempt ${attempt}/${maxRetries})...`);
+        // Create connection promise to prevent race conditions
+        this.connectionPromise = (async () => {
           await this.client.connect();
-          console.log('[MongoDB Adapter] Successfully connected to MongoDB');
-          // Extract database name from connection string or use default
           const dbName = this.extractDbName(this.connectionString) || 'kaia';
           this.db = this.client.db(dbName);
-          console.log(`[MongoDB Adapter] Using database: ${dbName}`);
           return this.db;
-        } catch (error: any) {
-          lastError = error;
-          const errorMessage = error?.message || error?.toString() || '';
-          const isReplicaSetError = 
-            errorMessage.includes('ReplicaSetNoPrimary') ||
-            errorMessage.includes('MongoServerSelectionError');
-          
-          if (isReplicaSetError && attempt < maxRetries) {
-            // Wait before retry with exponential backoff
-            const waitTime = Math.min(1000 * Math.pow(2, attempt - 1), 10000); // Max 10 seconds
-            console.warn(`[MongoDB Adapter] Replica set issue detected, retrying in ${waitTime}ms...`);
-            await new Promise(resolve => setTimeout(resolve, waitTime));
-            continue;
-          }
-          
-          // If not a replica set error or last attempt, throw
-          if (attempt === maxRetries || !isReplicaSetError) {
-            console.error('[MongoDB Adapter] Connection error:', error.message);
-            console.error('[MongoDB Adapter] Connection string (sanitized):', 
-              this.connectionString.replace(/:[^:@]+@/, ':****@'));
-            throw error;
-          }
+        })();
+        
+        const db = await this.connectionPromise;
+        this.connectionPromise = null; // Clear promise after success
+        console.log('[MongoDB Adapter] Successfully connected to MongoDB');
+        console.log(`[MongoDB Adapter] Using database: ${this.extractDbName(this.connectionString) || 'kaia'}`);
+        return db;
+      } catch (error: any) {
+        this.connectionPromise = null; // Clear promise on failure
+        lastError = error;
+        const errorMessage = error?.message || error?.toString() || '';
+        const isReplicaSetError = 
+          errorMessage.includes('ReplicaSetNoPrimary') ||
+          errorMessage.includes('MongoServerSelectionError');
+        
+        if (isReplicaSetError && attempt < maxRetries) {
+          // Wait before retry with exponential backoff
+          const waitTime = Math.min(1000 * Math.pow(2, attempt - 1), 10000); // Max 10 seconds
+          console.warn(`[MongoDB Adapter] Replica set issue detected, retrying in ${waitTime}ms...`);
+          await new Promise(resolve => setTimeout(resolve, waitTime));
+          continue;
+        }
+        
+        // If not a replica set error or last attempt, throw
+        if (attempt === maxRetries || !isReplicaSetError) {
+          console.error('[MongoDB Adapter] Connection error:', error.message);
+          console.error('[MongoDB Adapter] Connection string (sanitized):', 
+            this.connectionString.replace(/:[^:@]+@/, ':****@'));
+          throw error;
         }
       }
-      
-      // Should never reach here, but just in case
-      throw lastError || new Error('Failed to connect to MongoDB after retries');
     }
-    return this.db;
+    
+    // Should never reach here, but just in case
+    throw lastError || new Error('Failed to connect to MongoDB after retries');
   }
 
   /**

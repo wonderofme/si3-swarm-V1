@@ -375,6 +375,15 @@ async function runMigrations(db: DatabaseAdapter) {
 async function createRuntime(character: any) {
   const db = createDatabaseAdapter();
   
+  // Warm up MongoDB connection immediately (non-blocking)
+  // This helps detect connection issues early and improves first-request performance
+  if (db && typeof (db as any).warmUpConnection === 'function') {
+    // Fire and forget - don't wait for it, don't block startup
+    (db as any).warmUpConnection().catch((err: any) => {
+      // Already logged in warmUpConnection, just catch to prevent unhandled rejection
+    });
+  }
+  
   if (character.name === 'Kaia') {
     await runMigrations(db);
   }
@@ -647,6 +656,17 @@ export { telegrafInstancePatcher };
 // Note: console.error interceptor is set up in bootstrap.ts
 
 async function startAgents() {
+  // Warm up SI<3> database connection (non-blocking)
+  // This improves first-request performance for SI<3> user lookups
+  try {
+    const { warmUpSi3Connection } = await import('./services/si3Database.js');
+    warmUpSi3Connection().catch((err: any) => {
+      // Already logged in warmUpSi3Connection, just catch to prevent unhandled rejection
+    });
+  } catch (error) {
+    // Import failed, skip warm-up
+  }
+
   // CRITICAL: Setup Telegraf instance patcher BEFORE creating any runtimes or clients
   await setupTelegrafInstancePatcher();
   
