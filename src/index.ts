@@ -1309,6 +1309,760 @@ async function startAgents() {
     }
   });
   
+  // ==================== WEBSITE ONBOARDING API ====================
+  
+  // GET /api/website/opportunities - Get pinned opportunities (for frontend)
+  app.get('/api/website/opportunities', async (req, res) => {
+    try {
+      const { PINNED_OPPORTUNITIES } = await import('./services/websiteOnboardingService.js');
+      res.json({
+        success: true,
+        opportunities: PINNED_OPPORTUNITIES
+      });
+    } catch (error: any) {
+      console.error('[API] Error getting opportunities:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message || 'Failed to get opportunities'
+      });
+    }
+  });
+  
+  // POST /api/website/onboard - Start website onboarding
+  app.post('/api/website/onboard', async (req, res) => {
+    try {
+      const { validateApiKey } = await import('./services/webChatApi.js');
+      const { startWebsiteOnboarding } = await import('./services/websiteOnboardingService.js');
+      
+      // Validate API key if configured
+      const apiKey = req.headers['x-api-key'] as string || req.headers['authorization']?.replace('Bearer ', '') || req.body.apiKey;
+      const webApiKey = process.env.WEB_API_KEY;
+      if (webApiKey && webApiKey !== 'disabled') {
+        if (!apiKey || !validateApiKey(apiKey)) {
+          return res.status(401).json({
+            success: false,
+            error: 'Invalid or missing API key'
+          });
+        }
+      }
+      
+      const { userId, entryPoint } = req.body;
+      
+      if (!userId) {
+        return res.status(400).json({
+          success: false,
+          error: 'Missing required field: userId'
+        });
+      }
+      
+      const result = await startWebsiteOnboarding(kaiaRuntime, userId, entryPoint || 'onboard');
+      
+      res.json({
+        success: true,
+        ...result
+      });
+    } catch (error: any) {
+      console.error('[API] Error starting website onboarding:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message || 'Failed to start onboarding'
+      });
+    }
+  });
+  
+  // POST /api/website/message - Handle website onboarding messages
+  app.post('/api/website/message', async (req, res) => {
+    try {
+      const { validateApiKey } = await import('./services/webChatApi.js');
+      const {
+        acknowledgePrivacyPolicy,
+        handleLanguageSelection,
+        routeByWeb3Experience,
+        handleGenderCheck,
+        handleRoleCheck,
+        handleFounderRoleCheck
+      } = await import('./services/websiteOnboardingService.js');
+      
+      // Validate API key if configured
+      const apiKey = req.headers['x-api-key'] as string || req.headers['authorization']?.replace('Bearer ', '') || req.body.apiKey;
+      const webApiKey = process.env.WEB_API_KEY;
+      if (webApiKey && webApiKey !== 'disabled') {
+        if (!apiKey || !validateApiKey(apiKey)) {
+          return res.status(401).json({
+            success: false,
+            error: 'Invalid or missing API key'
+          });
+        }
+      }
+      
+      const { userId, message } = req.body;
+      
+      if (!userId || !message) {
+        return res.status(400).json({
+          success: false,
+          error: 'Missing required fields: userId, message'
+        });
+      }
+      
+      // Get current state
+      const cached = await kaiaRuntime.cacheManager.get(`onboarding_${userId}`);
+      const state = cached as { step: string; profile: any } || { step: 'NONE', profile: {} };
+      const step = state.step as string;
+      const lowerMessage = message.toLowerCase().trim();
+      
+      let result: any;
+      
+      // Route based on current step
+      if (step === 'WEBSITE_WELCOME') {
+        if (lowerMessage === 'continue' || lowerMessage === '1' || lowerMessage.includes('continue')) {
+          result = await acknowledgePrivacyPolicy(kaiaRuntime, userId);
+        } else {
+          return res.json({
+            success: true,
+            message: 'Please type "continue" to proceed.',
+            step: 'WEBSITE_WELCOME'
+          });
+        }
+      } else if (step === 'WEBSITE_LANGUAGE') {
+        // Language selection
+        if (/^[1-4]$/.test(lowerMessage)) {
+          result = await handleLanguageSelection(kaiaRuntime, userId, lowerMessage);
+        } else {
+          return res.json({
+            success: true,
+            message: 'Please reply with 1, 2, 3, or 4 for your language choice.',
+            step
+          });
+        }
+      } else if (step === 'WEBSITE_WEB3_EXPERIENCE') {
+        // Web3 experience routing
+        if (/^[1-3]$/.test(lowerMessage)) {
+          result = await routeByWeb3Experience(kaiaRuntime, userId, lowerMessage);
+        } else {
+          return res.json({
+            success: true,
+            message: 'Please reply with 1, 2, or 3 for your Web3 experience level.',
+            step
+          });
+        }
+      } else if (step === 'WEBSITE_GENDER_CHECK') {
+        // Gender check for Si Her routing
+        if (/^[12]$/.test(lowerMessage)) {
+          result = await handleGenderCheck(kaiaRuntime, userId, lowerMessage);
+        } else {
+          return res.json({
+            success: true,
+            message: 'Please reply with 1 for Yes or 2 for No.',
+            step
+          });
+        }
+      } else if (step === 'WEBSITE_ROLE_CHECK') {
+        // Role check for Grow3dge/Well-Being routing
+        if (/^[12]$/.test(lowerMessage)) {
+          result = await handleRoleCheck(kaiaRuntime, userId, lowerMessage);
+        } else {
+          return res.json({
+            success: true,
+            message: 'Please reply with 1 for Yes or 2 for No.',
+            step
+          });
+        }
+      } else if (step === 'WEBSITE_ROLE_CHECK_FOUNDER') {
+        // Founder/CoS/HR role check
+        if (/^[12]$/.test(lowerMessage)) {
+          result = await handleFounderRoleCheck(kaiaRuntime, userId, lowerMessage);
+        } else {
+          return res.json({
+            success: true,
+            message: 'Please reply with 1 for Yes or 2 for No.',
+            step
+          });
+        }
+      } else {
+        // Unknown step - return current state
+        return res.json({
+          success: true,
+          message: 'Please continue with the onboarding flow.',
+          step
+        });
+      }
+      
+      res.json({
+        success: true,
+        ...result
+      });
+    } catch (error: any) {
+      console.error('[API] Error processing website message:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message || 'Failed to process message'
+      });
+    }
+  });
+  
+  // POST /api/website/si-her-form - Submit Si Her form
+  app.post('/api/website/si-her-form', async (req, res) => {
+    try {
+      const { validateApiKey } = await import('./services/webChatApi.js');
+      const { submitSiHerForm } = await import('./services/formIntegrationService.js');
+      
+      // Validate API key if configured
+      const apiKey = req.headers['x-api-key'] as string || req.headers['authorization']?.replace('Bearer ', '') || req.body.apiKey;
+      const webApiKey = process.env.WEB_API_KEY;
+      if (webApiKey && webApiKey !== 'disabled') {
+        if (!apiKey || !validateApiKey(apiKey)) {
+          return res.status(401).json({
+            success: false,
+            error: 'Invalid or missing API key'
+          });
+        }
+      }
+      
+      const { userId, name, email, walletAddress, ...otherData } = req.body;
+      
+      if (!name || !email) {
+        return res.status(400).json({
+          success: false,
+          error: 'Missing required fields: name, email'
+        });
+      }
+      
+      const result = await submitSiHerForm({
+        name,
+        email,
+        walletAddress,
+        userId,
+        ...otherData
+      });
+      
+      // Update user profile to mark form as submitted
+      if (result.success && userId) {
+        try {
+          const cached = await kaiaRuntime.cacheManager.get(`onboarding_${userId}`);
+          const state = cached as { step: string; profile: any } || { step: 'NONE', profile: {} };
+          await kaiaRuntime.cacheManager.set(`onboarding_${userId}`, {
+            ...state,
+            profile: {
+              ...state.profile,
+              siHerFormSubmitted: true,
+              email,
+              name
+            }
+          });
+        } catch (error) {
+          console.error('[API] Error updating user profile:', error);
+        }
+      }
+      
+      res.json(result);
+    } catch (error: any) {
+      console.error('[API] Error submitting Si Her form:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message || 'Failed to submit form'
+      });
+    }
+  });
+  
+  // POST /api/website/grow3dge-form - Submit Grow3dge form
+  app.post('/api/website/grow3dge-form', async (req, res) => {
+    try {
+      const { validateApiKey } = await import('./services/webChatApi.js');
+      const { submitGrow3dgeForm } = await import('./services/formIntegrationService.js');
+      
+      // Validate API key if configured
+      const apiKey = req.headers['x-api-key'] as string || req.headers['authorization']?.replace('Bearer ', '') || req.body.apiKey;
+      const webApiKey = process.env.WEB_API_KEY;
+      if (webApiKey && webApiKey !== 'disabled') {
+        if (!apiKey || !validateApiKey(apiKey)) {
+          return res.status(401).json({
+            success: false,
+            error: 'Invalid or missing API key'
+          });
+        }
+      }
+      
+      const { userId, name, companyName, companyEmail, role, interest, details } = req.body;
+      
+      if (!name || !companyName || !companyEmail || !role || !interest) {
+        return res.status(400).json({
+          success: false,
+          error: 'Missing required fields: name, companyName, companyEmail, role, interest'
+        });
+      }
+      
+      const result = await submitGrow3dgeForm({
+        name,
+        companyName,
+        companyEmail,
+        role,
+        interest,
+        details: details || '',
+        userId
+      });
+      
+      // Update user profile to mark form as submitted
+      if (result.success && userId) {
+        try {
+          const cached = await kaiaRuntime.cacheManager.get(`onboarding_${userId}`);
+          const state = cached as { step: string; profile: any } || { step: 'NONE', profile: {} };
+          await kaiaRuntime.cacheManager.set(`onboarding_${userId}`, {
+            ...state,
+            profile: {
+              ...state.profile,
+              grow3dgeFormSubmitted: true,
+              name
+            }
+          });
+        } catch (error) {
+          console.error('[API] Error updating user profile:', error);
+        }
+      }
+      
+      res.json(result);
+    } catch (error: any) {
+      console.error('[API] Error submitting Grow3dge form:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message || 'Failed to submit form'
+      });
+    }
+  });
+  
+  // POST /api/website/well-being-form - Submit Well-Being form
+  app.post('/api/website/well-being-form', async (req, res) => {
+    try {
+      const { validateApiKey } = await import('./services/webChatApi.js');
+      const { submitWellBeingForm } = await import('./services/formIntegrationService.js');
+      
+      // Validate API key if configured
+      const apiKey = req.headers['x-api-key'] as string || req.headers['authorization']?.replace('Bearer ', '') || req.body.apiKey;
+      const webApiKey = process.env.WEB_API_KEY;
+      if (webApiKey && webApiKey !== 'disabled') {
+        if (!apiKey || !validateApiKey(apiKey)) {
+          return res.status(401).json({
+            success: false,
+            error: 'Invalid or missing API key'
+          });
+        }
+      }
+      
+      const { userId, name, companyName, companyEmail, role, interest, details } = req.body;
+      
+      if (!name || !companyName || !companyEmail || !role || !interest) {
+        return res.status(400).json({
+          success: false,
+          error: 'Missing required fields: name, companyName, companyEmail, role, interest'
+        });
+      }
+      
+      const result = await submitWellBeingForm({
+        name,
+        companyName,
+        companyEmail,
+        role,
+        interest,
+        details: details || '',
+        userId
+      });
+      
+      // Update user profile to mark form as submitted
+      if (result.success && userId) {
+        try {
+          const cached = await kaiaRuntime.cacheManager.get(`onboarding_${userId}`);
+          const state = cached as { step: string; profile: any } || { step: 'NONE', profile: {} };
+          await kaiaRuntime.cacheManager.set(`onboarding_${userId}`, {
+            ...state,
+            profile: {
+              ...state.profile,
+              wellBeingFormSubmitted: true,
+              name
+            }
+          });
+        } catch (error) {
+          console.error('[API] Error updating user profile:', error);
+        }
+      }
+      
+      res.json(result);
+    } catch (error: any) {
+      console.error('[API] Error submitting Well-Being form:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message || 'Failed to submit form'
+      });
+    }
+  });
+  
+  // POST /api/website/route-direct - Direct routing to program (bypasses chat flow)
+  app.post('/api/website/route-direct', async (req, res) => {
+    try {
+      const { validateApiKey } = await import('./services/webChatApi.js');
+      
+      // Validate API key if configured
+      const apiKey = req.headers['x-api-key'] as string || req.headers['authorization']?.replace('Bearer ', '') || req.body.apiKey;
+      const webApiKey = process.env.WEB_API_KEY;
+      if (webApiKey && webApiKey !== 'disabled') {
+        if (!apiKey || !validateApiKey(apiKey)) {
+          return res.status(401).json({
+            success: false,
+            error: 'Invalid or missing API key'
+          });
+        }
+      }
+      
+      const { userId, program } = req.body;
+      
+      if (!userId || !program) {
+        return res.status(400).json({
+          success: false,
+          error: 'Missing required fields: userId, program'
+        });
+      }
+      
+      const validPrograms = ['si-u-explorer', 'si-her-guide', 'grow3dge', 'well-being'];
+      if (!validPrograms.includes(program)) {
+        return res.status(400).json({
+          success: false,
+          error: `Invalid program. Must be one of: ${validPrograms.join(', ')}`
+        });
+      }
+      
+      // Get current state
+      const cached = await kaiaRuntime.cacheManager.get(`onboarding_${userId}`);
+      const state = cached as { step: string; profile: any } || { step: 'NONE', profile: {} };
+      
+      // Update profile with routing
+      await kaiaRuntime.cacheManager.set(`onboarding_${userId}`, {
+        ...state,
+        step: 'WEBSITE_ROUTED',
+        profile: {
+          ...state.profile,
+          onboardingSource: 'website',
+          routedToProgram: program,
+          onboardingStartedAt: state.profile.onboardingStartedAt || new Date()
+        }
+      });
+      
+      res.json({
+        success: true,
+        step: 'WEBSITE_ROUTED',
+        routedTo: program,
+        message: `Successfully routed to ${program}`
+      });
+    } catch (error: any) {
+      console.error('[API] Error routing user:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message || 'Failed to route user'
+      });
+    }
+  });
+  
+  // POST /api/website/wallet-connect - Connect wallet for website onboarding
+  app.post('/api/website/wallet-connect', async (req, res) => {
+    try {
+      const { validateApiKey } = await import('./services/webChatApi.js');
+      const { validateWalletAddress, checkSiuNameAvailability } = await import('./services/siuNameService.js');
+      const { isWalletRegistered } = await import('./services/siuDatabaseService.js');
+      
+      // Validate API key if configured
+      const apiKey = req.headers['x-api-key'] as string || req.headers['authorization']?.replace('Bearer ', '') || req.body.apiKey;
+      const webApiKey = process.env.WEB_API_KEY;
+      if (webApiKey && webApiKey !== 'disabled') {
+        if (!apiKey || !validateApiKey(apiKey)) {
+          return res.status(401).json({
+            success: false,
+            error: 'Invalid or missing API key'
+          });
+        }
+      }
+      
+      const { userId, walletAddress, walletType } = req.body;
+      
+      if (!userId || !walletAddress) {
+        return res.status(400).json({
+          success: false,
+          error: 'Missing required fields: userId, walletAddress'
+        });
+      }
+      
+      // Validate wallet address format
+      const walletValidation = validateWalletAddress(walletAddress);
+      if (!walletValidation.valid) {
+        return res.status(400).json({
+          success: false,
+          error: walletValidation.error || 'Invalid wallet address format'
+        });
+      }
+      
+      // Check if wallet is already registered
+      const isRegistered = await isWalletRegistered(walletAddress);
+      if (isRegistered) {
+        return res.status(409).json({
+          success: false,
+          error: 'This wallet address is already registered with another account',
+          walletAlreadyRegistered: true
+        });
+      }
+      
+      // Get current state
+      const cached = await kaiaRuntime.cacheManager.get(`onboarding_${userId}`);
+      const state = cached as { step: string; profile: any } || { step: 'NONE', profile: {} };
+      
+      // Update profile with wallet
+      await kaiaRuntime.cacheManager.set(`onboarding_${userId}`, {
+        ...state,
+        profile: {
+          ...state.profile,
+          walletAddress: walletAddress.toLowerCase(),
+          walletType: walletType || 'unknown',
+          entryMethod: 'wallet',
+          onboardingSource: 'website'
+        }
+      });
+      
+      res.json({
+        success: true,
+        walletAddress: walletAddress.toLowerCase(),
+        walletType: walletType || 'unknown',
+        message: 'Wallet connected successfully'
+      });
+    } catch (error: any) {
+      console.error('[API] Error connecting wallet:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message || 'Failed to connect wallet'
+      });
+    }
+  });
+  
+  // POST /api/website/claim-siu-name - Claim SI U name
+  app.post('/api/website/claim-siu-name', async (req, res) => {
+    try {
+      const { validateApiKey } = await import('./services/webChatApi.js');
+      const { validateSiuName, checkSiuNameAvailability } = await import('./services/siuNameService.js');
+      
+      // Validate API key if configured
+      const apiKey = req.headers['x-api-key'] as string || req.headers['authorization']?.replace('Bearer ', '') || req.body.apiKey;
+      const webApiKey = process.env.WEB_API_KEY;
+      if (webApiKey && webApiKey !== 'disabled') {
+        if (!apiKey || !validateApiKey(apiKey)) {
+          return res.status(401).json({
+            success: false,
+            error: 'Invalid or missing API key'
+          });
+        }
+      }
+      
+      const { userId, name } = req.body;
+      
+      if (!userId || !name) {
+        return res.status(400).json({
+          success: false,
+          error: 'Missing required fields: userId, name'
+        });
+      }
+      
+      // Validate SI U name format
+      const validation = validateSiuName(name);
+      if (!validation.valid) {
+        return res.status(400).json({
+          success: false,
+          error: validation.error || 'Invalid SI U name format'
+        });
+      }
+      
+      const formattedName = validation.formatted!;
+      
+      // Check availability
+      const availability = await checkSiuNameAvailability(formattedName);
+      if (!availability.available) {
+        return res.status(409).json({
+          success: false,
+          error: availability.message || 'SI U name is not available',
+          nameTaken: true
+        });
+      }
+      
+      // Get current state
+      const cached = await kaiaRuntime.cacheManager.get(`onboarding_${userId}`);
+      const state = cached as { step: string; profile: any } || { step: 'NONE', profile: {} };
+      
+      // Update profile with SI U name
+      await kaiaRuntime.cacheManager.set(`onboarding_${userId}`, {
+        ...state,
+        profile: {
+          ...state.profile,
+          siuName: formattedName,
+          onboardingSource: 'website'
+        }
+      });
+      
+      res.json({
+        success: true,
+        siuName: formattedName,
+        message: `SI U name "${formattedName}" claimed successfully`
+      });
+    } catch (error: any) {
+      console.error('[API] Error claiming SI U name:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message || 'Failed to claim SI U name'
+      });
+    }
+  });
+  
+  // POST /api/website/save-interests - Save user interests
+  app.post('/api/website/save-interests', async (req, res) => {
+    try {
+      const { validateApiKey } = await import('./services/webChatApi.js');
+      
+      // Validate API key if configured
+      const apiKey = req.headers['x-api-key'] as string || req.headers['authorization']?.replace('Bearer ', '') || req.body.apiKey;
+      const webApiKey = process.env.WEB_API_KEY;
+      if (webApiKey && webApiKey !== 'disabled') {
+        if (!apiKey || !validateApiKey(apiKey)) {
+          return res.status(401).json({
+            success: false,
+            error: 'Invalid or missing API key'
+          });
+        }
+      }
+      
+      const { userId, interests } = req.body;
+      
+      if (!userId) {
+        return res.status(400).json({
+          success: false,
+          error: 'Missing required field: userId'
+        });
+      }
+      
+      if (!interests || !Array.isArray(interests)) {
+        return res.status(400).json({
+          success: false,
+          error: 'Missing or invalid interests field. Must be an array.'
+        });
+      }
+      
+      // Get current state
+      const cached = await kaiaRuntime.cacheManager.get(`onboarding_${userId}`);
+      const state = cached as { step: string; profile: any } || { step: 'NONE', profile: {} };
+      
+      // Update profile with interests
+      await kaiaRuntime.cacheManager.set(`onboarding_${userId}`, {
+        ...state,
+        profile: {
+          ...state.profile,
+          interests: interests,
+          onboardingSource: 'website'
+        }
+      });
+      
+      res.json({
+        success: true,
+        interests: interests,
+        message: 'Interests saved successfully'
+      });
+    } catch (error: any) {
+      console.error('[API] Error saving interests:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message || 'Failed to save interests'
+      });
+    }
+  });
+  
+  // POST /api/website/payment-webhook - Handle Si Her payment webhook
+  app.post('/api/website/payment-webhook', async (req, res) => {
+    try {
+      // Verify webhook signature if payment processor provides it
+      const webhookSecret = process.env.PAYMENT_WEBHOOK_SECRET;
+      const signature = req.headers['x-payment-signature'] as string;
+      
+      // TODO: Implement signature verification based on payment processor
+      // For now, we'll accept the webhook (in production, verify signature)
+      
+      const { userId, email, amount, currency, transactionId, status } = req.body;
+      
+      if (!userId || !email || status !== 'completed') {
+        return res.status(400).json({
+          success: false,
+          error: 'Invalid webhook data'
+        });
+      }
+      
+      // Verify amount is $300 USD
+      if (amount !== 300 || currency !== 'USD') {
+        console.warn(`[Payment Webhook] Unexpected amount: ${amount} ${currency}`);
+        return res.status(400).json({
+          success: false,
+          error: 'Invalid payment amount'
+        });
+      }
+      
+      // Check if payment was already processed (idempotency check)
+      let shouldRunAutomation = false;
+      try {
+        const cached = await kaiaRuntime.cacheManager.get(`onboarding_${userId}`);
+        const state = cached as { step: string; profile: any } || { step: 'NONE', profile: {} };
+        
+        // If payment already completed for this transaction, skip (idempotency check)
+        // Primary check: same transactionId (prevents duplicate processing of same transaction)
+        if (state.profile?.siHerPaymentCompleted && state.profile?.paymentTransactionId === transactionId) {
+          console.log('[Payment Webhook] Payment already processed for this transaction, skipping');
+          return res.json({ success: true, message: 'Payment already processed' });
+        }
+        
+        // Secondary check: payment already completed (prevents processing if payment was completed but transactionId missing/different)
+        if (state.profile?.siHerPaymentCompleted && transactionId) {
+          console.log('[Payment Webhook] Payment already completed (different or missing transactionId), skipping');
+          return res.json({ success: true, message: 'Payment already processed' });
+        }
+        
+        // Update user profile to mark payment as completed
+        await kaiaRuntime.cacheManager.set(`onboarding_${userId}`, {
+          ...state,
+          profile: {
+            ...state.profile,
+            siHerPaymentCompleted: true,
+            paymentTransactionId: transactionId,
+            paymentDate: new Date()
+          }
+        });
+        
+        shouldRunAutomation = true; // Only run automation if this is a new payment
+      } catch (error) {
+        console.error('[Payment Webhook] Error updating user profile:', error);
+        return res.status(500).json({
+          success: false,
+          error: 'Failed to update user profile'
+        });
+      }
+      
+      // Trigger automation: Add to Loops, Telegram group, SI U database
+      // Only run if this is a new payment (not a duplicate webhook)
+      if (shouldRunAutomation) {
+        try {
+          const { automateSiHerOnboarding } = await import('./services/siHerAutomationService.js');
+          await automateSiHerOnboarding(kaiaRuntime, userId, email);
+        } catch (error) {
+          console.error('[Payment Webhook] Error running automation:', error);
+          // Don't fail the webhook if automation fails - payment is already recorded
+        }
+      }
+      
+      res.json({ success: true, message: 'Payment processed successfully' });
+    } catch (error: any) {
+      console.error('[API] Error processing payment webhook:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message || 'Failed to process payment'
+      });
+    }
+  });
+  
   // Start Express server on port 3000 (same as DirectClient, or integrated)
   app.listen(directPort, () => {
       console.log(`[API] REST API available at http://localhost:${directPort}`);
@@ -1318,6 +2072,17 @@ async function startAgents() {
       console.log(`[API]   GET /api/health - Health check`);
       console.log(`[API]   GET /api/metrics - Agent analytics & metrics`);
       console.log(`[API]   GET /api/users/search?name=<search> - Search users by name`);
+      console.log(`[API]   GET /api/website/opportunities - Get pinned opportunities`);
+      console.log(`[API]   POST /api/website/onboard - Start website onboarding`);
+      console.log(`[API]   POST /api/website/message - Handle website onboarding messages`);
+      console.log(`[API]   POST /api/website/route-direct - Direct routing to program`);
+      console.log(`[API]   POST /api/website/wallet-connect - Connect wallet`);
+      console.log(`[API]   POST /api/website/claim-siu-name - Claim SI U name`);
+      console.log(`[API]   POST /api/website/save-interests - Save user interests`);
+      console.log(`[API]   POST /api/website/si-her-form - Submit Si Her form`);
+      console.log(`[API]   POST /api/website/grow3dge-form - Submit Grow3dge form`);
+      console.log(`[API]   POST /api/website/well-being-form - Submit Well-Being form`);
+      console.log(`[API]   POST /api/website/payment-webhook - Handle Si Her payment webhook`);
       if ((directClient as any).attachRoutes) {
         console.log(`[API]   DirectClient routes available at /direct/*`);
       }

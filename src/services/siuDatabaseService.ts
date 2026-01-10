@@ -41,7 +41,7 @@ export interface SiuUserDocument {
   userTier?: 'explorer' | 'paid';
   onboardingCompletedAt?: Date;
   onboardingStartedAt?: Date;
-  onboardingSource?: 'telegram' | 'web';
+  onboardingSource?: 'telegram' | 'web' | 'website';
   isVerified?: boolean;
   newsletter?: boolean;
   createdAt?: Date;
@@ -53,6 +53,18 @@ export interface SiuUserDocument {
   recentExperiences?: any[];
   versionUpdated?: boolean;
   __v?: number;
+  // Website onboarding fields
+  entryPoint?: 'onboard' | 'explore' | 'join-si-u';
+  web3ExperienceLevel?: 'brand-new' | 'using-but-not-working' | 'working-in-web3';
+  roleCategory?: 'marketing-sales-bd' | 'founder-cos-hr' | 'other';
+  routedToProgram?: 'si-u-explorer' | 'si-her-guide' | 'grow3dge' | 'well-being';
+  privacyPolicyAcknowledged?: boolean;
+  siHerFormSubmitted?: boolean;
+  siHerPaymentCompleted?: boolean;
+  paymentTransactionId?: string;
+  paymentDate?: Date;
+  grow3dgeFormSubmitted?: boolean;
+  wellBeingFormSubmitted?: boolean;
 }
 
 /**
@@ -82,7 +94,7 @@ export async function saveUserToSiuDatabase(
   email: string,
   profile: UserProfile,
   userId: string,
-  source: 'telegram' | 'web' = 'web'
+  source: 'telegram' | 'web' | 'website' = 'web'
 ): Promise<boolean> {
   try {
     const db = await getSi3Database();
@@ -183,6 +195,52 @@ export async function saveUserToSiuDatabase(
 
     if (profile.onboardingStartedAt) {
       siuDocument.onboardingStartedAt = profile.onboardingStartedAt;
+    }
+
+    // Map website onboarding fields
+    if (profile.entryPoint) {
+      siuDocument.entryPoint = profile.entryPoint;
+    }
+
+    if (profile.web3ExperienceLevel) {
+      siuDocument.web3ExperienceLevel = profile.web3ExperienceLevel;
+    }
+
+    if (profile.roleCategory) {
+      siuDocument.roleCategory = profile.roleCategory;
+    }
+
+    if (profile.routedToProgram) {
+      siuDocument.routedToProgram = profile.routedToProgram;
+    }
+
+    if (profile.privacyPolicyAcknowledged !== undefined) {
+      siuDocument.privacyPolicyAcknowledged = profile.privacyPolicyAcknowledged;
+    }
+
+    if (profile.siHerFormSubmitted !== undefined) {
+      siuDocument.siHerFormSubmitted = profile.siHerFormSubmitted;
+    }
+
+    if (profile.siHerPaymentCompleted !== undefined) {
+      siuDocument.siHerPaymentCompleted = profile.siHerPaymentCompleted;
+    }
+
+    if (profile.grow3dgeFormSubmitted !== undefined) {
+      siuDocument.grow3dgeFormSubmitted = profile.grow3dgeFormSubmitted;
+    }
+
+    if (profile.wellBeingFormSubmitted !== undefined) {
+      siuDocument.wellBeingFormSubmitted = profile.wellBeingFormSubmitted;
+    }
+
+    // Payment info (if available from profile)
+    if ((profile as any).paymentTransactionId) {
+      siuDocument.paymentTransactionId = (profile as any).paymentTransactionId;
+    }
+
+    if ((profile as any).paymentDate) {
+      siuDocument.paymentDate = (profile as any).paymentDate;
     }
 
     // Check if user already exists

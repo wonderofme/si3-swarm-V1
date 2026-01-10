@@ -32,7 +32,16 @@ export type OnboardingStep =
   | 'UPDATING_DIVERSITY'
   | 'UPDATING_NOTIFICATIONS'
   | 'UPDATING_SIU_NAME'     // NEW: For editing SI U name
-  | 'UPDATING_WALLET';      // NEW: For editing wallet
+  | 'UPDATING_WALLET'       // NEW: For editing wallet
+  // Website onboarding steps
+  | 'WEBSITE_WELCOME'       // NEW: Website welcome with pinned opportunities
+  | 'WEBSITE_PRIVACY'       // NEW: Privacy policy acknowledgment
+  | 'WEBSITE_LANGUAGE'      // NEW: Language selection for website onboarding
+  | 'WEBSITE_WEB3_EXPERIENCE' // NEW: Web3 experience level question
+  | 'WEBSITE_GENDER_CHECK'  // NEW: Gender check for Si Her routing
+  | 'WEBSITE_ROLE_CHECK'    // NEW: Role check for Grow3dge/Well-Being routing
+  | 'WEBSITE_ROLE_CHECK_FOUNDER' // NEW: Founder/CoS/HR role check
+  | 'WEBSITE_ROUTED';       // NEW: User has been routed to specific program
 
 import { LanguageCode } from './translations.js';
 
@@ -63,11 +72,23 @@ export interface UserProfile {
   editingField?: string;
   onboardingCompletedAt?: Date;
   onboardingStartedAt?: Date;  // NEW: For time-to-completion analytics
-  onboardingSource?: 'telegram' | 'web';  // NEW: Track source
+  onboardingSource?: 'telegram' | 'web' | 'website';  // NEW: Track source
   profileUpdatedAt?: Date;  // NEW: Timestamp when profile was last updated (for background match checker)
   existingUserId?: string; // Used temporarily during ASK_PROFILE_CHOICE
   existingProfile?: UserProfile; // Used temporarily during ASK_PROFILE_CHOICE
   si3Roles?: string[];  // Roles from SI3 database (for platform detection)
+  // Website onboarding fields
+  entryPoint?: 'onboard' | 'explore' | 'join-si-u';  // NEW: How user entered from website
+  web3ExperienceLevel?: 'brand-new' | 'using-but-not-working' | 'working-in-web3';  // NEW: Web3 experience
+  roleCategory?: 'marketing-sales-bd' | 'founder-cos-hr' | 'other';  // NEW: Role category for routing
+  routedToProgram?: 'si-u-explorer' | 'si-her-guide' | 'grow3dge' | 'well-being';  // NEW: Which program user was routed to
+  privacyPolicyAcknowledged?: boolean;  // NEW: Privacy policy acknowledgment
+  siHerFormSubmitted?: boolean;  // NEW: Si Her form submission status
+  siHerPaymentCompleted?: boolean;  // NEW: Si Her payment status
+  paymentTransactionId?: string;  // NEW: Payment transaction ID
+  paymentDate?: Date;  // NEW: Payment date
+  grow3dgeFormSubmitted?: boolean;  // NEW: Grow3dge form submission status
+  wellBeingFormSubmitted?: boolean;  // NEW: Well-Being form submission status
 }
 
 // Extend the standard State to include our onboarding context

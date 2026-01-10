@@ -3,7 +3,7 @@ version: "2.0"
 services:
   kaia-swarm:
     # Update version after each GitHub push (github.run_number in workflow)
-    image: ghcr.io/si3-ecosystem/kaia-swarm:v340
+    image: ghcr.io/si3-ecosystem/kaia-swarm:v341
     env:
       - DATABASE_URL=${DATABASE_URL}
       - DATABASE_TYPE=mongodb
@@ -23,8 +23,12 @@ services:
       # Web API configuration (optional)
       - WEB_API_KEY=${WEB_API_KEY}
       - CORS_ORIGINS=${CORS_ORIGINS}
+      # Fibery integration
+      - FIBERY_ACCOUNT=si3.fibery.io
+      - FIBERY_API_KEY=dbe563db.a0d294e71ceb5e7ec81dcef98edd1b1dd83
       # Reduce log noise from pino/ElizaOS
       - PINO_LOG_LEVEL=warn
+
     expose:
       # REST API port (Web Chat, History, Health, Metrics) - Express server on port 3000
       - port: 3000

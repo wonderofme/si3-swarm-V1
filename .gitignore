@@ -6,5 +6,8 @@ dist/
 .DS_Store
 .env.local
 .env.*.local
+.env.akash
+akash-env-vars.txt
+FRONTEND_INTEGRATION_GUIDE.md
 
 
