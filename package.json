@@ -1,6 +1,6 @@
 {
   "name": "si3-multi-agent-swarm",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "type": "module",
   "private": true,
   "scripts": {

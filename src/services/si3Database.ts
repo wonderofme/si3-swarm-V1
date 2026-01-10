@@ -23,35 +23,67 @@ export async function getSi3Database(): Promise<Db | null> {
     return si3Db;
   }
 
-  try {
-    console.log('[SI3 Database] Connecting to SI<3> database...');
-    
-    const options: any = {
-      tlsAllowInvalidCertificates: false,
-      tlsAllowInvalidHostnames: false,
-      retryWrites: true,
-      w: 'majority',
-      serverSelectionTimeoutMS: 30000,
-      connectTimeoutMS: 30000,
-      retryReads: true,
-      socketTimeoutMS: 30000,
-    };
-    
-    si3Client = new MongoClient(connectionString, options);
-    await si3Client.connect();
-    
-    // Extract database name from connection string or use default
-    const dbName = extractDbName(connectionString) || 'si3';
-    si3Db = si3Client.db(dbName);
-    
-    console.log(`[SI3 Database] Successfully connected to SI<3> database: ${dbName}`);
-    return si3Db;
-  } catch (error: any) {
-    console.error('[SI3 Database] Connection error:', error.message);
-    console.error('[SI3 Database] Connection string (sanitized):', 
-      connectionString.replace(/:[^:@]+@/, ':****@'));
-    return null;
+  // Retry connection with exponential backoff
+  const maxRetries = 3;
+  let lastError: any = null;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`[SI3 Database] Connecting to SI<3> database (attempt ${attempt}/${maxRetries})...`);
+      
+      const options: any = {
+        tlsAllowInvalidCertificates: false,
+        tlsAllowInvalidHostnames: false,
+        retryWrites: true,
+        w: 'majority',
+        // Increased timeouts for better resilience during Atlas issues
+        serverSelectionTimeoutMS: 60000, // 60 seconds (was 30)
+        connectTimeoutMS: 60000, // 60 seconds (was 30)
+        retryReads: true,
+        socketTimeoutMS: 60000, // 60 seconds (was 30)
+        heartbeatFrequencyMS: 10000,
+        maxIdleTimeMS: 30000,
+      maxPoolSize: 20, // Increased from 10 to handle more concurrent operations
+      minPoolSize: 2, // Keep minimum connections alive
+        waitQueueTimeoutMS: 30000,
+      };
+      
+      si3Client = new MongoClient(connectionString, options);
+      await si3Client.connect();
+      
+      // Extract database name from connection string or use default
+      const dbName = extractDbName(connectionString) || 'si3';
+      si3Db = si3Client.db(dbName);
+      
+      console.log(`[SI3 Database] Successfully connected to SI<3> database: ${dbName}`);
+      return si3Db;
+    } catch (error: any) {
+      lastError = error;
+      const errorMessage = error?.message || error?.toString() || '';
+      const isReplicaSetError = 
+        errorMessage.includes('ReplicaSetNoPrimary') ||
+        errorMessage.includes('MongoServerSelectionError');
+      
+      if (isReplicaSetError && attempt < maxRetries) {
+        // Wait before retry with exponential backoff
+        const waitTime = Math.min(1000 * Math.pow(2, attempt - 1), 10000); // Max 10 seconds
+        console.warn(`[SI3 Database] Replica set issue detected, retrying in ${waitTime}ms...`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+        continue;
+      }
+      
+      // If not a replica set error or last attempt, log and return null
+      if (attempt === maxRetries || !isReplicaSetError) {
+        console.error('[SI3 Database] Connection error:', error.message);
+        console.error('[SI3 Database] Connection string (sanitized):', 
+          connectionString.replace(/:[^:@]+@/, ':****@'));
+        return null;
+      }
+    }
   }
+  
+  // Should never reach here, but just in case
+  return null;
 }
 
 /**

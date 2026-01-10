@@ -146,8 +146,24 @@ async function getActiveUsers(runtime: IAgentRuntime): Promise<UserProfile[]> {
         }
       }
     }
-  } catch (error) {
-    console.error('[Background Match Checker] Error getting active users:', error);
+  } catch (error: any) {
+    // Check if it's a MongoDB connection error (expected during network issues)
+    const errorMessage = error?.message || error?.toString() || '';
+    const isMongoConnectionError = 
+      errorMessage.includes('MongoServerSelectionError') ||
+      errorMessage.includes('MongoNetworkError') ||
+      errorMessage.includes('ReplicaSetNoPrimary') ||
+      (errorMessage.includes('Socket') && errorMessage.includes('timed out')) ||
+      error?.code === 'ETIMEDOUT' ||
+      error?.code === 'ENETUNREACH';
+    
+    if (isMongoConnectionError) {
+      // Log as warning, not error - this is expected during network issues
+      console.warn('[Background Match Checker] ⚠️ MongoDB connection unavailable (non-fatal, will retry):', errorMessage.substring(0, 200));
+    } else {
+      // Other errors are unexpected, log as error
+      console.error('[Background Match Checker] Error getting active users:', error);
+    }
   }
   
   return activeUsers;
@@ -231,7 +247,14 @@ async function markMatchAsNotified(
         );
       } catch (error: any) {
         // If unique constraint doesn't exist yet, fall back to update-then-insert
-        if (error.message && error.message.includes('unique') || error.message.includes('constraint')) {
+        // Check for specific error indicating constraint is missing (not a violation)
+        const errorMsg = error?.message || '';
+        const isMissingConstraint = 
+          errorMsg.includes('no unique constraint') ||
+          errorMsg.includes('constraint does not exist') ||
+          errorMsg.includes('there is no unique constraint');
+        
+        if (isMissingConstraint) {
           // Try update first
           const updateResult = await db.query(
             `UPDATE matches 
@@ -249,7 +272,8 @@ async function markMatchAsNotified(
             );
           }
         } else {
-          throw error; // Re-throw if it's a different error
+          // Re-throw other errors (constraint violations should be handled by ON CONFLICT)
+          throw error;
         }
       }
     }
@@ -459,8 +483,24 @@ async function checkAndNotifyUserMatches(
     }
     
     return notifiedCount;
-  } catch (error) {
-    console.error(`[Background Match Checker] Error checking matches for ${user.userId}:`, error);
+  } catch (error: any) {
+    // Check if it's a MongoDB connection error (expected during network issues)
+    const errorMessage = error?.message || error?.toString() || '';
+    const isMongoConnectionError = 
+      errorMessage.includes('MongoServerSelectionError') ||
+      errorMessage.includes('MongoNetworkError') ||
+      errorMessage.includes('ReplicaSetNoPrimary') ||
+      (errorMessage.includes('Socket') && errorMessage.includes('timed out')) ||
+      error?.code === 'ETIMEDOUT' ||
+      error?.code === 'ENETUNREACH';
+    
+    if (isMongoConnectionError) {
+      // Log as warning, not error - this is expected during network issues
+      console.warn(`[Background Match Checker] ⚠️ MongoDB connection unavailable for user ${user.userId} (non-fatal, will retry)`);
+    } else {
+      // Other errors are unexpected, log as error
+      console.error(`[Background Match Checker] Error checking matches for ${user.userId}:`, error);
+    }
     return 0;
   }
 }
@@ -477,14 +517,37 @@ export async function runBackgroundMatchCheck(runtime: IAgentRuntime): Promise<v
     
     let totalNotified = 0;
     
-    for (const user of activeUsers) {
+    // Process users with rate limiting to avoid overwhelming database
+    for (let i = 0; i < activeUsers.length; i++) {
+      const user = activeUsers[i];
       const notified = await checkAndNotifyUserMatches(runtime, user);
       totalNotified += notified;
+      
+      // Add delay between users to avoid overwhelming database (except for last user)
+      if (i < activeUsers.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay
+      }
     }
     
     console.log(`[Background Match Checker] ✅ Completed check: ${totalNotified} new match notification(s) sent`);
-  } catch (error) {
-    console.error('[Background Match Checker] Error during background check:', error);
+  } catch (error: any) {
+    // Check if it's a MongoDB connection error (expected during network issues)
+    const errorMessage = error?.message || error?.toString() || '';
+    const isMongoConnectionError = 
+      errorMessage.includes('MongoServerSelectionError') ||
+      errorMessage.includes('MongoNetworkError') ||
+      errorMessage.includes('ReplicaSetNoPrimary') ||
+      (errorMessage.includes('Socket') && errorMessage.includes('timed out')) ||
+      error?.code === 'ETIMEDOUT' ||
+      error?.code === 'ENETUNREACH';
+    
+    if (isMongoConnectionError) {
+      // Log as warning, not error - this is expected during network issues
+      console.warn('[Background Match Checker] ⚠️ MongoDB connection unavailable during background check (non-fatal, will retry)');
+    } else {
+      // Other errors are unexpected, log as error
+      console.error('[Background Match Checker] Error during background check:', error);
+    }
   }
 }
 

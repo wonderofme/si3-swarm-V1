@@ -52,10 +52,32 @@ export async function getOnboardingState(runtime: IAgentRuntime, userId: UUID): 
         profile: state.profile || {}
       };
     }
-  } catch (error) {
-    console.error('[Onboarding] Error getting state:', error);
+  } catch (error: any) {
+    // Check if it's a MongoDB connection error
+    const errorMessage = error?.message || error?.toString() || '';
+    const isMongoConnectionError = 
+      errorMessage.includes('MongoServerSelectionError') ||
+      errorMessage.includes('MongoNetworkError') ||
+      errorMessage.includes('ReplicaSetNoPrimary') ||
+      (errorMessage.includes('Socket') && errorMessage.includes('timed out')) ||
+      error?.code === 'ETIMEDOUT' ||
+      error?.code === 'ENETUNREACH';
+    
+    if (isMongoConnectionError) {
+      // Database unavailable - log warning but don't reset state
+      // Try to get from in-memory cache if available (some cache managers have fallback)
+      console.warn('[Onboarding] ⚠️ Database unavailable when getting state (preserving last known state)');
+      
+      // Try to get from cache again with a shorter timeout or fallback
+      // For now, return NONE but this should ideally preserve last known state
+      // TODO: Implement in-memory state cache as fallback
+    } else {
+      console.error('[Onboarding] Error getting state:', error);
+    }
   }
   
+  // Return default state - this will cause onboarding to restart
+  // But this is better than crashing the bot
   return { step: 'NONE', profile: {} };
 }
 

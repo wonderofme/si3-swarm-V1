@@ -21,13 +21,22 @@ export class MongoAdapter implements DatabaseAdapter {
       tlsAllowInvalidHostnames: false,
       retryWrites: true,
       w: 'majority',
-      // Increase connection timeout for Atlas
-      serverSelectionTimeoutMS: 30000,
-      connectTimeoutMS: 30000,
+      // Increased timeouts for better resilience during Atlas issues
+      serverSelectionTimeoutMS: 60000, // 60 seconds (was 30) - gives more time for replica set to recover
+      connectTimeoutMS: 60000, // 60 seconds (was 30) - allows slower connections
       // Retry configuration
       retryReads: true,
-      // Socket timeout
-      socketTimeoutMS: 30000,
+      // Socket timeout - increased for slow networks
+      socketTimeoutMS: 60000, // 60 seconds (was 30)
+      // Heartbeat frequency - check connection health more frequently
+      heartbeatFrequencyMS: 10000,
+      // Max idle time before closing connection
+      maxIdleTimeMS: 30000,
+      // Connection pool settings - increased for better concurrency
+      maxPoolSize: 20, // Increased from 10 to handle more concurrent operations
+      minPoolSize: 2, // Keep minimum connections alive
+      // Wait for connection to be available
+      waitQueueTimeoutMS: 30000,
     };
     
     this.client = new MongoClient(connectionString, options);
@@ -39,20 +48,47 @@ export class MongoAdapter implements DatabaseAdapter {
    */
   async getDb(): Promise<Db> {
     if (!this.db) {
-      try {
-        console.log('[MongoDB Adapter] Attempting to connect to MongoDB...');
-        await this.client.connect();
-        console.log('[MongoDB Adapter] Successfully connected to MongoDB');
-        // Extract database name from connection string or use default
-        const dbName = this.extractDbName(this.connectionString) || 'kaia';
-        this.db = this.client.db(dbName);
-        console.log(`[MongoDB Adapter] Using database: ${dbName}`);
-      } catch (error: any) {
-        console.error('[MongoDB Adapter] Connection error:', error.message);
-        console.error('[MongoDB Adapter] Connection string (sanitized):', 
-          this.connectionString.replace(/:[^:@]+@/, ':****@'));
-        throw error;
+      // Retry connection with exponential backoff
+      const maxRetries = 3;
+      let lastError: any = null;
+      
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          console.log(`[MongoDB Adapter] Attempting to connect to MongoDB (attempt ${attempt}/${maxRetries})...`);
+          await this.client.connect();
+          console.log('[MongoDB Adapter] Successfully connected to MongoDB');
+          // Extract database name from connection string or use default
+          const dbName = this.extractDbName(this.connectionString) || 'kaia';
+          this.db = this.client.db(dbName);
+          console.log(`[MongoDB Adapter] Using database: ${dbName}`);
+          return this.db;
+        } catch (error: any) {
+          lastError = error;
+          const errorMessage = error?.message || error?.toString() || '';
+          const isReplicaSetError = 
+            errorMessage.includes('ReplicaSetNoPrimary') ||
+            errorMessage.includes('MongoServerSelectionError');
+          
+          if (isReplicaSetError && attempt < maxRetries) {
+            // Wait before retry with exponential backoff
+            const waitTime = Math.min(1000 * Math.pow(2, attempt - 1), 10000); // Max 10 seconds
+            console.warn(`[MongoDB Adapter] Replica set issue detected, retrying in ${waitTime}ms...`);
+            await new Promise(resolve => setTimeout(resolve, waitTime));
+            continue;
+          }
+          
+          // If not a replica set error or last attempt, throw
+          if (attempt === maxRetries || !isReplicaSetError) {
+            console.error('[MongoDB Adapter] Connection error:', error.message);
+            console.error('[MongoDB Adapter] Connection string (sanitized):', 
+              this.connectionString.replace(/:[^:@]+@/, ':****@'));
+            throw error;
+          }
+        }
       }
+      
+      // Should never reach here, but just in case
+      throw lastError || new Error('Failed to connect to MongoDB after retries');
     }
     return this.db;
   }

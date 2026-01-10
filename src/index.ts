@@ -3648,11 +3648,28 @@ PERSONALITY:
         return;
       }
       
+      // Get database connection once before loop to avoid multiple connection attempts
+      let mongoDb: any = null;
+      if (isMongo && db.getDb) {
+        try {
+          mongoDb = await db.getDb();
+        } catch (dbErr) {
+          console.error('[Follow-Up Scheduler] Could not get database connection:', dbErr);
+          return; // Exit early if can't connect
+        }
+      }
+      
       for (const followUp of followUps) {
         try {
           // Handle both MongoDB and PostgreSQL result formats
           const userId = followUp.user_id || followUp.match?.user_id;
           const followUpType = followUp.type;
+          
+          // Skip if userId is missing
+          if (!userId) {
+            console.warn(`[Follow-Up Scheduler] Skipping follow-up ${followUp.id} - missing userId`);
+            continue;
+          }
           
           // Get user's profile for personalization
           let userName = 'friend';
@@ -3697,9 +3714,8 @@ PERSONALITY:
               })
             });
             
-            // Mark follow-up as sent
-            if (isMongo && db.getDb) {
-              const mongoDb = await db.getDb();
+            // Mark follow-up as sent (reuse connection)
+            if (mongoDb) {
               await mongoDb.collection('follow_ups').updateOne(
                 { id: followUp.id },
                 { $set: { status: 'sent', sent_at: new Date() } }
@@ -3713,12 +3729,14 @@ PERSONALITY:
             
             console.log(`[Follow-Up Scheduler] ✅ Sent ${followUpType} to user ${userId}`);
           }
+          
+          // Add small delay between follow-ups to avoid overwhelming database
+          await new Promise(resolve => setTimeout(resolve, 500)); // 500ms delay
         } catch (sendErr) {
           console.error('[Follow-Up Scheduler] Error sending follow-up:', sendErr);
-          // Mark as failed to avoid infinite retry
+          // Mark as failed to avoid infinite retry (reuse connection)
           try {
-            if (isMongo && db.getDb) {
-              const mongoDb = await db.getDb();
+            if (mongoDb) {
               await mongoDb.collection('follow_ups').updateOne(
                 { id: followUp.id },
                 { $set: { status: 'failed' } }
@@ -3734,8 +3752,24 @@ PERSONALITY:
           }
         }
       }
-    } catch (error) {
-      console.error('[Follow-Up Scheduler] Error checking follow-ups:', error);
+    } catch (error: any) {
+      // Check if it's a MongoDB connection error (expected during network issues)
+      const errorMessage = error?.message || error?.toString() || '';
+      const isMongoConnectionError = 
+        errorMessage.includes('MongoServerSelectionError') ||
+        errorMessage.includes('MongoNetworkError') ||
+        errorMessage.includes('ReplicaSetNoPrimary') ||
+        (errorMessage.includes('Socket') && errorMessage.includes('timed out')) ||
+        error?.code === 'ETIMEDOUT' ||
+        error?.code === 'ENETUNREACH';
+      
+      if (isMongoConnectionError) {
+        // Log as warning, not error - this is expected during network issues
+        console.warn('[Follow-Up Scheduler] ⚠️ MongoDB connection unavailable (non-fatal, will retry):', errorMessage.substring(0, 200));
+      } else {
+        // Other errors are unexpected, log as error
+        console.error('[Follow-Up Scheduler] Error checking follow-ups:', error);
+      }
     }
   }
   

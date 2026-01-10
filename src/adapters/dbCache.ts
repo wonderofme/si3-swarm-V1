@@ -107,8 +107,25 @@ export class DatabaseCacheAdapter implements ICacheAdapter {
       }
 
       return value;
-    } catch (error) {
-      console.error(`[DatabaseCache] Error getting key ${key}:`, error);
+    } catch (error: any) {
+      // Check if it's a MongoDB connection error (expected during network issues)
+      const errorMessage = error?.message || error?.toString() || '';
+      const isMongoConnectionError = 
+        errorMessage.includes('MongoServerSelectionError') ||
+        errorMessage.includes('MongoNetworkError') ||
+        errorMessage.includes('ReplicaSetNoPrimary') ||
+        (errorMessage.includes('Socket') && errorMessage.includes('timed out')) ||
+        error?.code === 'ETIMEDOUT' ||
+        error?.code === 'ENETUNREACH';
+      
+      if (isMongoConnectionError) {
+        // Log as warning, not error - this is expected during network issues
+        console.warn(`[DatabaseCache] ⚠️ MongoDB connection unavailable when getting key ${key} (using local cache if available)`);
+      } else {
+        // Other errors are unexpected, log as error
+        console.error(`[DatabaseCache] Error getting key ${key}:`, error);
+      }
+      
       // Fallback: return cached value if we have it, rather than crashing
       if (cached !== undefined) {
         return typeof cached === 'string' ? cached : JSON.stringify(cached);
@@ -150,8 +167,25 @@ export class DatabaseCacheAdapter implements ICacheAdapter {
           [key, valueToStore]
         );
       }
-    } catch (error) {
-      console.error(`[DatabaseCache] Error setting key ${key}:`, error);
+    } catch (error: any) {
+      // Check if it's a MongoDB connection error (expected during network issues)
+      const errorMessage = error?.message || error?.toString() || '';
+      const isMongoConnectionError = 
+        errorMessage.includes('MongoServerSelectionError') ||
+        errorMessage.includes('MongoNetworkError') ||
+        errorMessage.includes('ReplicaSetNoPrimary') ||
+        (errorMessage.includes('Socket') && errorMessage.includes('timed out')) ||
+        error?.code === 'ETIMEDOUT' ||
+        error?.code === 'ENETUNREACH';
+      
+      if (isMongoConnectionError) {
+        // Log as warning, not error - this is expected during network issues
+        // Data is still in local cache, so operation partially succeeded
+        console.warn(`[DatabaseCache] ⚠️ MongoDB connection unavailable when setting key ${key} (data saved to local cache, will sync when DB is available)`);
+      } else {
+        // Other errors are unexpected, log as error
+        console.error(`[DatabaseCache] Error setting key ${key}:`, error);
+      }
       // Data is still in local cache, so operation partially succeeded
     }
   }
