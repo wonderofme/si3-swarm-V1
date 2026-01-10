@@ -31,12 +31,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Display Docker image version
-        run: |
-          echo "🐳 Docker image version: v${{ github.run_number }}"
-          echo "📦 Image tag: ghcr.io/${{ github.repository_owner }}/kaia-swarm:v${{ github.run_number }}"
-          echo "🔗 Full image: ghcr.io/${{ github.repository_owner }}/kaia-swarm:v${{ github.run_number }}"
-
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         id: build
@@ -45,7 +39,7 @@ jobs:
           push: true
           cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/kaia-swarm:latest
           tags: |
-            ghcr.io/${{ github.repository_owner }}/kaia-swarm:v${{ github.run_number }}
+            ghcr.io/${{ github.repository_owner }}/kaia-swarm:v340
             ghcr.io/${{ github.repository_owner }}/kaia-swarm:latest
             ghcr.io/${{ github.repository_owner }}/kaia-swarm:${{ github.sha }}
 
