@@ -31,14 +31,25 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Get latest version tag
+      - name: Get latest version tag and commit message
         id: get_version
         run: |
           VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0")
           VERSION_NUMBER=$(echo $VERSION | sed 's/v//')
+          COMMIT_MSG=$(git log -1 --pretty=%B)
+          # Extract description after version prefix (e.g., "v343: description" -> "description")
+          if [[ "$COMMIT_MSG" =~ ^$VERSION:\ (.+)$ ]]; then
+            DESCRIPTION="${BASH_REMATCH[1]}"
+          else
+            DESCRIPTION="$COMMIT_MSG"
+          fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "version_number=$VERSION_NUMBER" >> $GITHUB_OUTPUT
+          echo "commit_message=$COMMIT_MSG" >> $GITHUB_OUTPUT
+          echo "description=$DESCRIPTION" >> $GITHUB_OUTPUT
+          echo "build_title=$VERSION: $DESCRIPTION" >> $GITHUB_OUTPUT
           echo "Latest version: $VERSION ($VERSION_NUMBER)"
+          echo "Build title: $VERSION: $DESCRIPTION"
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
