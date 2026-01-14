@@ -1,8 +1,14 @@
-import { AgentRuntime } from '@elizaos/core';
+import { AgentRuntime, Memory, UUID } from '@elizaos/core';
 import { getMessages, getPlatformMessages } from '../plugins/onboarding/translations.js';
 import { findSi3UserByEmail } from './si3Database.js';
 import { saveUserToSiuDatabase, findSiuUserByWallet, isWalletRegistered } from './siuDatabaseService.js';
 import { validateSiuName, checkSiuNameAvailability, validateWalletAddress } from './siuNameService.js';
+import { localProcessor } from './localProcessor.js';
+import { conversationContextManager } from './conversationContextManager.js';
+import { aiIntentDetector } from './aiIntentDetector.js';
+import { aiInformationExtractor } from './aiInformationExtractor.js';
+import { dataDeletionService } from './dataDeletionService.js';
+import { OnboardingStep } from '../plugins/onboarding/types.js';
 
 // API key for authentication (should be set in environment)
 const API_KEY = process.env.WEB_API_KEY || process.env.JWT_SECRET || 'default-api-key';
@@ -102,8 +108,221 @@ function generateConfirmationSummary(profile: any, msgs: any): string {
 }
 
 /**
+ * Process message using smart agent services (intent detection, information extraction)
+ * This provides the same intelligent processing as Telegram
+ */
+async function processMessageWithSmartAgent(
+  runtime: AgentRuntime,
+  userId: string,
+  messageText: string,
+  currentStep: string,
+  profile: any
+): Promise<{
+  intent: { type: string; confidence: number; requiresAction: boolean };
+  extractedData: Record<string, any>;
+  shouldHandle: boolean;
+}> {
+  try {
+    // Get conversation context
+    let context = await conversationContextManager.getContext(runtime, userId as UUID);
+    
+    // Initialize context if needed
+    if (context.currentTask !== 'onboarding' || context.currentStep !== currentStep) {
+      if (currentStep !== 'COMPLETED' && currentStep !== 'NONE') {
+        await conversationContextManager.initializeFromOnboarding(
+          runtime,
+          userId as UUID,
+          currentStep as OnboardingStep,
+          profile
+        );
+        context = await conversationContextManager.getContext(runtime, userId as UUID);
+      }
+    }
+    
+    // Resume task if paused
+    if (context.taskState === 'paused' && context.currentTask === 'onboarding') {
+      await conversationContextManager.resumeTask(runtime, userId as UUID);
+      context = await conversationContextManager.getContext(runtime, userId as UUID);
+    }
+    
+    // Get expected fields for current step
+    const getExpectedFieldsForStep = (step: string): string[] => {
+      const fieldMap: Record<string, string[]> = {
+        'ASK_NAME': ['name'],
+        'ASK_EMAIL': ['email'],
+        'ASK_COMPANY': ['company'],
+        'ASK_TITLE': ['title'],
+        'ASK_LANGUAGE': ['language'],
+        'ASK_WALLET_CONNECTION': ['wallet'],
+        'ASK_SIU_NAME': [],
+        'ASK_ENTRY_METHOD': [],
+        'ASK_PROFILE_CHOICE': [],
+        'ASK_ROLE': [],
+        'ASK_INTERESTS': [],
+        'ASK_CONNECTION_GOALS': [],
+        'ASK_EVENTS': [],
+        'ASK_SOCIALS': [],
+        'ASK_TELEGRAM_HANDLE': [],
+        'ASK_GENDER': [],
+        'ASK_NOTIFICATIONS': [],
+        'ASK_LOCATION': [],
+        'CONFIRMATION': [],
+        'COMPLETED': [],
+        'NONE': [],
+        'AWAITING_UPDATE_FIELD': [],
+        'AWAITING_FEATURE_DETAILS': []
+      };
+      return fieldMap[step] || [];
+    };
+    
+    const expectedFields = getExpectedFieldsForStep(currentStep);
+    const text = messageText.trim();
+    
+    // Step 1: Intent Detection (Hybrid: Local first, then AI)
+    const simpleIntent = localProcessor.detectSimpleIntent(text);
+    let detectedIntent;
+    
+    if (simpleIntent.confidence > 0.8) {
+      detectedIntent = {
+        type: simpleIntent.type === 'go_back' ? 'go_back' :
+              simpleIntent.type === 'skip' ? 'skip' :
+              simpleIntent.type === 'restart' ? 'general_chat' :
+              simpleIntent.type === 'help' || simpleIntent.type === 'question' ? 'ask_question' :
+              'provide_information',
+        confidence: simpleIntent.confidence,
+        requiresAction: true
+      };
+    } else {
+      try {
+        detectedIntent = await aiIntentDetector.detectIntent(runtime, text, context);
+      } catch (error) {
+        console.error('[Web Chat API] Error in AI intent detection:', error);
+        detectedIntent = {
+          type: 'provide_information',
+          confidence: 0.5,
+          requiresAction: false
+        };
+      }
+    }
+    
+    // Step 2: Information Extraction (Hybrid: Local first, then AI)
+    let extractedData: Record<string, any> = {};
+    
+    if (expectedFields.length > 0 && text && 
+        (detectedIntent.type === 'provide_information' || detectedIntent.type === 'correction')) {
+      try {
+        // Try local extraction first
+        const localExtraction = await localProcessor.extractFromMessage(text, expectedFields);
+        
+        let finalExtraction = localExtraction;
+        
+        // If local extraction confidence is low, try AI extraction
+        if (localExtraction.confidence < 0.7 || !localExtraction.isValid) {
+          try {
+            const aiExtraction = await aiInformationExtractor.extractFromMessage(
+              runtime,
+              text,
+              expectedFields,
+              context
+            );
+            
+            if (aiExtraction && aiExtraction.confidence > 0.5) {
+              // Combine results (AI takes precedence)
+              const combined = aiInformationExtractor.combineExtractionResults(
+                localExtraction,
+                aiExtraction,
+                expectedFields
+              );
+              
+              // Extract merged values from combined.extracted (AI takes precedence, already merged)
+              // combined.extracted already contains local data merged with AI data (AI takes precedence)
+              const mergedName = combined.extracted.name || null;
+              const mergedEmail = combined.extracted.email || null;
+              const mergedCompany = combined.extracted.company || null;
+              const mergedTitle = combined.extracted.title || null;
+              const mergedLanguage = combined.extracted.language || null;
+              const mergedWallet = combined.extracted.wallet || null;
+              
+              // Build rawMatches correctly (should be Record<string, string[]>)
+              const mergedRawMatches: Record<string, string[]> = { ...localExtraction.rawMatches };
+              for (const [key, value] of Object.entries(combined.extracted)) {
+                if (value != null) {
+                  mergedRawMatches[key] = Array.isArray(value) ? value : [String(value)];
+                }
+              }
+              
+              finalExtraction = {
+                name: mergedName,
+                email: mergedEmail,
+                company: mergedCompany,
+                title: mergedTitle,
+                language: mergedLanguage,
+                wallet: mergedWallet,
+                isValid: combined.confidence >= 0.5,
+                errors: localExtraction.errors || [],
+                confidence: combined.confidence,
+                extractionMethod: combined.method === 'hybrid' ? 'pattern' : localExtraction.extractionMethod,
+                rawMatches: mergedRawMatches
+              };
+            }
+          } catch (error) {
+            console.error('[Web Chat API] Error in AI extraction:', error);
+          }
+        }
+        
+        // Extract data from final extraction result
+        if (finalExtraction.name) extractedData.name = finalExtraction.name;
+        if (finalExtraction.email) extractedData.email = finalExtraction.email;
+        if (finalExtraction.company) extractedData.company = finalExtraction.company;
+        if (finalExtraction.title) extractedData.title = finalExtraction.title;
+        if (finalExtraction.language) extractedData.language = finalExtraction.language;
+        if (finalExtraction.wallet) extractedData.wallet = finalExtraction.wallet;
+        
+        // Update context with extracted data
+        if (Object.keys(extractedData).length > 0) {
+          await conversationContextManager.updateContext(
+            runtime,
+            userId as UUID,
+            {
+              extractedData: { ...context.extractedData, ...extractedData }
+            },
+            context
+          );
+        }
+      } catch (error) {
+        console.error('[Web Chat API] Error in information extraction:', error);
+      }
+    }
+    
+    // Determine if we should handle this with smart agent logic
+    const shouldHandle = detectedIntent.type === 'go_back' || 
+                        detectedIntent.type === 'ask_question' ||
+                        detectedIntent.type === 'delete_data' ||
+                        (detectedIntent.type === 'provide_information' && Object.keys(extractedData).length > 0) ||
+                        (detectedIntent.type === 'correction' && Object.keys(extractedData).length > 0);
+    
+    return {
+      intent: {
+        type: detectedIntent.type,
+        confidence: detectedIntent.confidence,
+        requiresAction: detectedIntent.requiresAction ?? true
+      },
+      extractedData,
+      shouldHandle
+    };
+  } catch (error) {
+    console.error('[Web Chat API] Error in smart agent processing:', error);
+    return {
+      intent: { type: 'provide_information', confidence: 0.5, requiresAction: false },
+      extractedData: {},
+      shouldHandle: false
+    };
+  }
+}
+
+/**
  * Process a chat message from the web API
- * This mirrors the Telegram direct handler logic
+ * This mirrors the Telegram direct handler logic with smart agent integration
  */
 export async function processWebChatMessage(
   runtime: AgentRuntime,
@@ -131,6 +350,122 @@ export async function processWebChatMessage(
       }
     } catch (cacheErr) {
       console.log('[Web Chat API] Cache read error, using default state');
+    }
+    
+    // Process message with smart agent services
+    const smartAgentResult = await processMessageWithSmartAgent(
+      runtime,
+      userId,
+      messageText,
+      state.step,
+      state.profile
+    );
+    
+    // Handle special intents first
+    if (smartAgentResult.intent.type === 'delete_data' && smartAgentResult.intent.confidence > 0.7) {
+      // Handle data deletion
+      try {
+        // First detect the deletion scope from the message
+        const deletionRequest = await dataDeletionService.detectDeletionRequest(messageText);
+        if (!deletionRequest) {
+          // Couldn't detect scope, ask user to clarify
+          const langResponses: Record<string, string> = {
+            en: "I understand you want to delete data. What would you like to delete? You can say 'all', 'profile', 'matches', or specify what to delete.",
+            es: "Entiendo que quieres eliminar datos. ¿Qué te gustaría eliminar? Puedes decir 'todo', 'perfil', 'coincidencias' o especificar qué eliminar.",
+            pt: "Entendo que você quer excluir dados. O que você gostaria de excluir? Você pode dizer 'tudo', 'perfil', 'correspondências' ou especificar o que excluir.",
+            fr: "Je comprends que vous souhaitez supprimer des données. Que souhaitez-vous supprimer? Vous pouvez dire 'tout', 'profil', 'correspondances' ou spécifier ce qu'il faut supprimer."
+          };
+          const userLang = state.profile.language || 'en';
+          return {
+            success: true,
+            response: langResponses[userLang] || langResponses.en,
+            userId
+          };
+        }
+        
+        const deletionResult = await dataDeletionService.requestDeletion(
+          runtime,
+          userId as UUID,
+          deletionRequest.scope
+        );
+        
+        if (deletionResult.requiresConfirmation) {
+          const langResponses: Record<string, string> = {
+            en: deletionResult.message || "Are you sure you want to delete your data? This action cannot be undone. Please confirm by typing 'yes' or 'confirm'.",
+            es: "¿Estás seguro de que quieres eliminar tus datos? Esta acción no se puede deshacer. Por favor confirma escribiendo 'sí' o 'confirmar'.",
+            pt: "Tem certeza de que deseja excluir seus dados? Esta ação não pode ser desfeita. Por favor, confirme digitando 'sim' ou 'confirmar'.",
+            fr: "Êtes-vous sûr de vouloir supprimer vos données? Cette action ne peut pas être annulée. Veuillez confirmer en tapant 'oui' ou 'confirmer'."
+          };
+          const userLang = state.profile.language || 'en';
+          return {
+            success: true,
+            response: langResponses[userLang] || langResponses.en,
+            userId
+          };
+        } else {
+          return {
+            success: true,
+            response: deletionResult.message || "Your data has been deleted successfully.",
+            userId
+          };
+        }
+      } catch (error) {
+        console.error('[Web Chat API] Error handling data deletion:', error);
+        // Return error response instead of continuing
+        const userLang = state.profile.language || 'en';
+        const langResponses: Record<string, string> = {
+          en: "I encountered an error processing your deletion request. Please try again later.",
+          es: "Encontré un error al procesar tu solicitud de eliminación. Por favor, inténtalo de nuevo más tarde.",
+          pt: "Encontrei um erro ao processar sua solicitação de exclusão. Por favor, tente novamente mais tarde.",
+          fr: "J'ai rencontré une erreur lors du traitement de votre demande de suppression. Veuillez réessayer plus tard."
+        };
+        return {
+          success: false,
+          error: langResponses[userLang] || langResponses.en,
+          userId
+        };
+      }
+    }
+    
+    // Handle special intents (go_back, ask_question)
+    if (smartAgentResult.intent.type === 'go_back' && smartAgentResult.intent.confidence > 0.7) {
+      // Handle go back - this is complex and depends on the current step
+      // For now, we'll let the existing flow handle it, but we could enhance this
+      console.log('[Web Chat API] Go back intent detected, but web chat flow handles navigation differently');
+    }
+    
+    if (smartAgentResult.intent.type === 'ask_question' && smartAgentResult.intent.confidence > 0.7) {
+      // Handle question - pause task and let LLM answer
+      // If we're in onboarding, pause the task so LLM can answer
+      // The question will be answered by the LLM in the general chat section (COMPLETED step)
+      // For onboarding steps, we need to route to general chat
+      try {
+        await conversationContextManager.pauseTask(runtime, userId as UUID, 'User asked a question');
+        console.log('[Web Chat API] Question detected, task paused - will be answered by LLM');
+        
+        // If we're in an onboarding step, temporarily route to general chat to answer the question
+        // After answering, we'll resume the onboarding task
+        if (state.step !== 'COMPLETED' && state.step !== 'NONE') {
+          // Store the current step so we can resume after answering
+          await runtime.cacheManager.set(`question_context_${userId}`, {
+            previousStep: state.step,
+            previousProfile: state.profile
+          });
+          
+          // Route to general chat (COMPLETED step) to answer the question
+          // The LLM will answer in the general chat section below
+          // After answering, the user can continue with onboarding
+          console.log('[Web Chat API] Routing question to general chat, will resume onboarding after');
+        }
+      } catch (error) {
+        console.error('[Web Chat API] Error pausing task for question:', error);
+      }
+    }
+    
+    // Use extracted data if available
+    if (Object.keys(smartAgentResult.extractedData).length > 0) {
+      // Merge extracted data into profile updates
+      Object.assign(state.profile, smartAgentResult.extractedData);
     }
     
     // Helper to update state
@@ -222,7 +557,8 @@ export async function processWebChatMessage(
       responseText = newMsgs.GREETING;
     } else if (state.step === 'ASK_NAME') {
       const isEditing = state.profile.isEditing || false;
-      const name = messageText.trim();
+      // Use extracted name from smart agent if available, otherwise use raw text
+      const name = smartAgentResult.extractedData.name || messageText.trim();
       if (isEditing) {
         // If editing, go back to CONFIRMATION
         await updateState('CONFIRMATION', { name, isEditing: false, editingField: undefined });
@@ -511,7 +847,8 @@ export async function processWebChatMessage(
     } else if (state.step === 'ASK_EMAIL') {
       // Validate email format
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      const emailText = messageText.trim();
+      // Use extracted email from smart agent if available, otherwise use raw text
+      const emailText = smartAgentResult.extractedData.email || messageText.trim();
       if (!emailRegex.test(emailText)) {
         responseText = `${msgs.EMAIL}\n\n⚠️ Please enter a valid email address (e.g., name@example.com)`;
         return { success: true, response: responseText };

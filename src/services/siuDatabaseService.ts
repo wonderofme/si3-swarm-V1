@@ -15,6 +15,8 @@ export interface SiuUserDocument {
   name?: string;
   language?: string;
   location?: string;
+  company?: string;
+  title?: string;
   gender?: string;
   entryMethod?: 'wallet' | 'email';
   siuName?: string;
@@ -131,6 +133,12 @@ export async function saveUserToSiuDatabase(
 
     if (profile.location) {
       siuDocument.location = profile.location;
+    }
+    if (profile.company) {
+      siuDocument.company = profile.company;
+    }
+    if (profile.title) {
+      siuDocument.title = profile.title;
     }
 
     if (profile.entryMethod) {
