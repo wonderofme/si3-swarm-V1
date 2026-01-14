@@ -7,8 +7,10 @@ export type OnboardingStep =
   | 'ASK_SIU_NAME'          // NEW: SI U name claim
   | 'ASK_EMAIL'
   | 'ASK_PROFILE_CHOICE'
-  | 'ASK_LOCATION'
+  | 'ASK_LOCATION'  // Keep for editing existing profiles
   | 'ASK_ROLE'
+  | 'ASK_COMPANY'      // NEW: Company question
+  | 'ASK_TITLE'        // NEW: Title question
   | 'ASK_INTERESTS'
   | 'ASK_CONNECTION_GOALS'
   | 'ASK_EVENTS'
@@ -48,8 +50,10 @@ import { LanguageCode } from './translations.js';
 export interface UserProfile {
   name?: string;
   language?: LanguageCode;
-  location?: string;
+  location?: string;  // Keep for backward compatibility, but no longer collected
   email?: string;
+  company?: string;   // NEW: Company name
+  title?: string;     // NEW: Job title
   // NEW: Entry method and wallet fields
   entryMethod?: 'wallet' | 'email';
   walletAddress?: string;
