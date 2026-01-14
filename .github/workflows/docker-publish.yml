@@ -31,6 +31,15 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Get latest version tag
+        id: get_version
+        run: |
+          VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0")
+          VERSION_NUMBER=$(echo $VERSION | sed 's/v//')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "version_number=$VERSION_NUMBER" >> $GITHUB_OUTPUT
+          echo "Latest version: $VERSION ($VERSION_NUMBER)"
+
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         id: build
@@ -39,7 +48,7 @@ jobs:
           push: true
           cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/kaia-swarm:latest
           tags: |
-            ghcr.io/${{ github.repository_owner }}/kaia-swarm:v342
+            ghcr.io/${{ github.repository_owner }}/kaia-swarm:${{ steps.get_version.outputs.version }}
             ghcr.io/${{ github.repository_owner }}/kaia-swarm:latest
             ghcr.io/${{ github.repository_owner }}/kaia-swarm:${{ github.sha }}
 
