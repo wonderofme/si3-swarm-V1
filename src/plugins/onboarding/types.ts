@@ -7,7 +7,6 @@ export type OnboardingStep =
   | 'ASK_SIU_NAME'          // NEW: SI U name claim
   | 'ASK_EMAIL'
   | 'ASK_PROFILE_CHOICE'
-  | 'ASK_LOCATION'  // Keep for editing existing profiles
   | 'ASK_ROLE'
   | 'ASK_COMPANY'      // NEW: Company question
   | 'ASK_TITLE'        // NEW: Title question
@@ -23,7 +22,6 @@ export type OnboardingStep =
   | 'AWAITING_UPDATE_FIELD'
   | 'AWAITING_FEATURE_DETAILS'
   | 'UPDATING_NAME'
-  | 'UPDATING_LOCATION'
   | 'UPDATING_EMAIL'
   | 'UPDATING_ROLES'
   | 'UPDATING_INTERESTS'

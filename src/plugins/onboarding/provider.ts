@@ -116,7 +116,7 @@ After sending this message, wait for the user's response with a number (1-4).]`;
   
   // ASK_LANGUAGE step
   if (step === 'ASK_LANGUAGE') {
-    // CRITICAL: If user has already provided a valid language selection (1-4), skip to location question
+    // CRITICAL: If user has already provided a valid language selection (1-4), skip to name question
     // This prevents the language question from being sent again when user responds with their selection
     const trimmedText = userText.trim();
     const isValidLanguageSelection = /^[1-4]$/.test(trimmedText);
@@ -140,15 +140,6 @@ After sending this message, wait for the user's response with their name.]`;
 ${msgs.LANGUAGE}
 
 After sending this message, wait for the user's response with a number (1-4).]`;
-  }
-  
-  // ASK_LOCATION step
-  if (step === 'ASK_LOCATION') {
-    return `[ONBOARDING STEP: ASK_LOCATION - Send this EXACT message word-for-word. Do not modify, paraphrase, or add anything:
-
-${msgs.LOCATION}
-
-After sending this message, wait for the user's response with their location or "Next" to skip.]`;
   }
   
   // ASK_ENTRY_METHOD step (NEW)
@@ -274,7 +265,6 @@ After sending this message, wait for the user's response with notification prefe
   if (step === 'CONFIRMATION') {
     const summaryText = `${msgs.SUMMARY_TITLE}\n\n` +
       `${msgs.SUMMARY_NAME} ${profile.name || msgs.SUMMARY_NOT_PROVIDED}\n` +
-      `${msgs.SUMMARY_LOCATION} ${profile.location || msgs.SUMMARY_NOT_PROVIDED}\n` +
       `${msgs.SUMMARY_ROLES} ${profile.roles?.join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
       `${msgs.SUMMARY_INTERESTS} ${profile.interests?.join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
       `${msgs.SUMMARY_GOALS} ${profile.connectionGoals?.join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
@@ -284,7 +274,6 @@ After sending this message, wait for the user's response with notification prefe
       `${msgs.SUMMARY_GENDER} ${profile.gender || msgs.SUMMARY_NOT_PROVIDED}\n` +
       `${msgs.SUMMARY_NOTIFICATIONS} ${profile.notifications || msgs.SUMMARY_NOT_PROVIDED}\n\n` +
       `${msgs.EDIT_NAME}\n` +
-      `${msgs.EDIT_LOCATION}\n` +
       `${msgs.EDIT_ROLES}\n` +
       `${msgs.EDIT_INTERESTS}\n` +
       `${msgs.EDIT_GOALS}\n` +

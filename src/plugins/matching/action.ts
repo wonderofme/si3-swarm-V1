@@ -1,12 +1,11 @@
 import { Action, IAgentRuntime, Memory, State, HandlerCallback } from '@elizaos/core';
 import { getUserProfile } from '../onboarding/utils.js';
 import { findMatches } from '../../services/matchingEngine.js';
-import { recordMatch } from '../../services/matchTracker.js';
 
 export const findMatchAction: Action = {
   name: 'FIND_MATCH',
-  description: 'Finds and introduces a user to another member based on interests.',
-  similes: ['MAKE_CONNECTION', 'INTRODUCE_USER', 'FIND_PEOPLE'],
+  description: 'Finds and shows top 5 matches for a user to request connections.',
+  similes: ['MAKE_CONNECTION', 'INTRODUCE_USER', 'FIND_PEOPLE', 'TOP_MATCHES', 'SHOW_MATCHES'],
   
   validate: async (runtime: IAgentRuntime, message: Memory, state?: State) => {
     const matchRequest = state?.matchRequest;
@@ -14,7 +13,9 @@ export const findMatchAction: Action = {
     return matchRequest === 'MATCH_REQUEST' || 
            text.includes('match') || 
            text.includes('connect') || 
-           text.includes('find someone');
+           text.includes('find someone') ||
+           text.includes('top matches') ||
+           text.includes('show matches');
   },
 
   handler: async (runtime: IAgentRuntime, message: Memory, state?: State, _options?: any, callback?: HandlerCallback) => {
@@ -32,7 +33,7 @@ export const findMatchAction: Action = {
         return true;
     }
 
-    // 2. Find Matches using advanced matching engine (includes platform filtering)
+    // 2. Find Top 5 Matches using advanced matching engine (includes platform filtering)
     const matches = await findMatches(runtime, message.userId, myProfile);
     
     if (matches.length === 0) {
@@ -40,37 +41,44 @@ export const findMatchAction: Action = {
         return true;
     }
 
-    // 3. Present Top Match
-    const topMatch = matches[0];
-    // Use profile from match candidate (already loaded) or fetch if needed
-    const matchProfile = topMatch.profile || await getUserProfile(runtime, topMatch.userId as any);
+    // 3. Present Top 5 Matches
+    let responseText = `Here are your top ${matches.length} matches! 🎯\n\n`;
     
-    // Record the match
-    await recordMatch(runtime, message.userId, topMatch.userId, message.roomId);
-
-    // Determine platform for matched user
-    const matchRoles = matchProfile.roles || [];
-    const matchIsGrow3dge = matchRoles.includes('partner');
-    const matchIsSiHer = matchRoles.includes('team');
-    const matchHasBoth = matchIsGrow3dge && matchIsSiHer;
-    
-    let platformText = '';
-    if (matchHasBoth) {
-      platformText = 'Platform: SI Her & Grow3dge Member\n';
-    } else if (matchIsGrow3dge) {
-      platformText = 'Platform: Grow3dge Member\n';
-    } else if (matchIsSiHer) {
-      platformText = 'Platform: SI Her Member\n';
+    for (let i = 0; i < matches.length; i++) {
+      const match = matches[i];
+      const matchProfile = match.profile;
+      
+      // Determine platform for matched user
+      const matchRoles = matchProfile.roles || [];
+      const matchIsGrow3dge = matchRoles.includes('partner');
+      const matchIsSiHer = matchRoles.includes('team');
+      const matchHasBoth = matchIsGrow3dge && matchIsSiHer;
+      
+      let platformText = '';
+      if (matchHasBoth) {
+        platformText = 'Platform: SI Her & Grow3dge Member\n';
+      } else if (matchIsGrow3dge) {
+        platformText = 'Platform: Grow3dge Member\n';
+      } else if (matchIsSiHer) {
+        platformText = 'Platform: SI Her Member\n';
+      }
+      
+      const requestStatus = match.hasPendingRequest 
+        ? '⏳ Request Pending' 
+        : '✅ Available to Request';
+      
+      responseText += `${i + 1}. **${matchProfile.name || 'Anonymous'}** (Score: ${match.score})\n` +
+          (platformText ? `${platformText}` : '') +
+          `Roles: ${matchProfile.roles?.join(', ') || 'Not specified'}\n` +
+          `Interests: ${matchProfile.interests?.slice(0, 3).join(', ') || 'Not specified'}\n` +
+          (matchProfile.telegramHandle ? `Telegram: @${matchProfile.telegramHandle}\n` : '') +
+          `\n💡 ${match.icebreaker || match.reason}\n` +
+          `${requestStatus}\n\n`;
     }
     
-    const responseText = `I found a match for you! 🚀\n\n` +
-        `Meet ${matchProfile.name || 'Anonymous'} from ${matchProfile.location || 'Earth'}.\n` +
-        (platformText ? `${platformText}` : '') +
-        `Roles: ${matchProfile.roles?.join(', ')}\n` +
-        `Interests: ${matchProfile.interests?.join(', ')}\n` +
-        (matchProfile.telegramHandle ? `Telegram: @${matchProfile.telegramHandle}\n` : '') +
-        `\nWhy: ${topMatch.icebreaker || topMatch.reason}\n\n` +
-        `I've saved this match. I'll check in with you in 3 days to see if you connected!`;
+    responseText += `To request a match, reply with:\n` +
+        `"Request match with [name]" or "Request 1, 3, 5" (for multiple)\n\n` +
+        `You can also say "Show my requests" to see pending requests.`;
 
     if (callback) callback({ text: responseText });
 

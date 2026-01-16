@@ -110,7 +110,7 @@ export async function updateOnboardingStep(
   // Set profile updated timestamp if profile fields changed (for background match checker)
   if (profileUpdate && Object.keys(profileUpdate).length > 0) {
     // Check if matching-relevant fields changed
-    const matchingFields = ['roles', 'interests', 'connectionGoals', 'location', 'personalValues'];
+    const matchingFields = ['roles', 'interests', 'connectionGoals', 'personalValues'];
     const hasMatchingFieldChange = matchingFields.some(field => 
       profileUpdate[field as keyof typeof profileUpdate] !== undefined
     );
@@ -242,8 +242,7 @@ export function formatProfileForDisplay(profile: UserProfile, lang: string = 'en
     profileText += `${(msgs as any).SUMMARY_SIU_NAME || 'SI U Name:'} ${profile.siuName}\n`;
   }
   
-  profileText += `${msgs.SUMMARY_LOCATION} ${profile.location || msgs.SUMMARY_NOT_PROVIDED}\n` +
-    `${msgs.SUMMARY_EMAIL} ${profile.email || msgs.SUMMARY_NOT_PROVIDED}\n` +
+  profileText += `${msgs.SUMMARY_EMAIL} ${profile.email || msgs.SUMMARY_NOT_PROVIDED}\n` +
     `${msgs.SUMMARY_ROLES} ${formatArray(profile.roles)}\n` +
     `${msgs.SUMMARY_INTERESTS} ${formatArray(profile.interests)}\n` +
     `${msgs.SUMMARY_GOALS} ${formatArray(profile.connectionGoals, true)}\n` +

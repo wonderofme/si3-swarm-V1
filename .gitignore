@@ -9,5 +9,6 @@ dist/
 .env.akash
 akash-env-vars.txt
 FRONTEND_INTEGRATION_GUIDE.md
+.project-context/
 
 

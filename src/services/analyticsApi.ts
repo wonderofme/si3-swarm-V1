@@ -54,10 +54,6 @@ export interface UserEngagementAnalytics {
     explorer: number;
     paid: number;
   };
-  byLocation: Array<{
-    location: string;
-    count: number;
-  }>;
   byLanguage: {
     en: number;
     es: number;
@@ -276,7 +272,7 @@ async function getCacheOnboardingStats(
   // Convert to step drop-offs with percentages
   const steps = [
     'NONE', 'ASK_LANGUAGE', 'ASK_NAME', 'ASK_ENTRY_METHOD', 'ASK_WALLET_CONNECTION',
-    'ASK_SIU_NAME', 'ASK_EMAIL', 'ASK_PROFILE_CHOICE', 'ASK_LOCATION', 'ASK_ROLE',
+    'ASK_SIU_NAME', 'ASK_EMAIL', 'ASK_PROFILE_CHOICE', 'ASK_ROLE',
     'ASK_INTERESTS', 'ASK_CONNECTION_GOALS', 'ASK_EVENTS', 'ASK_SOCIALS',
     'ASK_TELEGRAM_HANDLE', 'ASK_GENDER', 'ASK_NOTIFICATIONS'
   ];
@@ -342,19 +338,6 @@ async function getUserEngagementAnalytics(
       paid: await collection.countDocuments({ userTier: 'paid' })
     };
 
-    // By location (top 20)
-    const locationAgg = await collection.aggregate([
-      { $match: { location: { $exists: true, $ne: null } } },
-      { $group: { _id: '$location', count: { $sum: 1 } } },
-      { $sort: { count: -1 } },
-      { $limit: 20 }
-    ]).toArray();
-
-    const byLocation = locationAgg.map((item: any) => ({
-      location: item._id,
-      count: item.count
-    }));
-
     // By language
     const byLanguage = {
       en: await collection.countDocuments({ language: 'en' }),
@@ -380,7 +363,6 @@ async function getUserEngagementAnalytics(
       activeUsers,
       newUsers,
       byTier,
-      byLocation,
       byLanguage,
       byRole
     };
@@ -395,7 +377,6 @@ function getEmptyEngagementAnalytics(): UserEngagementAnalytics {
     activeUsers: { last7Days: 0, last30Days: 0, last90Days: 0 },
     newUsers: { today: 0, thisWeek: 0, thisMonth: 0 },
     byTier: { explorer: 0, paid: 0 },
-    byLocation: [],
     byLanguage: { en: 0, es: 0, pt: 0, fr: 0 },
     byRole: []
   };

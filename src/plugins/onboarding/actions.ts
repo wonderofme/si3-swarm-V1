@@ -213,7 +213,6 @@ function generateSummaryText(profile: UserProfile): string {
   const msgs = getMessages(lang);
   return `${msgs.SUMMARY_TITLE}\n\n` +
     `${msgs.SUMMARY_NAME} ${profile.name || msgs.SUMMARY_NOT_PROVIDED}\n` +
-    `${msgs.SUMMARY_LOCATION} ${profile.location || msgs.SUMMARY_NOT_PROVIDED}\n` +
     `${msgs.SUMMARY_EMAIL} ${profile.email || msgs.SUMMARY_NOT_PROVIDED}\n` +
     `${msgs.SUMMARY_ROLES} ${profile.roles?.join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
     `${msgs.SUMMARY_INTERESTS} ${profile.interests?.join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
@@ -224,7 +223,6 @@ function generateSummaryText(profile: UserProfile): string {
     `${msgs.SUMMARY_GENDER} ${profile.gender || msgs.SUMMARY_NOT_PROVIDED}\n` +
     `${msgs.SUMMARY_NOTIFICATIONS} ${profile.notifications || msgs.SUMMARY_NOT_PROVIDED}\n\n` +
     `${msgs.EDIT_NAME}\n` +
-    `${msgs.EDIT_LOCATION}\n` +
     `${msgs.EDIT_ROLES}\n` +
     `${msgs.EDIT_INTERESTS}\n` +
     `${msgs.EDIT_GOALS}\n` +
@@ -265,10 +263,21 @@ export const continueOnboardingAction: Action = {
       return true;
     }
     
-    // Allow if not completed, or if user is editing
+    // Check for correction/edit intent even if COMPLETED
+    const lowerText = text.toLowerCase();
+    const isCorrectionOrEdit = lowerText.includes('actually') || 
+                               lowerText.includes('mistake') || 
+                               lowerText.includes('wrong') ||
+                               lowerText.includes('correct') ||
+                               lowerText.includes('change') ||
+                               lowerText.includes('edit') ||
+                               lowerText.includes('update') ||
+                               lowerText.includes('fix');
+    
+    // Allow if not completed, if user is editing, or if user is correcting something
     const profile = await getUserProfile(runtime, message.userId);
-    const isValid = step !== 'COMPLETED' || profile.isEditing === true;
-    console.log('[Onboarding Action] Validate - step:', step, 'isEditing:', profile.isEditing, 'isValid:', isValid, 'text:', text.substring(0, 50));
+    const isValid = step !== 'COMPLETED' || profile.isEditing === true || isCorrectionOrEdit;
+    console.log('[Onboarding Action] Validate - step:', step, 'isEditing:', profile.isEditing, 'isCorrectionOrEdit:', isCorrectionOrEdit, 'isValid:', isValid, 'text:', text.substring(0, 50));
     return isValid;
   },
 
@@ -364,6 +373,397 @@ export const continueOnboardingAction: Action = {
       return true;
     }
 
+    // INTELLIGENT MESSAGE INTERPRETATION
+    // Use smart agent services to understand intent and extract information from ANY message
+    // This allows the system to interpret every message intelligently, not just keyword matching
+    // Also handle corrections/edits even when COMPLETED
+    if (currentStep !== 'CONFIRMATION' && (currentStep as string) !== 'NONE') {
+      try {
+        const { unifiedMessageProcessor } = await import('../../services/unifiedMessageProcessor.js');
+        const { conversationContextManager } = await import('../../services/conversationContextManager.js');
+        
+        // Initialize context if needed
+        let context = await conversationContextManager.getContext(runtime, message.userId);
+        if (context.currentTask !== 'onboarding' || context.currentStep !== currentStep) {
+          await conversationContextManager.initializeFromOnboarding(
+            runtime,
+            message.userId,
+            currentStep,
+            profile
+          );
+          context = await conversationContextManager.getContext(runtime, message.userId);
+        }
+        
+        // Determine expected fields for current step and ALL possible profile fields
+        const getExpectedFieldsForStep = (step: OnboardingStep): string[] => {
+          const fieldMap: Record<string, string[]> = {
+            'ASK_NAME': ['name'],
+            'ASK_EMAIL': ['email'],
+            'ASK_COMPANY': ['company'],
+            'ASK_TITLE': ['title'],
+            'ASK_LANGUAGE': ['language'],
+            'ASK_WALLET_CONNECTION': ['wallet'],
+            'ASK_ROLE': ['roles'],
+            'ASK_INTERESTS': ['interests'],
+            'ASK_CONNECTION_GOALS': ['connectionGoals'],
+            'ASK_EVENTS': ['events'],
+            'ASK_SOCIALS': ['socials'],
+            'ASK_TELEGRAM_HANDLE': ['telegramHandle'],
+            'ASK_GENDER': ['gender'],
+            'ASK_NOTIFICATIONS': ['notifications']
+          };
+          return fieldMap[step] || [];
+        };
+        
+        // Get expected fields for current step
+        const expectedFields = getExpectedFieldsForStep(currentStep);
+        
+        // Also check for ALL profile fields - user might mention any field at any time
+        const allProfileFields = ['name', 'email', 'company', 'title', 'language', 'wallet', 
+          'roles', 'interests', 'connectionGoals', 'events', 'socials', 'telegramHandle', 
+          'gender', 'notifications'];
+        
+        // Process message through intelligent pipeline
+        const processingResult = await unifiedMessageProcessor.processMessage(
+          runtime,
+          message,
+          allProfileFields // Check for ALL fields, not just expected ones
+        );
+        
+        const { intent, extractedData } = processingResult;
+        console.log(`[Onboarding Action] Intelligent processing - Intent: ${intent.type}, Confidence: ${intent.confidence}, Extracted:`, extractedData);
+        
+        // Merge intent detector's extractedInfo and parameters with extraction result
+        // Intent detector might have extracted some info in extractedInfo or parameters
+        const mergedExtractedData = {
+          ...(intent.extractedInfo || {}),
+          ...(intent.parameters || {}),
+          ...extractedData
+        };
+        console.log(`[Onboarding Action] Merged extracted data (intent.extractedInfo + intent.parameters + extraction):`, mergedExtractedData);
+        
+        // Handle different intents intelligently
+        if (intent.type === 'correction' || intent.type === 'provide_information') {
+          // User is providing information or correcting something
+          // Extract and update any fields mentioned
+          const updates: Partial<UserProfile> = {};
+          let hasUpdates = false;
+          
+          // Use merged extracted data
+          const dataToProcess = mergedExtractedData;
+          
+          // Process extracted data (using merged data)
+          if (dataToProcess.name && dataToProcess.name !== profile.name) {
+            updates.name = dataToProcess.name;
+            hasUpdates = true;
+            console.log(`[Onboarding Action] Extracted name: ${dataToProcess.name}`);
+          }
+          
+          if (dataToProcess.email && dataToProcess.email !== profile.email) {
+            // Validate email
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (emailRegex.test(dataToProcess.email)) {
+              updates.email = dataToProcess.email;
+              hasUpdates = true;
+              console.log(`[Onboarding Action] Extracted email: ${dataToProcess.email}`);
+            }
+          }
+          
+          if (dataToProcess.company && dataToProcess.company !== profile.company) {
+            updates.company = dataToProcess.company;
+            hasUpdates = true;
+            console.log(`[Onboarding Action] Extracted company: ${dataToProcess.company}`);
+          }
+          
+          if (dataToProcess.title && dataToProcess.title !== profile.title) {
+            updates.title = dataToProcess.title;
+            hasUpdates = true;
+            console.log(`[Onboarding Action] Extracted title: ${dataToProcess.title}`);
+          }
+          
+          if (dataToProcess.telegramHandle && dataToProcess.telegramHandle !== profile.telegramHandle) {
+            let handle = dataToProcess.telegramHandle;
+            if (handle.startsWith('@')) handle = handle.substring(1);
+            updates.telegramHandle = handle;
+            hasUpdates = true;
+            console.log(`[Onboarding Action] Extracted telegram handle: ${handle}`);
+          }
+          
+          // Helper functions to normalize extracted values to exact system values
+          const normalizeRole = (role: string): string | null => {
+            const roleLower = role.toLowerCase().trim();
+            const roleMap: Record<string, string> = {
+              'founder': 'Founder/Builder', 'builder': 'Founder/Builder', 'founder/builder': 'Founder/Builder',
+              'marketing': 'Marketing/BD/Partnerships', 'bd': 'Marketing/BD/Partnerships', 'partnerships': 'Marketing/BD/Partnerships',
+              'dao council member': 'DAO Council Member/Delegate', 'dao delegate': 'DAO Council Member/Delegate',
+              'community leader': 'Community Leader',
+              'investor': 'Investor/Grant Program Operator', 'grant program operator': 'Investor/Grant Program Operator',
+              'early web3 explorer': 'Early Web3 Explorer', 'web3 explorer': 'Early Web3 Explorer',
+              'media': 'Media', 'artist': 'Artist', 'developer': 'Developer', 'coder': 'Developer', 'programmer': 'Developer',
+              'other': 'Other'
+            };
+            // Try exact match first
+            if (roleMap[roleLower]) return roleMap[roleLower];
+            // Try partial match
+            for (const [key, value] of Object.entries(roleMap)) {
+              if (roleLower.includes(key) || key.includes(roleLower)) return value;
+            }
+            return null;
+          };
+          
+          const normalizeInterest = (interest: string): string | null => {
+            const interestLower = interest.toLowerCase().trim();
+            const interestMap: Record<string, string> = {
+              'web3 growth marketing': 'Web3 Growth Marketing', 'growth marketing': 'Web3 Growth Marketing', 'marketing': 'Web3 Growth Marketing',
+              'business development': 'Business Development & Partnerships', 'partnerships': 'Business Development & Partnerships',
+              'education 3.0': 'Education 3.0', 'education': 'Education 3.0',
+              'ai': 'AI', 'artificial intelligence': 'AI', 'machine learning': 'AI',
+              'cybersecurity': 'Cybersecurity', 'security': 'Cybersecurity',
+              'daos': 'DAOs', 'dao': 'DAOs',
+              'tokenomics': 'Tokenomics',
+              'fundraising': 'Fundraising',
+              'other': 'Other'
+            };
+            if (interestMap[interestLower]) return interestMap[interestLower];
+            for (const [key, value] of Object.entries(interestMap)) {
+              if (interestLower.includes(key) || key.includes(interestLower)) return value;
+            }
+            return null;
+          };
+          
+          const normalizeGoal = (goal: string): string | null => {
+            const goalLower = goal.toLowerCase().trim();
+            const goalMap: Record<string, string> = {
+              'startups to invest in': 'Startups to invest in', 'invest': 'Startups to invest in', 'startups': 'Startups to invest in',
+              'investors/grant programs': 'Investors/grant programs', 'investors': 'Investors/grant programs', 'grants': 'Investors/grant programs', 'funding': 'Investors/grant programs',
+              'growth tools': 'Growth tools, strategies, and/or support', 'growth support': 'Growth tools, strategies, and/or support',
+              'sales/bd tools': 'Sales/BD tools, strategies and/or support', 'sales tools': 'Sales/BD tools, strategies and/or support',
+              'communities': 'Communities and/or DAO\'s to join', 'daos to join': 'Communities and/or DAO\'s to join',
+              'new job opportunities': 'New job opportunities', 'job': 'New job opportunities', 'career': 'New job opportunities', 'opportunities': 'New job opportunities'
+            };
+            if (goalMap[goalLower]) return goalMap[goalLower];
+            for (const [key, value] of Object.entries(goalMap)) {
+              if (goalLower.includes(key) || key.includes(goalLower)) return value;
+            }
+            return null;
+          };
+          
+          // Handle roles, interests, goals (arrays) with normalization
+          if (dataToProcess.roles) {
+            const rolesArray = Array.isArray(dataToProcess.roles) ? dataToProcess.roles : [dataToProcess.roles];
+            const normalizedRoles = rolesArray
+              .map(role => typeof role === 'string' ? normalizeRole(role) : role)
+              .filter((role): role is string => role !== null && typeof role === 'string');
+            if (normalizedRoles.length > 0) {
+              updates.roles = normalizedRoles;
+              hasUpdates = true;
+              console.log(`[Onboarding Action] Extracted and normalized roles:`, normalizedRoles);
+            }
+          }
+          
+          if (dataToProcess.interests) {
+            const interestsArray = Array.isArray(dataToProcess.interests) ? dataToProcess.interests : [dataToProcess.interests];
+            const normalizedInterests = interestsArray
+              .map(interest => typeof interest === 'string' ? normalizeInterest(interest) : interest)
+              .filter((interest): interest is string => interest !== null && typeof interest === 'string');
+            if (normalizedInterests.length > 0) {
+              updates.interests = normalizedInterests;
+              hasUpdates = true;
+              console.log(`[Onboarding Action] Extracted and normalized interests:`, normalizedInterests);
+            }
+          }
+          
+          if (dataToProcess.connectionGoals) {
+            const goalsArray = Array.isArray(dataToProcess.connectionGoals) ? dataToProcess.connectionGoals : [dataToProcess.connectionGoals];
+            const normalizedGoals = goalsArray
+              .map(goal => typeof goal === 'string' ? normalizeGoal(goal) : goal)
+              .filter((goal): goal is string => goal !== null && typeof goal === 'string');
+            if (normalizedGoals.length > 0) {
+              updates.connectionGoals = normalizedGoals;
+              hasUpdates = true;
+              console.log(`[Onboarding Action] Extracted and normalized connection goals:`, normalizedGoals);
+            }
+          }
+          
+          if (dataToProcess.events) {
+            const eventsArray = Array.isArray(dataToProcess.events) ? dataToProcess.events : [dataToProcess.events];
+            if (eventsArray.length > 0) {
+              updates.events = eventsArray;
+              hasUpdates = true;
+              console.log(`[Onboarding Action] Extracted events:`, eventsArray);
+            }
+          }
+          
+          if (dataToProcess.socials) {
+            const socialsArray = Array.isArray(dataToProcess.socials) ? dataToProcess.socials : [dataToProcess.socials];
+            if (socialsArray.length > 0) {
+              updates.socials = socialsArray;
+              hasUpdates = true;
+              console.log(`[Onboarding Action] Extracted socials:`, socialsArray);
+            }
+          }
+          
+          if (dataToProcess.gender && dataToProcess.gender !== profile.gender) {
+            updates.gender = dataToProcess.gender;
+            hasUpdates = true;
+            console.log(`[Onboarding Action] Extracted gender: ${dataToProcess.gender}`);
+          }
+          
+          if (dataToProcess.notifications && dataToProcess.notifications !== profile.notifications) {
+            updates.notifications = dataToProcess.notifications;
+            hasUpdates = true;
+            console.log(`[Onboarding Action] Extracted notifications: ${dataToProcess.notifications}`);
+          }
+          
+          // Handle partial corrections - if user says something is wrong but doesn't provide new value
+          const lowerText = text.toLowerCase();
+          const mentionsFieldButNoValue = (fieldName: string, fieldKey: string) => {
+            const mentionsField = lowerText.includes(fieldName) || lowerText.includes(fieldKey);
+            const hasValue = dataToProcess[fieldKey] !== undefined && dataToProcess[fieldKey] !== null;
+            return mentionsField && !hasValue && intent.type === 'correction';
+          };
+          
+          if (mentionsFieldButNoValue('name', 'name')) {
+            // User said name is wrong but didn't provide new name - ask for it
+            await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_NAME', { isEditing: true, editingField: 'name' });
+            if (roomId) recordActionExecution(roomId);
+            await sendDirectTelegramMessage(
+              runtime,
+              roomId,
+              message.userId,
+              `I understand you want to correct your name. What should it be?`
+            );
+            if (roomId) recordActionExecution(roomId);
+            console.log(`[Onboarding Action] User wants to correct name but didn't provide new value, asking for it`);
+            return true;
+          }
+          
+          if (mentionsFieldButNoValue('email', 'email')) {
+            await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_EMAIL', { isEditing: true, editingField: 'email' });
+            if (roomId) recordActionExecution(roomId);
+            await sendDirectTelegramMessage(
+              runtime,
+              roomId,
+              message.userId,
+              `I understand you want to correct your email. What should it be?`
+            );
+            if (roomId) recordActionExecution(roomId);
+            console.log(`[Onboarding Action] User wants to correct email but didn't provide new value, asking for it`);
+            return true;
+          }
+          
+          if (mentionsFieldButNoValue('telegram', 'telegramHandle')) {
+            await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_TELEGRAM_HANDLE', { isEditing: true, editingField: 'telegramHandle' });
+            if (roomId) recordActionExecution(roomId);
+            await sendDirectTelegramMessage(
+              runtime,
+              roomId,
+              message.userId,
+              `I understand you want to correct your Telegram handle. What should it be?`
+            );
+            if (roomId) recordActionExecution(roomId);
+            console.log(`[Onboarding Action] User wants to correct telegram handle but didn't provide new value, asking for it`);
+            return true;
+          }
+          
+          // If we extracted information, update profile and continue
+          if (hasUpdates) {
+            // Check if this was an edit request (user explicitly mentioned changing/editing)
+            const lowerText = text.toLowerCase();
+            const isExplicitEdit = lowerText.includes('change') || lowerText.includes('edit') || 
+                                  lowerText.includes('update') || lowerText.includes('modify') ||
+                                  lowerText.includes('correct') || lowerText.includes('fix') ||
+                                  lowerText.includes('actually') || lowerText.includes('mistake') ||
+                                  lowerText.includes('wrong');
+            
+            // Special handling for COMPLETED state - always update and stay completed
+            if (currentStep === 'COMPLETED') {
+              // User is correcting something after onboarding - update profile and stay completed
+              await updateOnboardingStep(runtime, message.userId, roomId, 'COMPLETED', {
+                ...updates,
+                isEditing: false,
+                editingField: undefined,
+                profileUpdatedAt: new Date() // Track that profile was updated
+              });
+              if (roomId) recordActionExecution(roomId);
+              
+              const updatedFieldsList = Object.keys(updates).join(', ');
+              await sendDirectTelegramMessage(
+                runtime,
+                roomId,
+                message.userId,
+                `✅ I've updated ${updatedFieldsList}. Your profile has been corrected!`
+              );
+              if (roomId) recordActionExecution(roomId);
+              console.log(`[Onboarding Action] Updated fields after completion: ${updatedFieldsList}`);
+              return true;
+            }
+            
+            // Determine if we should continue with current step or move forward
+            // If user explicitly edited a field that's not the current step, stay on current step
+            // If user provided info for current step, advance normally
+            
+            const currentStepField = getExpectedFieldsForStep(currentStep)[0];
+            const updatedFields = Object.keys(updates);
+            const updatedCurrentStepField = currentStepField && updatedFields.includes(currentStepField);
+            
+            if (isExplicitEdit && !updatedCurrentStepField) {
+              // User edited a different field - update it and continue with current step
+              await updateOnboardingStep(runtime, message.userId, roomId, currentStep, {
+                ...updates,
+                isEditing: false,
+                editingField: undefined
+              });
+              if (roomId) recordActionExecution(roomId);
+              
+              const updatedFieldsList = updatedFields.join(', ');
+              await sendDirectTelegramMessage(
+                runtime,
+                roomId,
+                message.userId,
+                `✅ Updated ${updatedFieldsList}. Continuing with your onboarding...`
+              );
+              if (roomId) recordActionExecution(roomId);
+              console.log(`[Onboarding Action] Updated fields: ${updatedFieldsList}, continuing at step ${currentStep}`);
+              return true;
+            } else if (updatedCurrentStepField) {
+              // User provided info for current step - let the switch statement handle it
+              // But first, update the profile with extracted data
+              await updateOnboardingStep(runtime, message.userId, roomId, currentStep, updates);
+              if (roomId) recordActionExecution(roomId);
+              // Continue to switch statement to handle step progression
+            } else {
+              // User provided info but not for current step - update and continue
+              await updateOnboardingStep(runtime, message.userId, roomId, currentStep, {
+                ...updates,
+                isEditing: false,
+                editingField: undefined
+              });
+              if (roomId) recordActionExecution(roomId);
+              console.log(`[Onboarding Action] Updated profile with extracted data, continuing at step ${currentStep}`);
+              return true;
+            }
+          }
+        } else if (intent.type === 'skip') {
+          // User wants to skip current step
+          console.log(`[Onboarding Action] Skip intent detected, will handle in switch statement`);
+          // Let switch statement handle skip logic
+        } else if (intent.type === 'go_back') {
+          // User wants to go back - this is complex, would need step history
+          console.log(`[Onboarding Action] Go back intent detected`);
+          // For now, just continue - could implement step history later
+        } else if (intent.type === 'ask_question') {
+          // User is asking a question - let LLM handle it
+          console.log(`[Onboarding Action] Question intent detected, letting LLM handle`);
+          if (roomId) recordActionExecution(roomId);
+          return true; // Let LLM respond to the question
+        }
+      } catch (error) {
+        console.error('[Onboarding Action] Error in intelligent message processing:', error);
+        // Fall through to normal processing if intelligent processing fails
+      }
+    }
+
     // Process user input and advance to next step
     switch (currentStep) {
       case 'ASK_LANGUAGE':
@@ -383,31 +783,52 @@ export const continueOnboardingAction: Action = {
 
       case 'ASK_NAME':
         console.log('[Onboarding Action] Processing ASK_NAME, user said:', text);
+        // Extract name from natural language using smart agent
+        let extractedName = text.trim();
+        try {
+          const { localProcessor } = await import('../../services/localProcessor.js');
+          const nameExtraction = await localProcessor.extractFromMessage(text, ['name']);
+          // Use extracted name if available (even if it equals text, extraction may have cleaned it)
+          if (nameExtraction.name) {
+            extractedName = nameExtraction.name;
+            console.log('[Onboarding Action] Extracted name from natural language:', extractedName);
+          }
+          // Try AI extraction if local didn't extract a name or confidence is low
+          if (!nameExtraction.name || nameExtraction.confidence < 0.7) {
+            try {
+              const { aiInformationExtractor } = await import('../../services/aiInformationExtractor.js');
+              const { conversationContextManager } = await import('../../services/conversationContextManager.js');
+              const context = await conversationContextManager.getContext(runtime, message.userId);
+              const aiExtraction = await aiInformationExtractor.extractFromMessage(
+                runtime,
+                text,
+                ['name'],
+                context
+              );
+              if (aiExtraction.extracted.name && aiExtraction.confidence > 0.7) {
+                extractedName = aiExtraction.extracted.name;
+                console.log('[Onboarding Action] Extracted name using AI:', extractedName);
+              }
+            } catch (aiError) {
+              console.log('[Onboarding Action] AI extraction failed, using local result or raw text');
+            }
+          }
+        } catch (extractError) {
+          console.log('[Onboarding Action] Extraction failed, using raw text');
+        }
+        
         if (isEditing) {
-          await updateOnboardingStep(runtime, message.userId, roomId, 'CONFIRMATION', { name: text, isEditing: false, editingField: undefined });
+          await updateOnboardingStep(runtime, message.userId, roomId, 'CONFIRMATION', { name: extractedName, isEditing: false, editingField: undefined });
           if (roomId) recordActionExecution(roomId);
         } else {
           // Save name and move to email step (new flow: Name → Email)
-          await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_EMAIL', { name: text });
+          await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_EMAIL', { name: extractedName });
           if (roomId) recordActionExecution(roomId);
           // LLM will send the email question via provider
           console.log('[Onboarding Action] State updated to ASK_EMAIL - LLM will send message via provider');
         }
         break;
 
-      case 'ASK_LOCATION':
-        if (isEditing) {
-          await updateOnboardingStep(runtime, message.userId, roomId, 'CONFIRMATION', { location: text, isEditing: false, editingField: undefined });
-          if (roomId) recordActionExecution(roomId);
-        } else {
-          // Handle "next" to skip optional question
-          const locationValue = text.toLowerCase().trim() === 'next' ? undefined : text;
-          await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_EMAIL', { location: locationValue });
-          if (roomId) recordActionExecution(roomId);
-          // LLM will send the email question via provider
-          console.log('[Onboarding Action] State updated to ASK_EMAIL - LLM will send message via provider');
-        }
-        break;
 
       case 'ASK_EMAIL':
         console.log('[Onboarding Action] Processing ASK_EMAIL, user said:', text);
@@ -539,12 +960,7 @@ export const continueOnboardingAction: Action = {
             
             // Determine next step based on what we have
             // Skip steps for data we already have from SI<3>
-            let nextStep: OnboardingStep = 'ASK_LOCATION';
-            
-            if (preFilledProfile.location) {
-              // We have location, skip to roles
-              nextStep = 'ASK_ROLE';
-            }
+            let nextStep: OnboardingStep = 'ASK_ROLE';
             
             // If we have roles from SI<3>, we can pre-fill them but still ask to confirm/add more
             if (preFilledProfile.roles && preFilledProfile.roles.length > 0) {
@@ -728,17 +1144,17 @@ export const continueOnboardingAction: Action = {
             );
             console.log('[Onboarding Action] Loaded existing profile - user can now use the bot');
           } else {
-            // Fallback: continue with current profile
-            await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_LOCATION');
+            // Fallback: continue with current profile - skip location, go to roles
+            await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_ROLE');
             if (roomId) recordActionExecution(roomId);
-            console.log('[Onboarding Action] State updated to ASK_LOCATION - LLM will send message via provider');
+            console.log('[Onboarding Action] State updated to ASK_ROLE - LLM will send message via provider');
           }
         } else if (choice === '2' || choice.toLowerCase().includes('new') || choice.toLowerCase().includes('recreate')) {
-          // User wants to create a new profile - continue from location
-          await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_LOCATION');
+          // User wants to create a new profile - skip location, go to roles
+          await updateOnboardingStep(runtime, message.userId, roomId, 'ASK_ROLE');
           if (roomId) recordActionExecution(roomId);
-          // LLM will send the location question via provider
-          console.log('[Onboarding Action] State updated to ASK_LOCATION - LLM will send message via provider');
+          // LLM will send the roles question via provider
+          console.log('[Onboarding Action] State updated to ASK_ROLE - LLM will send message via provider');
         } else {
           // Invalid choice - ask again
           console.log('[Onboarding Action] Invalid profile choice, asking again');
@@ -753,17 +1169,51 @@ export const continueOnboardingAction: Action = {
         break;
 
       case 'ASK_ROLE':
-        const roleParts = text.split(/[,\s]+and\s+/i);
-        const roleNumbers = roleParts[0].split(/[,\s]+/).filter(s => /^\d+$/.test(s.trim()));
-        const roleText = roleParts[1] || '';
-        const roles = [...roleNumbers.map(n => {
-          const roleMap: Record<string, string> = {
-            '1': 'Founder/Builder', '2': 'Marketing/BD/Partnerships', '3': 'DAO Council Member/Delegate',
-            '4': 'Community Leader', '5': 'Investor/Grant Program Operator', '6': 'Early Web3 Explorer',
-            '7': 'Media', '8': 'Artist', '9': 'Developer', '10': 'Other'
-          };
-          return roleMap[n.trim()];
-        }).filter(Boolean), ...(roleText ? [roleText.trim()] : [])];
+        const lowerText = text.toLowerCase().trim();
+        let roles: string[] = [];
+        
+        // Handle "All" option
+        if (lowerText === 'all' || lowerText === 'all of them' || lowerText === 'all of the above') {
+          roles = [
+            'Founder/Builder',
+            'Marketing/BD/Partnerships',
+            'DAO Council Member/Delegate',
+            'Community Leader',
+            'Investor/Grant Program Operator',
+            'Early Web3 Explorer',
+            'Media',
+            'Artist',
+            'Developer',
+            'Other'
+          ];
+          console.log('[Onboarding Action] User selected "All" roles');
+        } else {
+          // Parse role numbers and text
+          const roleParts = text.split(/[,\s]+and\s+/i);
+          const roleNumbers = roleParts[0].split(/[,\s]+/).filter(s => /^\d+$/.test(s.trim()));
+          const roleText = roleParts[1] || '';
+          roles = [...roleNumbers.map(n => {
+            const roleMap: Record<string, string> = {
+              '1': 'Founder/Builder', '2': 'Marketing/BD/Partnerships', '3': 'DAO Council Member/Delegate',
+              '4': 'Community Leader', '5': 'Investor/Grant Program Operator', '6': 'Early Web3 Explorer',
+              '7': 'Media', '8': 'Artist', '9': 'Developer', '10': 'Other'
+            };
+            return roleMap[n.trim()];
+          }).filter(Boolean), ...(roleText ? [roleText.trim()] : [])];
+        }
+        
+        // Validate that we have at least one role
+        if (roles.length === 0) {
+          console.log('[Onboarding Action] No valid roles found, asking again');
+          await sendDirectTelegramMessage(
+            runtime,
+            roomId,
+            message.userId,
+            `${msgs.ROLES}\n\n⚠️ Please select at least one role by entering the number(s) (e.g., 1, 2, 3) or type "All" to select all roles.`
+          );
+          if (roomId) recordActionExecution(roomId);
+          return true;
+        }
         
         if (isEditing) {
           await updateOnboardingStep(runtime, message.userId, roomId, 'CONFIRMATION', { roles, isEditing: false, editingField: undefined });
@@ -855,8 +1305,53 @@ export const continueOnboardingAction: Action = {
         break;
 
       case 'ASK_TELEGRAM_HANDLE':
+        // Extract telegram handle from natural language
         let telegramHandle = text.trim();
+        try {
+          // Try to extract using patterns first
+          const handlePatterns = [
+            /(?:my\s+telegram\s+(?:user\s+)?name\s+is\s+|telegram\s+(?:user\s+)?name\s+is\s+|username\s+is\s+|handle\s+is\s+|@?)([a-zA-Z0-9_]+)/i,
+            /@([a-zA-Z0-9_]+)/,
+            /([a-zA-Z0-9_]+)(?:\s*$)/ // Just the username at the end
+          ];
+          
+          for (const pattern of handlePatterns) {
+            const match = text.match(pattern);
+            if (match && match[1]) {
+              telegramHandle = match[1];
+              console.log('[Onboarding Action] Extracted telegram handle using pattern:', telegramHandle);
+              break;
+            }
+          }
+          
+          // Try AI extraction if pattern didn't work well
+          if (telegramHandle === text.trim() && text.length > 20) {
+            try {
+              const { aiInformationExtractor } = await import('../../services/aiInformationExtractor.js');
+              const { conversationContextManager } = await import('../../services/conversationContextManager.js');
+              const context = await conversationContextManager.getContext(runtime, message.userId);
+              const aiExtraction = await aiInformationExtractor.extractFromMessage(
+                runtime,
+                text,
+                ['telegramHandle'],
+                context
+              );
+              if (aiExtraction.extracted.telegramHandle && aiExtraction.confidence > 0.7) {
+                telegramHandle = aiExtraction.extracted.telegramHandle;
+                console.log('[Onboarding Action] Extracted telegram handle using AI:', telegramHandle);
+              }
+            } catch (aiError) {
+              console.log('[Onboarding Action] AI extraction failed, using pattern result');
+            }
+          }
+        } catch (extractError) {
+          console.log('[Onboarding Action] Extraction failed, using raw text');
+        }
+        
+        // Clean up the handle
         if (telegramHandle.startsWith('@')) telegramHandle = telegramHandle.substring(1);
+        // Remove common phrases if still present
+        telegramHandle = telegramHandle.replace(/^(my\s+telegram\s+(user\s+)?name\s+is\s+|telegram\s+(user\s+)?name\s+is\s+|username\s+is\s+)/i, '').trim();
         const handleToSave = (telegramHandle.toLowerCase() === 'skip' || telegramHandle === '') ? undefined : telegramHandle;
         
         if (isEditing) {
@@ -961,7 +1456,6 @@ export const continueOnboardingAction: Action = {
           let editField: string | undefined = undefined;
           
           if (lowerText.includes('name')) { editStep = 'ASK_NAME'; editField = 'name'; }
-          else if (lowerText.includes('location')) { editStep = 'ASK_LOCATION'; editField = 'location'; }
           else if (lowerText.includes('email')) { editStep = 'ASK_EMAIL'; editField = 'email'; }
           else if (lowerText.includes('professional') || lowerText.includes('role')) { editStep = 'ASK_ROLE'; editField = 'roles'; }
           else if (lowerText.includes('learning') || lowerText.includes('interest')) { editStep = 'ASK_INTERESTS'; editField = 'interests'; }

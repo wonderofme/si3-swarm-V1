@@ -213,7 +213,6 @@ export async function sendNoMatchNotification(
   const userInfo = {
     userId: userId,
     name: userProfile.name || 'Not provided',
-    location: userProfile.location || 'Not provided',
     language: userProfile.language || 'en',
     platformMembership: platformMembership,
     roles: userProfile.roles?.join(', ') || 'Not provided',

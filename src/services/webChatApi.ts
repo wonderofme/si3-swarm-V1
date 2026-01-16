@@ -72,8 +72,7 @@ function generateConfirmationSummary(profile: any, msgs: any): string {
     summary += `${msgs.SUMMARY_SIU_NAME || 'SI U Name:'} ${profile.siuName}\n`;
   }
   
-  summary += `${msgs.SUMMARY_LOCATION} ${profile.location || msgs.SUMMARY_NOT_PROVIDED}\n` +
-    `${msgs.SUMMARY_EMAIL} ${profile.email || msgs.SUMMARY_NOT_PROVIDED}\n` +
+  summary += `${msgs.SUMMARY_EMAIL} ${profile.email || msgs.SUMMARY_NOT_PROVIDED}\n` +
     `${msgs.SUMMARY_ROLES} ${(profile.roles || []).join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
     `${msgs.SUMMARY_INTERESTS} ${(profile.interests || []).join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
     `${msgs.SUMMARY_GOALS} ${(profile.connectionGoals || []).join(', ') || msgs.SUMMARY_NOT_PROVIDED}\n` +
@@ -83,8 +82,7 @@ function generateConfirmationSummary(profile: any, msgs: any): string {
     `${msgs.SUMMARY_GENDER} ${profile.gender || msgs.SUMMARY_NOT_PROVIDED}\n` +
     (profile.diversityResearchInterest ? `${msgs.SUMMARY_DIVERSITY} ${profile.diversityResearchInterest}\n` : '') +
     `${msgs.SUMMARY_NOTIFICATIONS} ${profile.notifications || msgs.SUMMARY_NOT_PROVIDED}\n\n` +
-    `${msgs.EDIT_NAME}\n` +
-    `${msgs.EDIT_LOCATION}\n`;
+    `${msgs.EDIT_NAME}\n`;
   
   // Add edit options for wallet and SI U name if applicable
   if (profile.walletAddress) {
@@ -165,7 +163,6 @@ async function processMessageWithSmartAgent(
         'ASK_TELEGRAM_HANDLE': [],
         'ASK_GENDER': [],
         'ASK_NOTIFICATIONS': [],
-        'ASK_LOCATION': [],
         'CONFIRMATION': [],
         'COMPLETED': [],
         'NONE': [],
@@ -699,7 +696,6 @@ export async function processWebChatMessage(
               name: existingUser.name || existingUser.username,
               email: existingUser.email,
               language: existingUser.language || state.profile.language || userLang || 'en',
-              location: existingUser.location,
               gender: existingUser.gender,
               entryMethod: 'wallet',
               walletAddress: existingUser.wallet_address || walletAddress,
@@ -869,7 +865,6 @@ export async function processWebChatMessage(
             name: existingUser.name || existingUser.username,
             email: existingUser.email,
             language: existingUser.language || state.profile.language || userLang || 'en',
-            location: existingUser.location,
             gender: existingUser.gender,
             entryMethod: existingUser.entryMethod || state.profile.entryMethod || 'email',
             walletAddress: existingUser.wallet_address || state.profile.walletAddress,
@@ -960,7 +955,6 @@ export async function processWebChatMessage(
             const preFilledProfile: any = {
               email: emailText,
               name: si3User.name || si3User.username || state.profile.name,
-              location: si3User.location || state.profile.location,
               roles: si3User.roles || [],
               interests: si3User.interests || [],
               personalValues: si3User.personalValues || [],
@@ -972,16 +966,12 @@ export async function processWebChatMessage(
             
             // Determine next step based on what data we already have
             // Skip steps for data we already have from SI<3>
-            let nextStep = 'ASK_LOCATION';
-            let nextMessage = msgs.LOCATION;
+            let nextStep = 'ASK_ROLE';
+            let nextMessage = msgs.ROLES;
             
             // Check each field in order and skip to the first missing one
-            if (!preFilledProfile.location) {
-              // Missing location - ask for it
-              nextStep = 'ASK_LOCATION';
-              nextMessage = msgs.LOCATION;
-            } else if (!preFilledProfile.roles || preFilledProfile.roles.length === 0) {
-              // Has location but missing roles - ask for roles
+            if (!preFilledProfile.roles || preFilledProfile.roles.length === 0) {
+              // Missing roles - ask for roles
               nextStep = 'ASK_ROLE';
               nextMessage = msgs.ROLES;
             } else if (!preFilledProfile.interests || preFilledProfile.interests.length === 0) {
@@ -989,7 +979,7 @@ export async function processWebChatMessage(
               nextStep = 'ASK_INTERESTS';
               nextMessage = msgs.INTERESTS;
             } else {
-              // Has location, roles, AND interests - skip to goals
+              // Has roles AND interests - skip to goals
               nextStep = 'ASK_GOALS';
               nextMessage = msgs.GOALS;
             }
@@ -1144,8 +1134,8 @@ export async function processWebChatMessage(
               profileUpdate.si3Roles = si3Roles;
             }
             
-            await updateState('ASK_LOCATION', profileUpdate);
-            responseText = msgs.LOCATION;
+            await updateState('ASK_ROLE', profileUpdate);
+            responseText = msgs.ROLES;
           }
         }
       } catch (error: any) {
@@ -1156,21 +1146,10 @@ export async function processWebChatMessage(
           await updateState('CONFIRMATION', { email: emailText, isEditing: false, editingField: undefined });
           responseText = generateConfirmationSummary({ ...state.profile, email: emailText }, msgs);
         } else {
-          await updateState('ASK_LOCATION', { email: emailText });
-          responseText = msgs.LOCATION;
+          await updateState('ASK_ROLE', { email: emailText });
+          responseText = msgs.ROLES;
         }
-        console.log(`[Web Chat API] Error occurred, set responseText to ${isEditing ? 'CONFIRMATION' : 'LOCATION'} message`);
-      }
-    } else if (state.step === 'ASK_LOCATION') {
-      const isEditing = state.profile.isEditing || false;
-      const location = isNext ? undefined : messageText.trim();
-      if (isEditing) {
-        // If editing, go back to CONFIRMATION
-        await updateState('CONFIRMATION', { location, isEditing: false, editingField: undefined });
-        responseText = generateConfirmationSummary({ ...state.profile, location }, msgs);
-      } else {
-        await updateState('ASK_ROLE', { location });
-        responseText = msgs.ROLES;
+        console.log(`[Web Chat API] Error occurred, set responseText to ${isEditing ? 'CONFIRMATION' : 'ROLES'} message`);
       }
     } else if (state.step === 'ASK_ROLE') {
       const isEditing = state.profile.isEditing || false;
@@ -1180,7 +1159,22 @@ export async function processWebChatMessage(
         '4': 'Community Leader', '5': 'Investor/Grant Program Operator', '6': 'Early Web3 Explorer',
         '7': 'Media', '8': 'Artist', '9': 'Developer', '10': 'Other'
       };
-      const roles = parseNumberedList(messageText, roleMap);
+      
+      // Handle "All" option (matches Telegram)
+      const lowerText = messageText.toLowerCase();
+      let roles: string[];
+      if (lowerText.includes('all') && (lowerText.includes('of them') || lowerText.includes('of the above') || lowerText.trim() === 'all')) {
+        // User selected "All" - include all available roles
+        roles = Object.values(roleMap);
+      } else {
+        roles = parseNumberedList(messageText, roleMap);
+      }
+      
+      // Validate roles are not empty
+      if (roles.length === 0) {
+        responseText = msgs.ROLES + '\n\nPlease select at least one role.';
+        return { success: true, response: responseText, userId, profile: state.profile, onboardingStatus: 'ASK_ROLE' };
+      }
       if (isEditing) {
         // If editing, go back to CONFIRMATION
         await updateState('CONFIRMATION', { roles, isEditing: false, editingField: undefined });
@@ -1381,12 +1375,13 @@ export async function processWebChatMessage(
         );
         
         if (matchCandidates.length > 0) {
-          const topMatch = matchCandidates[0];
+          const topMatches = matchCandidates.slice(0, 5); // Show top 5
+          const topMatch = topMatches[0];
           const matchMessages: Record<string, string> = {
-            en: `\n\n🎯 Great news! I found ${matchCandidates.length} potential match${matchCandidates.length > 1 ? 'es' : ''} for you!\n\nWould you like me to introduce you to ${topMatch.profile.name || 'someone'}? Just say "yes" or "find me a match"! 💜`,
-            es: `\n\n🎯 ¡Excelentes noticias! ¡Encontré ${matchCandidates.length} conexión${matchCandidates.length > 1 ? 'es' : ''} potencial${matchCandidates.length > 1 ? 'es' : ''} para ti!\n\n¿Te gustaría que te presente a ${topMatch.profile.name || 'alguien'}? ¡Solo di "sí" o "encuéntrame una conexión"! 💜`,
-            pt: `\n\n🎯 Ótimas notícias! Encontrei ${matchCandidates.length} conexão${matchCandidates.length > 1 ? 'ões' : ''} potencial${matchCandidates.length > 1 ? 'is' : ''} para você!\n\nGostaria que eu te apresente ${topMatch.profile.name || 'alguém'}? Basta dizer "sim" ou "encontre uma conexão"! 💜`,
-            fr: `\n\n🎯 Excellente nouvelle! J'ai trouvé ${matchCandidates.length} connexion${matchCandidates.length > 1 ? 's' : ''} potentielle${matchCandidates.length > 1 ? 's' : ''} pour vous!\n\nVoulez-vous que je vous présente ${topMatch.profile.name || "quelqu'un"}? Dites simplement "oui" ou "trouvez-moi une connexion"! 💜`
+            en: `\n\n🎯 Great news! I found ${matchCandidates.length} potential match${matchCandidates.length > 1 ? 'es' : ''} for you!\n\nWould you like me to show you your top ${Math.min(5, matchCandidates.length)} matches? Just say "find me a match"! 💜`,
+            es: `\n\n🎯 ¡Excelentes noticias! ¡Encontré ${matchCandidates.length} conexión${matchCandidates.length > 1 ? 'es' : ''} potencial${matchCandidates.length > 1 ? 'es' : ''} para ti!\n\n¿Te gustaría que te muestre tus ${Math.min(5, matchCandidates.length)} mejores conexiones? ¡Solo di "encuéntrame una conexión"! 💜`,
+            pt: `\n\n🎯 Ótimas notícias! Encontrei ${matchCandidates.length} conexão${matchCandidates.length > 1 ? 'ões' : ''} potencial${matchCandidates.length > 1 ? 'is' : ''} para você!\n\nGostaria que eu mostrasse suas ${Math.min(5, matchCandidates.length)} melhores conexões? Basta dizer "encontre uma conexão"! 💜`,
+            fr: `\n\n🎯 Excellente nouvelle! J'ai trouvé ${matchCandidates.length} connexion${matchCandidates.length > 1 ? 's' : ''} potentielle${matchCandidates.length > 1 ? 's' : ''} pour vous!\n\nVoulez-vous que je vous montre vos ${Math.min(5, matchCandidates.length)} meilleures connexions? Dites simplement "trouvez-moi une connexion"! 💜`
           };
           matchSuggestion = matchMessages[completedProfile.language || 'en'] || matchMessages.en;
         }
@@ -1400,21 +1395,20 @@ export async function processWebChatMessage(
       // User is choosing which field to update (matches Telegram)
       const updateFields: Record<string, { step: string, prompt: string, number: number }> = {
         'name': { step: 'UPDATING_NAME', prompt: 'What would you like to change your name to?', number: 1 },
-        'location': { step: 'UPDATING_LOCATION', prompt: 'What is your new location (city and country)?', number: 2 },
-        'wallet': { step: 'UPDATING_WALLET', prompt: 'Please enter your new wallet address (0x...):', number: 3 },
-        'siuName': { step: 'UPDATING_SIU_NAME', prompt: msgs.SIU_NAME || 'What SI U name would you like to claim? (e.g., yourname.siu)', number: 4 },
-        'roles': { step: 'UPDATING_ROLES', prompt: msgs.ROLES, number: 5 },
-        'interests': { step: 'UPDATING_INTERESTS', prompt: msgs.INTERESTS, number: 6 },
-        'goals': { step: 'UPDATING_GOALS', prompt: msgs.GOALS, number: 7 },
-        'events': { step: 'UPDATING_EVENTS', prompt: 'What events will you be attending? (event name, date, location)', number: 8 },
-        'socials': { step: 'UPDATING_SOCIALS', prompt: 'Share your social media links:', number: 9 },
-        'telegram': { step: 'UPDATING_TELEGRAM', prompt: 'What is your Telegram handle? (e.g., @username)', number: 10 },
-        'diversity': { step: 'UPDATING_DIVERSITY', prompt: 'Would you like to be (anonymously) included within our diversity research?\n\n1. Yes\n2. No\n3. Not sure yet\n\nPlease reply with the number (for example: 1)', number: 11 },
-        'notifications': { step: 'UPDATING_NOTIFICATIONS', prompt: msgs.NOTIFICATIONS, number: 12 }
+        'wallet': { step: 'UPDATING_WALLET', prompt: 'Please enter your new wallet address (0x...):', number: 2 },
+        'siuName': { step: 'UPDATING_SIU_NAME', prompt: msgs.SIU_NAME || 'What SI U name would you like to claim? (e.g., yourname.siu)', number: 3 },
+        'roles': { step: 'UPDATING_ROLES', prompt: msgs.ROLES, number: 4 },
+        'interests': { step: 'UPDATING_INTERESTS', prompt: msgs.INTERESTS, number: 5 },
+        'goals': { step: 'UPDATING_GOALS', prompt: msgs.GOALS, number: 6 },
+        'events': { step: 'UPDATING_EVENTS', prompt: 'What events will you be attending? (event name, date, location)', number: 7 },
+        'socials': { step: 'UPDATING_SOCIALS', prompt: 'Share your social media links:', number: 8 },
+        'telegram': { step: 'UPDATING_TELEGRAM', prompt: 'What is your Telegram handle? (e.g., @username)', number: 9 },
+        'diversity': { step: 'UPDATING_DIVERSITY', prompt: 'Would you like to be (anonymously) included within our diversity research?\n\n1. Yes\n2. No\n3. Not sure yet\n\nPlease reply with the number (for example: 1)', number: 10 },
+        'notifications': { step: 'UPDATING_NOTIFICATIONS', prompt: msgs.NOTIFICATIONS, number: 11 }
       };
       
-      // Check for number input (1-12)
-      const numberMatch = lowerText.match(/\b([1-9]|1[0-2])\b/);
+      // Check for number input (1-11)
+      const numberMatch = lowerText.match(/\b([1-9]|1[0-1])\b/);
       let fieldToUpdate: string | null = null;
       
       if (numberMatch) {
@@ -1428,7 +1422,6 @@ export async function processWebChatMessage(
         for (const [field, _] of Object.entries(updateFields)) {
           if (lowerText.includes(field) || 
               (field === 'name' && (lowerText.includes('name') || lowerText.includes('nombre'))) ||
-              (field === 'location' && (lowerText.includes('location') || lowerText.includes('ubicación') || lowerText.includes('localização'))) ||
               (field === 'wallet' && lowerText.includes('wallet')) ||
               (field === 'siuName' && (lowerText.includes('siu') || lowerText.includes('username'))) ||
               (field === 'roles' && (lowerText.includes('role') || lowerText.includes('rol'))) ||
@@ -1453,13 +1446,12 @@ export async function processWebChatMessage(
         // Invalid - show list again
         responseText = `What would you like to update? 📝\n\n` +
           `1. Name\n` +
-          `2. Location\n` +
-          `3. Wallet address\n` +
-          `4. SI U name\n` +
-          `5. Professional role(s)\n` +
-          `6. Professional interests\n` +
-          `7. Professional goals\n` +
-          `8. Events & conferences attending\n` +
+          `2. Wallet address\n` +
+          `3. SI U name\n` +
+          `4. Professional role(s)\n` +
+          `5. Professional interests\n` +
+          `6. Professional goals\n` +
+          `7. Events & conferences attending\n` +
           `9. Personal social and/or digital links\n` +
           `10. Telegram handle\n` +
           `11. Diversity research interest\n` +
@@ -1630,7 +1622,6 @@ export async function processWebChatMessage(
       // Map field names to profile keys
       const fieldToKey: Record<string, string> = {
         'name': 'name',
-        'location': 'location',
         'roles': 'roles',
         'interests': 'interests',
         'goals': 'connectionGoals',
@@ -1745,13 +1736,13 @@ export async function processWebChatMessage(
           };
         } else {
           // Fallback: continue with current profile
-          await updateState('ASK_LOCATION', {});
-          responseText = msgs.LOCATION;
+          await updateState('ASK_ROLE', {});
+          responseText = msgs.ROLES;
         }
       } else if (choice === '2' || choice.toLowerCase().includes('new') || choice.toLowerCase().includes('recreate')) {
         // User wants to create a new profile
-        await updateState('ASK_LOCATION', {});
-        responseText = msgs.LOCATION;
+        await updateState('ASK_ROLE', {});
+        responseText = msgs.ROLES;
       } else {
         // Invalid choice - ask again
         responseText = `${msgs.PROFILE_EXISTS}\n\n${msgs.PROFILE_CHOICE}`;
@@ -1789,7 +1780,6 @@ export async function processWebChatMessage(
         let editField: string | undefined = undefined;
         
         if (lower.includes('name')) { editStep = 'ASK_NAME'; editField = 'name'; }
-        else if (lower.includes('location')) { editStep = 'ASK_LOCATION'; editField = 'location'; }
         else if (lower.includes('email')) { editStep = 'ASK_EMAIL'; editField = 'email'; }
         else if (lower.includes('professional') || lower.includes('role')) { editStep = 'ASK_ROLE'; editField = 'roles'; }
         else if (lower.includes('learning') || lower.includes('interest')) { editStep = 'ASK_INTERESTS'; editField = 'interests'; }
@@ -1805,7 +1795,6 @@ export async function processWebChatMessage(
           // Get the appropriate message for the edit step
           const editMsgs = getPlatformMessages(userLang, platformRoles);
           if (editStep === 'ASK_NAME') responseText = editMsgs.GREETING;
-          else if (editStep === 'ASK_LOCATION') responseText = editMsgs.LOCATION;
           else if (editStep === 'ASK_EMAIL') responseText = editMsgs.EMAIL;
           else if (editStep === 'ASK_ROLE') responseText = editMsgs.ROLES;
           else if (editStep === 'ASK_INTERESTS') responseText = editMsgs.INTERESTS;
@@ -2049,91 +2038,76 @@ export async function processWebChatMessage(
               
               responseText = "I couldn't find a match within the current pool, but don't worry! 💜\n\nSI<3> will explore potential matches within its broader network and reach out if we find someone great for you.\n\nIn the meantime, feel free to share any specific connection requests with us at members@si3.space. 🚀";
             } else {
-              const topMatch = candidates.sort((a, b) => b.score - a.score)[0];
-              matchedUserId = topMatch.id;
+              // Show top 5 matches (matches Telegram behavior)
+              const topMatches = candidates.sort((a, b) => b.score - a.score).slice(0, 5);
               
-              // ==================== RECORD MATCH IN DATABASE (matches Telegram exactly) ====================
-              try {
-                const { v4: uuidv4 } = await import('uuid');
-                const matchId = uuidv4();
-                const db = runtime.databaseAdapter as any;
-                if (db) {
-                  const databaseType = (process.env.DATABASE_TYPE || 'postgres').toLowerCase();
-                  const isMongo = databaseType === 'mongodb' || databaseType === 'mongo';
-                  const matchDate = new Date();
-                  
-                  if (isMongo && db.getDb) {
-                    const mongoDb = await db.getDb();
-                    // Record the match
-                    await mongoDb.collection('matches').insertOne({
-                      id: matchId,
-                      user_id: userId,
-                      matched_user_id: matchedUserId,
-                      room_id: `web_${userId}`,
-                      match_date: matchDate,
-                      status: 'pending'
-                    });
-                    
-                    // Schedule 3-day follow-up
-                    const followUpDate = new Date();
-                    followUpDate.setDate(followUpDate.getDate() + 3);
-                    await mongoDb.collection('follow_ups').insertOne({
-                      id: uuidv4(),
-                      match_id: matchId,
-                      user_id: userId,
-                      type: '3_day_checkin',
-                      scheduled_for: followUpDate,
-                      status: 'pending'
-                    });
-                  } else if (db.query) {
-                    // Record the match (PostgreSQL)
-                    await db.query(
-                      `INSERT INTO matches (id, user_id, matched_user_id, room_id, match_date, status) VALUES ($1, $2::text, $3::text, $4::text, NOW(), 'pending')`,
-                      [matchId, userId, matchedUserId, `web_${userId}`]
-                    );
-                    
-                    // Schedule 3-day follow-up
-                    const followUpDate = new Date();
-                    followUpDate.setDate(followUpDate.getDate() + 3);
-                    await db.query(
-                      `INSERT INTO follow_ups (id, match_id, user_id, type, scheduled_for, status) VALUES ($1, $2, $3::text, '3_day_checkin', $4, 'pending')`,
-                      [uuidv4(), matchId, userId, followUpDate]
-                    );
-                  }
-                  console.log('[Match Tracker] ✅ Match recorded and follow-up scheduled');
+              // Build response with top 5 matches
+              let matchesText = `Here are your top ${topMatches.length} matches! 🎯\n\n`;
+              
+              for (let i = 0; i < topMatches.length; i++) {
+                const match = topMatches[i];
+                const matchProfile = match.profile;
+                
+                // Determine platform for matched user
+                const matchRoles = matchProfile.roles || [];
+                const matchIsGrow3dge = matchRoles.includes('partner');
+                const matchIsSiHer = matchRoles.includes('team');
+                const matchHasBoth = matchIsGrow3dge && matchIsSiHer;
+                
+                let platformText = '';
+                if (matchHasBoth) {
+                  platformText = 'Platform: SI Her & Grow3dge Member\n';
+                } else if (matchIsGrow3dge) {
+                  platformText = 'Platform: Grow3dge Member\n';
+                } else if (matchIsSiHer) {
+                  platformText = 'Platform: SI Her Member\n';
                 }
-              } catch (trackErr) {
-                console.log('[Match Tracker] Could not record match:', trackErr);
+                
+                const matchMessage = match.reason || match.icebreaker || 'Great potential connection!';
+                
+                matchesText += `${i + 1}. **${matchProfile.name || 'Anonymous'}** (Score: ${match.score})\n` +
+                  (platformText ? `${platformText}` : '') +
+                  `Roles: ${matchProfile.roles?.join(', ') || 'Not specified'}\n` +
+                  `Interests: ${matchProfile.interests?.slice(0, 3).join(', ') || 'Not specified'}\n` +
+                  (matchProfile.telegramHandle ? `Telegram: @${matchProfile.telegramHandle}\n` : '') +
+                  `\n💡 ${matchMessage}\n\n`;
               }
               
-              // Use icebreaker if available, otherwise use reason
-              const matchMessage = topMatch.reason.includes('Shared interests') 
-                ? topMatch.reason 
-                : topMatch.reason; // Will be replaced with icebreaker from engine
+              const topMatch = topMatches[0];
+              const DIRECT_MATCH_THRESHOLD = 75; // Score threshold for automatic direct matches
               
-              // Determine platform for matched user
-              const matchRoles = topMatch.profile.roles || [];
-              const matchIsGrow3dge = matchRoles.includes('partner');
-              const matchIsSiHer = matchRoles.includes('team');
-              const matchHasBoth = matchIsGrow3dge && matchIsSiHer;
-              
-              let platformText = '';
-              if (matchHasBoth) {
-                platformText = 'Platform: SI Her & Grow3dge Member\n';
-              } else if (matchIsGrow3dge) {
-                platformText = 'Platform: Grow3dge Member\n';
-              } else if (matchIsSiHer) {
-                platformText = 'Platform: SI Her Member\n';
+              // If top match score is high enough, create direct match automatically
+              if (topMatch.score >= DIRECT_MATCH_THRESHOLD) {
+                // Create direct match automatically (old behavior for high-quality matches)
+                matchedUserId = topMatch.id;
+                if (matchedUserId) {
+                  try {
+                    const { recordMatch } = await import('./matchTracker.js');
+                    const matchId = await recordMatch(runtime, userId, matchedUserId, `web_${userId}`);
+                    console.log('[Match Tracker] ✅ Direct match recorded:', matchId);
+                    
+                    // Update response to indicate direct match was created
+                    matchesText += `\n🎉 Great news! I've automatically connected you with **${topMatch.profile.name || 'your top match'}** (Score: ${topMatch.score})!\n\n`;
+                    matchesText += `You can also request matches with others from the list above using:\n`;
+                    matchesText += `POST /api/match/request with { userId, requestedUserId, matchScore, matchReason }`;
+                  } catch (trackErr) {
+                    console.log('[Match Tracker] Could not record direct match:', trackErr);
+                    // Fall through to show list with API instructions
+                    matchesText += `\n💡 To request a match with any of these users, use the API endpoint:\n` +
+                      `POST /api/match/request with { userId, requestedUserId, matchScore, matchReason }`;
+                  }
+                } else {
+                  // Fall through to show list with API instructions
+                  matchesText += `\n💡 To request a match with any of these users, use the API endpoint:\n` +
+                    `POST /api/match/request with { userId, requestedUserId, matchScore, matchReason }`;
+                }
+              } else {
+                // Lower score matches - show list and let users request via API
+                matchesText += `\n💡 To request a match with any of these users, use the API endpoint:\n` +
+                  `POST /api/match/request with { userId, requestedUserId, matchScore, matchReason }`;
               }
               
-              responseText = `🚀 I found a match for you!\n\n` +
-                `Meet ${topMatch.profile.name || 'Anonymous'} from ${topMatch.profile.location || 'Earth'}.\n` +
-                (platformText ? `${platformText}` : '') +
-                `Roles: ${topMatch.profile.roles?.join(', ') || 'Not specified'}\n` +
-                `Interests: ${topMatch.profile.interests?.join(', ') || 'Not specified'}\n` +
-                (topMatch.profile.telegramHandle ? `Telegram: @${topMatch.profile.telegramHandle}\n` : '') +
-                `\n💡 ${matchMessage}\n\n` +
-                `I've saved this match. I'll check in with you in 3 days to see if you connected! 🤝`;
+              responseText = matchesText;
             }
           }
         } catch (matchErr: any) {
@@ -2217,21 +2191,20 @@ export async function processWebChatMessage(
         // ==================== PROFILE UPDATE FEATURE (matches Telegram) ====================
         const updateFields: Record<string, { step: string, prompt: string, number: number }> = {
           'name': { step: 'UPDATING_NAME', prompt: 'What would you like to change your name to?', number: 1 },
-          'location': { step: 'UPDATING_LOCATION', prompt: 'What is your new location (city and country)?', number: 2 },
-          'wallet': { step: 'UPDATING_WALLET', prompt: 'Please enter your new wallet address (0x...):', number: 3 },
-          'siuName': { step: 'UPDATING_SIU_NAME', prompt: msgs.SIU_NAME || 'What SI U name would you like to claim? (e.g., yourname.siu)', number: 4 },
-          'roles': { step: 'UPDATING_ROLES', prompt: msgs.ROLES, number: 5 },
-          'interests': { step: 'UPDATING_INTERESTS', prompt: msgs.INTERESTS, number: 6 },
-          'goals': { step: 'UPDATING_GOALS', prompt: msgs.GOALS, number: 7 },
-          'events': { step: 'UPDATING_EVENTS', prompt: 'What events will you be attending? (event name, date, location)', number: 8 },
-          'socials': { step: 'UPDATING_SOCIALS', prompt: 'Share your social media links:', number: 9 },
-          'telegram': { step: 'UPDATING_TELEGRAM', prompt: 'What is your Telegram handle? (e.g., @username)', number: 10 },
-          'diversity': { step: 'UPDATING_DIVERSITY', prompt: 'Would you like to be (anonymously) included within our diversity research?\n\n1. Yes\n2. No\n3. Not sure yet\n\nPlease reply with the number (for example: 1)', number: 11 },
-          'notifications': { step: 'UPDATING_NOTIFICATIONS', prompt: msgs.NOTIFICATIONS, number: 12 }
+          'wallet': { step: 'UPDATING_WALLET', prompt: 'Please enter your new wallet address (0x...):', number: 2 },
+          'siuName': { step: 'UPDATING_SIU_NAME', prompt: msgs.SIU_NAME || 'What SI U name would you like to claim? (e.g., yourname.siu)', number: 3 },
+          'roles': { step: 'UPDATING_ROLES', prompt: msgs.ROLES, number: 4 },
+          'interests': { step: 'UPDATING_INTERESTS', prompt: msgs.INTERESTS, number: 5 },
+          'goals': { step: 'UPDATING_GOALS', prompt: msgs.GOALS, number: 6 },
+          'events': { step: 'UPDATING_EVENTS', prompt: 'What events will you be attending? (event name, date, location)', number: 7 },
+          'socials': { step: 'UPDATING_SOCIALS', prompt: 'Share your social media links:', number: 8 },
+          'telegram': { step: 'UPDATING_TELEGRAM', prompt: 'What is your Telegram handle? (e.g., @username)', number: 9 },
+          'diversity': { step: 'UPDATING_DIVERSITY', prompt: 'Would you like to be (anonymously) included within our diversity research?\n\n1. Yes\n2. No\n3. Not sure yet\n\nPlease reply with the number (for example: 1)', number: 10 },
+          'notifications': { step: 'UPDATING_NOTIFICATIONS', prompt: msgs.NOTIFICATIONS, number: 11 }
         };
         
-        // Check for number input (1-12)
-        const numberMatch = lowerText.match(/\b([1-9]|1[0-2])\b/);
+        // Check for number input (1-11)
+        const numberMatch = lowerText.match(/\b([1-9]|1[0-1])\b/);
         let fieldToUpdate: string | null = null;
         
         if (numberMatch) {
@@ -2246,7 +2219,6 @@ export async function processWebChatMessage(
           for (const [field, _] of Object.entries(updateFields)) {
             if (lowerText.includes(field) || 
                 (field === 'name' && (lowerText.includes('name') || lowerText.includes('nombre'))) ||
-                (field === 'location' && (lowerText.includes('location') || lowerText.includes('ubicación') || lowerText.includes('localização'))) ||
                 (field === 'wallet' && lowerText.includes('wallet')) ||
                 (field === 'siuName' && (lowerText.includes('siu') || lowerText.includes('username'))) ||
                 (field === 'roles' && (lowerText.includes('role') || lowerText.includes('rol'))) ||
@@ -2273,13 +2245,12 @@ export async function processWebChatMessage(
           await updateState('AWAITING_UPDATE_FIELD', {});
           responseText = `What would you like to update? 📝\n\n` +
             `1. Name\n` +
-            `2. Location\n` +
-            `3. Wallet address\n` +
-            `4. SI U name\n` +
-            `5. Professional role(s)\n` +
-            `6. Professional interests\n` +
-            `7. Professional goals\n` +
-            `8. Events & conferences attending\n` +
+            `2. Wallet address\n` +
+            `3. SI U name\n` +
+            `4. Professional role(s)\n` +
+            `5. Professional interests\n` +
+            `6. Professional goals\n` +
+            `7. Events & conferences attending\n` +
             `9. Personal social and/or digital links\n` +
             `10. Telegram handle\n` +
             `11. Diversity research interest\n` +
@@ -2416,7 +2387,6 @@ export async function processWebChatMessage(
 
 USER PROFILE:
 - Name: ${state.profile.name}
-- Location: ${state.profile.location || 'Not specified'}
 - Roles: ${(state.profile.roles || []).join(', ') || 'Not specified'}
 - Interests: ${(state.profile.interests || []).join(', ') || 'Not specified'}
 - Connection Goals: ${(state.profile.connectionGoals || []).join(', ') || 'Not specified'}

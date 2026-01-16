@@ -18,6 +18,7 @@ export interface MatchCandidate {
   sharedEvents: string[];
   icebreaker?: string;
   platform?: string; // Platform membership: 'Grow3dge', 'SI Her', 'Both', or undefined
+  hasPendingRequest?: boolean; // Whether there's a pending match request between users
 }
 
 export interface MatchingConfig {
@@ -217,13 +218,11 @@ async function generateIcebreaker(
   const prompt = `Generate a warm, professional introduction message between two Web3 community members.
 
 User A: ${userA.name}
-- Location: ${userA.location || 'Not specified'}
 - Roles: ${(userA.roles || []).join(', ')}
 - Goals: ${(userA.connectionGoals || []).join(', ')}
 - Interests: ${(userA.interests || []).join(', ')}
 
 User B: ${userB.name}
-- Location: ${userB.location || 'Not specified'}
 - Roles: ${(userB.roles || []).join(', ')}
 - Goals: ${(userB.connectionGoals || []).join(', ')}
 - Interests: ${(userB.interests || []).join(', ')}
@@ -521,8 +520,20 @@ export async function findMatches(
   
   console.log(`[Matching Engine] Evaluated ${allUsers.length} user(s), found ${candidates.length} match(es) above threshold ${finalConfig.minScoreThreshold}`);
   
-  // LIMITER: Only generate icebreakers for the Top 3 to save latency/tokens
-  const topCandidates = candidates.slice(0, 3);
+  // LIMITER: Only generate icebreakers for the Top 5 to save latency/tokens (increased from 3 for request system)
+  const topCandidates = candidates.slice(0, 5);
+  
+  // Check for pending requests and add status to candidates
+  // Note: candidate.userId is already a primary userId (from findMatches logic above)
+  try {
+    const { hasPendingRequest } = await import('./matchRequestService.js');
+    for (const candidate of topCandidates) {
+      candidate.hasPendingRequest = await hasPendingRequest(runtime, primaryUserId, candidate.userId);
+    }
+  } catch (error) {
+    console.error('[Matching Engine] Error checking pending requests:', error);
+    // Continue without pending request status if check fails
+  }
   
   for (const candidate of topCandidates) {
     try {
@@ -539,6 +550,6 @@ export async function findMatches(
     }
   }
   
-  return topCandidates; // Return only top 3 with icebreakers
+  return topCandidates; // Return top 5 with icebreakers
 }
 

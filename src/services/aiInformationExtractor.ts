@@ -20,8 +20,8 @@ export interface AIExtractionResult {
 
 export class AIInformationExtractor {
   private readonly model = 'gpt-4o-mini';
-  private readonly maxTokens = 300;
-  private readonly temperature = 0.2; // Low temperature for consistent extraction
+  private readonly maxTokens = 500; // Increased for more complex extractions with conversation context
+  private readonly temperature = 0.1; // Lower temperature for more consistent extraction
 
   /**
    * Extract information from message using AI (for complex cases)
@@ -176,12 +176,20 @@ export class AIInformationExtractor {
     context: Partial<ConversationContext>
   ): string {
     const fieldDescriptions: Record<string, string> = {
-      name: 'Full name (e.g., "John Doe", "Jane Smith")',
-      email: 'Email address (e.g., "john@example.com")',
-      company: 'Company name (e.g., "Microsoft", "Uniswap")',
-      title: 'Job title (e.g., "Developer", "Head of Marketing", "Founder")',
-      language: 'Language code: "en" (English), "es" (Spanish), "pt" (Portuguese), or "fr" (French)',
-      wallet: 'Cryptocurrency wallet address (Ethereum: 0x..., Solana: base58 string)'
+      name: 'Full name (e.g., "John Doe", "Jane Smith"). Extract even if user says "my name is [name]" or "I\'m [name]"',
+      email: 'Email address (e.g., "john@example.com"). Extract complete email address',
+      company: 'Company name (e.g., "Microsoft", "Uniswap"). Extract even if user says "I work at [company]" or "at [company]"',
+      title: 'Job title (e.g., "Developer", "Head of Marketing", "Founder"). Extract even if user says "I\'m a [title]" or "as a [title]"',
+      language: 'Language code: "en" (English), "es" (Spanish), "pt" (Portuguese), or "fr" (French). Convert language names to codes',
+      wallet: 'Cryptocurrency wallet address (Ethereum: 0x..., Solana: base58 string). Extract complete address',
+      roles: 'Array of professional roles. Map natural language to these exact values: "Founder/Builder", "Marketing/BD/Partnerships", "DAO Council Member/Delegate", "Community Leader", "Investor/Grant Program Operator", "Early Web3 Explorer", "Media", "Artist", "Developer", "Other". If user says "founder", "I\'m a founder", "I build things", map to "Founder/Builder". If user says "marketing", "BD", "partnerships", map to "Marketing/BD/Partnerships". If user says "developer", "coder", "programmer", map to "Developer". If user says "all" or "all of them", include all 10 roles. Return as array of strings.',
+      interests: 'Array of interests. Map natural language to these exact values: "Web3 Growth Marketing", "Business Development & Partnerships", "Education 3.0", "AI", "Cybersecurity", "DAOs", "Tokenomics", "Fundraising", "Other". If user mentions "AI", "artificial intelligence", "machine learning", map to "AI". If user mentions "blockchain", "web3", "crypto", consider "Web3 Growth Marketing" or "Tokenomics". If user mentions "DAO", "daos", "decentralized", map to "DAOs". Return as array of strings.',
+      connectionGoals: 'Array of connection goals. Map natural language to these exact values: "Startups to invest in", "Investors/grant programs", "Growth tools, strategies, and/or support", "Sales/BD tools, strategies and/or support", "Communities and/or DAO\'s to join", "New job opportunities". If user says "investors", "funding", "grants", map to "Investors/grant programs". If user says "job", "career", "opportunities", map to "New job opportunities". Return as array of strings.',
+      events: 'Array of events. Extract event names, dates, and locations if mentioned. Return as array of strings, each string can contain event name, date, and location.',
+      socials: 'Array of social media links or profiles. Extract URLs (twitter.com, linkedin.com, github.com, etc.) or profile handles. Return as array of strings.',
+      telegramHandle: 'Telegram username/handle. Extract username without @ symbol. If user says "my telegram is @username" or "telegram username is username", extract just the username part. Return as string without @.',
+      gender: 'Gender. Extract if mentioned. Return as string.',
+      notifications: 'Notification preference. Map to "Yes", "No", or "Not sure yet". If user says "yes", "sure", "okay", map to "Yes". If user says "no", "don\'t", "not interested", map to "No". Return as string.'
     };
 
     const fieldList = expectedFields.map(field => {
@@ -189,32 +197,60 @@ export class AIInformationExtractor {
       return `- ${field}: ${desc}`;
     }).join('\n');
 
-    return `Extract structured information from this user message.
+    // Build context about what's already known (anonymized - only field names, not values)
+    const knownFields: string[] = [];
+    if (context.extractedData) {
+      const extracted = context.extractedData;
+      knownFields.push(...Object.keys(extracted).filter(key => extracted[key] != null));
+    }
+    const knownFieldsText = knownFields.length > 0 
+      ? `Fields already collected: ${knownFields.join(', ')}. You can update these or extract new ones.`
+      : 'No fields collected yet. Extract all mentioned fields.';
+    
+    // Get recent conversation context (last 3 messages) for better understanding
+    const recentHistory = context.conversationHistory?.slice(-3) || [];
+    const conversationContext = recentHistory.length > 0
+      ? recentHistory.map(msg => `${msg.role}: ${msg.message.substring(0, 100)}`).join('\n')
+      : 'No previous conversation context.';
+
+    return `Extract structured information from this user message. Be intelligent and context-aware.
 
 Current Context:
 - Task: ${context.currentTask || 'unknown'}
 - Step: ${context.currentStep || 'none'}
 - Waiting for: ${context.pendingFields?.join(', ') || 'nothing'}
+- ${knownFieldsText}
+
+Recent Conversation:
+${conversationContext}
 
 Expected Fields to Extract:
 ${fieldList}
 
 User Message: "${message}"
 
-Instructions:
-1. Extract only the fields listed above
-2. If a field is not mentioned, don't include it
-3. For names: Extract full name even if user says "my name is [full name]"
-4. For emails: Extract complete email address
-5. For companies: Extract company name even if user says "I work at [company]"
-6. For titles: Extract job title even if user says "I'm a [title]" or "as a [title]"
-7. For language: Convert to code (English->en, Spanish->es, Portuguese->pt, French->fr)
-8. For wallet: Extract complete wallet address
+CRITICAL INSTRUCTIONS:
+1. Extract ALL mentioned fields, even if they weren't explicitly asked for
+2. For roles/interests/goals: Map natural language to the EXACT values listed above
+3. For arrays (roles, interests, goals, events, socials): Always return as array, even if single value
+4. For names: Extract full name, remove phrases like "my name is", "I'm", "call me"
+5. For emails: Extract complete email address, validate format
+6. For companies: Extract company name, remove phrases like "I work at", "at"
+7. For titles: Extract job title, remove phrases like "I'm a", "as a"
+8. For telegramHandle: Extract username only, remove @ symbol and phrases like "my telegram is"
+9. If user says "all" for roles, include all 10 role options
+10. If user corrects something (says "actually", "I meant", "that's wrong", "mistake"), extract the corrected value
+11. If user provides multiple pieces of information, extract ALL of them
+12. Be smart about synonyms and variations (e.g., "founder" = "Founder/Builder", "AI" = "AI", "blockchain" might be "Web3 Growth Marketing" or "Tokenomics")
+13. Use conversation context to understand what the user is referring to
+14. If user says something is "wrong" or "incorrect" but doesn't provide the correct value, don't extract that field (it will be handled separately)
+15. Be very intelligent - understand implicit information (e.g., "I work at Microsoft" = company: "Microsoft", possibly title if mentioned)
+16. Handle corrections intelligently - if user says "my name is actually John" after previously saying "Jane", extract "John" as the correction
 
 Return JSON with this structure:
 {
   "extracted": {
-    "field1": "value1",
+    "field1": "value1" or ["value1", "value2"] for arrays,
     "field2": "value2"
   },
   "confidence": 0.0-1.0,

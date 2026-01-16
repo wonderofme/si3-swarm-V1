@@ -130,10 +130,10 @@ async function checkForNewMatches(
       }
       
       const notificationMessages: Record<string, string> = {
-        en: `🎉 New match alert!\n\nI found someone who might be a great connection for you:\n\n${newUserProfile.name} from ${newUserProfile.location || 'the community'}${platformText}Roles: ${(newUserProfile.roles || []).join(', ') || 'Not specified'}\nInterests: ${(newUserProfile.interests || []).slice(0, 3).join(', ') || 'Not specified'}\n${newUserProfile.telegramHandle ? `Telegram: @${newUserProfile.telegramHandle}\n` : ''}\n💡 ${matchMessage}\n\nSay "find me a match" for more connections! 🤝`,
-        es: `🎉 ¡Nueva conexión encontrada!\n\nEncontré a alguien que podría ser una gran conexión para ti:\n\n${newUserProfile.name} de ${newUserProfile.location || 'la comunidad'}${platformText}Roles: ${(newUserProfile.roles || []).join(', ') || 'No especificado'}\nIntereses: ${(newUserProfile.interests || []).slice(0, 3).join(', ') || 'No especificado'}\n${newUserProfile.telegramHandle ? `Telegram: @${newUserProfile.telegramHandle}\n` : ''}\n💡 ${matchMessage}\n\n¡Di "encuéntrame una conexión" para más! 🤝`,
-        pt: `🎉 Nova conexão encontrada!\n\nEncontrei alguém que pode ser uma ótima conexão para você:\n\n${newUserProfile.name} de ${newUserProfile.location || 'a comunidade'}${platformText}Funções: ${(newUserProfile.roles || []).join(', ') || 'Não especificado'}\nInteresses: ${(newUserProfile.interests || []).slice(0, 3).join(', ') || 'Não especificado'}\n${newUserProfile.telegramHandle ? `Telegram: @${newUserProfile.telegramHandle}\n` : ''}\n💡 ${matchMessage}\n\nDiga "encontre uma conexão" para mais! 🤝`,
-        fr: `🎉 Nouvelle connexion trouvée!\n\nJ'ai trouvé quelqu'un qui pourrait être une excellente connexion pour vous:\n\n${newUserProfile.name} de ${newUserProfile.location || 'la communauté'}${platformText}Rôles: ${(newUserProfile.roles || []).join(', ') || 'Non spécifié'}\nIntérêts: ${(newUserProfile.interests || []).slice(0, 3).join(', ') || 'Non spécifié'}\n${newUserProfile.telegramHandle ? `Telegram: @${newUserProfile.telegramHandle}\n` : ''}\n💡 ${matchMessage}\n\nDites "trouve-moi une connexion" pour plus! 🤝`
+        en: `🎉 New match alert!\n\nI found someone who might be a great connection for you:\n\n${newUserProfile.name}${platformText}Roles: ${(newUserProfile.roles || []).join(', ') || 'Not specified'}\nInterests: ${(newUserProfile.interests || []).slice(0, 3).join(', ') || 'Not specified'}\n${newUserProfile.telegramHandle ? `Telegram: @${newUserProfile.telegramHandle}\n` : ''}\n💡 ${matchMessage}\n\nSay "find me a match" for more connections! 🤝`,
+        es: `🎉 ¡Nueva conexión encontrada!\n\nEncontré a alguien que podría ser una gran conexión para ti:\n\n${newUserProfile.name}${platformText}Roles: ${(newUserProfile.roles || []).join(', ') || 'No especificado'}\nIntereses: ${(newUserProfile.interests || []).slice(0, 3).join(', ') || 'No especificado'}\n${newUserProfile.telegramHandle ? `Telegram: @${newUserProfile.telegramHandle}\n` : ''}\n💡 ${matchMessage}\n\n¡Di "encuéntrame una conexión" para más! 🤝`,
+        pt: `🎉 Nova conexão encontrada!\n\nEncontrei alguém que pode ser uma ótima conexão para você:\n\n${newUserProfile.name}${platformText}Funções: ${(newUserProfile.roles || []).join(', ') || 'Não especificado'}\nInteresses: ${(newUserProfile.interests || []).slice(0, 3).join(', ') || 'Não especificado'}\n${newUserProfile.telegramHandle ? `Telegram: @${newUserProfile.telegramHandle}\n` : ''}\n💡 ${matchMessage}\n\nDiga "encontre uma conexão" para mais! 🤝`,
+        fr: `🎉 Nouvelle connexion trouvée!\n\nJ'ai trouvé quelqu'un qui pourrait être une excellente connexion pour vous:\n\n${newUserProfile.name}${platformText}Rôles: ${(newUserProfile.roles || []).join(', ') || 'Non spécifié'}\nIntérêts: ${(newUserProfile.interests || []).slice(0, 3).join(', ') || 'Non spécifié'}\n${newUserProfile.telegramHandle ? `Telegram: @${newUserProfile.telegramHandle}\n` : ''}\n💡 ${matchMessage}\n\nDites "trouve-moi une connexion" pour plus! 🤝`
       };
       
       // Record match in database to prevent duplicates and mark as notified
@@ -260,6 +260,13 @@ async function runMigrations(db: DatabaseAdapter) {
         await db.query(`CREATE INDEX IF NOT EXISTS idx_user_mappings_platform_user_id ON user_mappings(platform_user_id)`);
         await db.query(`CREATE INDEX IF NOT EXISTS idx_user_mappings_primary_user_id ON user_mappings(primary_user_id)`);
 
+        // Create indexes for match_requests collection
+        await db.query(`CREATE INDEX IF NOT EXISTS idx_match_requests_requester ON match_requests(requester_id)`);
+        await db.query(`CREATE INDEX IF NOT EXISTS idx_match_requests_requested ON match_requests(requested_id)`);
+        await db.query(`CREATE INDEX IF NOT EXISTS idx_match_requests_status ON match_requests(status)`);
+        await db.query(`CREATE INDEX IF NOT EXISTS idx_match_requests_created_at ON match_requests(created_at)`);
+        await db.query(`CREATE INDEX IF NOT EXISTS idx_match_requests_expires_at ON match_requests(expires_at) WHERE status = 'pending'`);
+
         console.log('[Migrations] MongoDB indexes created successfully.');
       } catch (error: any) {
         // Index creation errors are non-fatal in MongoDB
@@ -359,7 +366,30 @@ async function runMigrations(db: DatabaseAdapter) {
         END $$;
       `);
 
-      // 6. Create indexes (safe to run if exists)
+      // 6. Create match_requests table for request/approve flow
+      await db.query(`
+        CREATE TABLE IF NOT EXISTS match_requests (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          requester_id TEXT NOT NULL,
+          requested_id TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'pending',
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          responded_at TIMESTAMPTZ,
+          response TEXT,
+          match_score NUMERIC,
+          match_reason TEXT,
+          expires_at TIMESTAMPTZ,
+          CONSTRAINT unique_request UNIQUE(requester_id, requested_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_match_requests_requester ON match_requests(requester_id);
+        CREATE INDEX IF NOT EXISTS idx_match_requests_requested ON match_requests(requested_id);
+        CREATE INDEX IF NOT EXISTS idx_match_requests_status ON match_requests(status);
+        CREATE INDEX IF NOT EXISTS idx_match_requests_created_at ON match_requests(created_at);
+        CREATE INDEX IF NOT EXISTS idx_match_requests_expires_at ON match_requests(expires_at) WHERE status = 'pending';
+      `);
+
+      // 7. Create indexes (safe to run if exists)
       await db.query(`
         CREATE INDEX IF NOT EXISTS idx_matches_user_id ON matches(user_id);
         CREATE INDEX IF NOT EXISTS idx_follow_ups_scheduled_for ON follow_ups(scheduled_for) WHERE status = 'pending';
@@ -1285,7 +1315,6 @@ async function startAgents() {
         userId,
         profile: {
             name: profile.name,
-            location: profile.location,
             roles: profile.roles,
             interests: profile.interests,
             events: profile.events,
@@ -1306,6 +1335,219 @@ async function startAgents() {
     } catch (error) {
       console.error('[API] Error getting history:', error);
       res.status(500).json({ error: 'Failed to retrieve history' });
+    }
+  });
+  
+  // ==================== MATCH REQUEST API ====================
+  
+  // POST /api/match/request - Create a match request
+  app.post('/api/match/request', async (req, res) => {
+    try {
+      const { userId, requestedUserId, matchScore, matchReason } = req.body;
+      
+      if (!userId || !requestedUserId) {
+        return res.status(400).json({ error: 'Missing required fields: userId, requestedUserId' });
+      }
+      
+      const { createMatchRequest } = await import('./services/matchRequestService.js');
+      const result = await createMatchRequest(
+        kaiaRuntime,
+        userId,
+        requestedUserId,
+        matchScore || 0,
+        matchReason || 'Match request'
+      );
+      
+      if (result.success) {
+        res.json({
+          success: true,
+          requestId: result.requestId,
+          message: 'Match request created successfully'
+        });
+      } else {
+        res.status(400).json({
+          success: false,
+          error: result.error || 'Failed to create match request'
+        });
+      }
+    } catch (error: any) {
+      console.error('[Match Request API] Error:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to create match request',
+        message: error.message
+      });
+    }
+  });
+  
+  // POST /api/match/approve/:requestId - Approve a match request
+  app.post('/api/match/approve/:requestId', async (req, res) => {
+    try {
+      const { requestId } = req.params;
+      const { userId } = req.body;
+      
+      if (!userId) {
+        return res.status(400).json({ error: 'Missing required field: userId' });
+      }
+      
+      const { approveRequest } = await import('./services/matchRequestService.js');
+      const result = await approveRequest(kaiaRuntime, requestId, userId);
+      
+      if (result.success) {
+        res.json({
+          success: true,
+          matchId: result.matchId,
+          message: 'Match request approved successfully'
+        });
+      } else {
+        res.status(400).json({
+          success: false,
+          error: result.error || 'Failed to approve match request'
+        });
+      }
+    } catch (error: any) {
+      console.error('[Match Request API] Error approving:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to approve match request',
+        message: error.message
+      });
+    }
+  });
+  
+  // POST /api/match/reject/:requestId - Reject a match request
+  app.post('/api/match/reject/:requestId', async (req, res) => {
+    try {
+      const { requestId } = req.params;
+      const { userId } = req.body;
+      
+      if (!userId) {
+        return res.status(400).json({ error: 'Missing required field: userId' });
+      }
+      
+      const { rejectRequest } = await import('./services/matchRequestService.js');
+      const result = await rejectRequest(kaiaRuntime, requestId, userId);
+      
+      if (result.success) {
+        res.json({
+          success: true,
+          message: 'Match request rejected successfully'
+        });
+      } else {
+        res.status(400).json({
+          success: false,
+          error: result.error || 'Failed to reject match request'
+        });
+      }
+    } catch (error: any) {
+      console.error('[Match Request API] Error rejecting:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to reject match request',
+        message: error.message
+      });
+    }
+  });
+  
+  // POST /api/match/cancel/:requestId - Cancel own match request
+  app.post('/api/match/cancel/:requestId', async (req, res) => {
+    try {
+      const { requestId } = req.params;
+      const { userId } = req.body;
+      
+      if (!userId) {
+        return res.status(400).json({ error: 'Missing required field: userId' });
+      }
+      
+      const { cancelRequest } = await import('./services/matchRequestService.js');
+      const result = await cancelRequest(kaiaRuntime, requestId, userId);
+      
+      if (result.success) {
+        res.json({
+          success: true,
+          message: 'Match request cancelled successfully'
+        });
+      } else {
+        res.status(400).json({
+          success: false,
+          error: result.error || 'Failed to cancel match request'
+        });
+      }
+    } catch (error: any) {
+      console.error('[Match Request API] Error cancelling:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to cancel match request',
+        message: error.message
+      });
+    }
+  });
+  
+  // GET /api/match/requests - Get pending match requests
+  app.get('/api/match/requests', async (req, res) => {
+    try {
+      const { userId, type } = req.query;
+      
+      if (!userId) {
+        return res.status(400).json({ error: 'Missing required query parameter: userId' });
+      }
+      
+      const requestType = (type as string) || 'all'; // 'all', 'sent', 'received'
+      const { getPendingRequests } = await import('./services/matchRequestService.js');
+      
+      // getPendingRequests already supports 'all' type, so we can use it directly
+      const requests = await getPendingRequests(
+        kaiaRuntime, 
+        userId as string, 
+        requestType as 'sent' | 'received' | 'all'
+      );
+      
+      // Get requester/requested user profiles
+      const { getUserProfile } = await import('./plugins/onboarding/utils.js');
+      const requestsWithProfiles = await Promise.all(requests.map(async (request) => {
+        try {
+          const requesterProfile = await getUserProfile(kaiaRuntime, request.requesterId as any);
+          const requestedProfile = await getUserProfile(kaiaRuntime, request.requestedId as any);
+          
+          return {
+            ...request,
+            requesterName: requesterProfile.name || 'Anonymous',
+            requestedName: requestedProfile.name || 'Anonymous',
+            requesterProfile: {
+              name: requesterProfile.name,
+              roles: requesterProfile.roles,
+              interests: requesterProfile.interests?.slice(0, 3),
+              telegramHandle: requesterProfile.telegramHandle
+            },
+            requestedProfile: {
+              name: requestedProfile.name,
+              roles: requestedProfile.roles,
+              interests: requestedProfile.interests?.slice(0, 3),
+              telegramHandle: requestedProfile.telegramHandle
+            }
+          };
+        } catch (error) {
+          console.error('[Match Request API] Error fetching profile:', error);
+          return {
+            ...request,
+            requesterName: 'Unknown',
+            requestedName: 'Unknown'
+          };
+        }
+      }));
+      
+      res.json({
+        success: true,
+        count: requestsWithProfiles.length,
+        requests: requestsWithProfiles
+      });
+    } catch (error: any) {
+      console.error('[Match Request API] Error getting requests:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to get match requests',
+        message: error.message
+      });
     }
   });
   
@@ -2069,6 +2311,11 @@ async function startAgents() {
       console.log(`[API] Endpoints:`);
       console.log(`[API]   POST /api/chat - Web chat interface`);
       console.log(`[API]   GET /api/history/:userId - User profile & matches`);
+      console.log(`[API]   POST /api/match/request - Create match request`);
+      console.log(`[API]   POST /api/match/approve/:requestId - Approve match request`);
+      console.log(`[API]   POST /api/match/reject/:requestId - Reject match request`);
+      console.log(`[API]   POST /api/match/cancel/:requestId - Cancel match request`);
+      console.log(`[API]   GET /api/match/requests?userId=...&type=... - Get match requests`);
       console.log(`[API]   GET /api/health - Health check`);
       console.log(`[API]   GET /api/metrics - Agent analytics & metrics`);
       console.log(`[API]   GET /api/users/search?name=<search> - Search users by name`);
@@ -2660,15 +2907,15 @@ async function startAgents() {
                                 profileUpdate.si3Roles = si3Roles;
                               }
                               
-                              await updateState('ASK_LOCATION', profileUpdate);
-                              responseText = msgs.LOCATION;
+                              await updateState('ASK_ROLE', profileUpdate);
+                              responseText = msgs.ROLES;
                               console.log('[Telegram Chat ID Capture] 📋 Email saved (new user):', emailText);
                             }
                           } catch (error: any) {
                             console.error('[Telegram Chat ID Capture] Error checking email:', error);
                             // On error, continue with onboarding
-                            await updateState('ASK_LOCATION', { email: emailText });
-                            responseText = msgs.LOCATION;
+                            await updateState('ASK_ROLE', { email: emailText });
+                            responseText = msgs.ROLES;
                             console.log('[Telegram Chat ID Capture] 📋 Email saved (error checking, continuing):', emailText);
                           }
                         }
@@ -2744,26 +2991,20 @@ async function startAgents() {
                             console.log('[Telegram Chat ID Capture] ✅ Loaded existing profile');
                           } else {
                             // Fallback: continue with current profile
-                            await updateState('ASK_LOCATION', {});
-                            responseText = msgs.LOCATION;
+                            await updateState('ASK_ROLE', {});
+                            responseText = msgs.ROLES;
                             console.log('[Telegram Chat ID Capture] ⚠️ Could not load existing profile, continuing onboarding');
                           }
                         } else if (choice === '2' || choice.toLowerCase().includes('new') || choice.toLowerCase().includes('recreate')) {
                           // User wants to create a new profile
-                          await updateState('ASK_LOCATION', {});
-                          responseText = msgs.LOCATION;
+                          await updateState('ASK_ROLE', {});
+                          responseText = msgs.ROLES;
                           console.log('[Telegram Chat ID Capture] 📋 User chose to create new profile');
                         } else {
                           // Invalid choice - ask again
                           responseText = `${msgs.PROFILE_EXISTS}\n\n${msgs.PROFILE_CHOICE}`;
                           console.log('[Telegram Chat ID Capture] ⚠️ Invalid profile choice');
                         }
-                      } else if (state.step === 'ASK_LOCATION') {
-                        // Save location (or skip) and ask for roles
-                        const location = isNext ? undefined : messageText.trim();
-                        await updateState('ASK_ROLE', { location });
-                        responseText = msgs.ROLES;
-                        console.log('[Telegram Chat ID Capture] 📋 Location saved:', location || 'skipped');
                       } else if (state.step === 'ASK_ROLE') {
                         // Map role numbers to actual role names
                         const roleMap: Record<string, string> = {
@@ -3033,19 +3274,18 @@ async function startAgents() {
                         // User is choosing which field to update
                         const fieldMap: Record<string, { step: string, prompt: string, number: number }> = {
                           'name': { step: 'UPDATING_NAME', prompt: 'What would you like to change your name to?', number: 1 },
-                          'location': { step: 'UPDATING_LOCATION', prompt: 'What is your new location (city and country)?', number: 2 },
-                          'roles': { step: 'UPDATING_ROLES', prompt: msgs.ROLES, number: 3 },
-                          'interests': { step: 'UPDATING_INTERESTS', prompt: msgs.INTERESTS, number: 4 },
-                          'goals': { step: 'UPDATING_GOALS', prompt: msgs.GOALS, number: 5 },
-                          'events': { step: 'UPDATING_EVENTS', prompt: 'What events will you be attending? (event name, date, location)', number: 6 },
-                          'socials': { step: 'UPDATING_SOCIALS', prompt: 'Share your social media links:', number: 7 },
-                          'telegram': { step: 'UPDATING_TELEGRAM', prompt: 'What is your Telegram handle? (e.g., @username)', number: 8 },
-                          'diversity': { step: 'UPDATING_DIVERSITY', prompt: 'Would you like to be (anonymously) included within our diversity research?\n\n1. Yes\n2. No\n3. Not sure yet\n\nPlease reply with the number (for example: 1)', number: 9 },
-                          'notifications': { step: 'UPDATING_NOTIFICATIONS', prompt: msgs.NOTIFICATIONS, number: 10 }
+                          'roles': { step: 'UPDATING_ROLES', prompt: msgs.ROLES, number: 2 },
+                          'interests': { step: 'UPDATING_INTERESTS', prompt: msgs.INTERESTS, number: 3 },
+                          'goals': { step: 'UPDATING_GOALS', prompt: msgs.GOALS, number: 4 },
+                          'events': { step: 'UPDATING_EVENTS', prompt: 'What events will you be attending? (event name, date, location)', number: 5 },
+                          'socials': { step: 'UPDATING_SOCIALS', prompt: 'Share your social media links:', number: 6 },
+                          'telegram': { step: 'UPDATING_TELEGRAM', prompt: 'What is your Telegram handle? (e.g., @username)', number: 7 },
+                          'diversity': { step: 'UPDATING_DIVERSITY', prompt: 'Would you like to be (anonymously) included within our diversity research?\n\n1. Yes\n2. No\n3. Not sure yet\n\nPlease reply with the number (for example: 1)', number: 8 },
+                          'notifications': { step: 'UPDATING_NOTIFICATIONS', prompt: msgs.NOTIFICATIONS, number: 9 }
                         };
                         
-                        // Check for number input (1-10)
-                        const numberMatch = lowerText.match(/\b([1-9]|10)\b/);
+                        // Check for number input (1-9)
+                        const numberMatch = lowerText.match(/\b([1-9])\b/);
                         let matchedField: string | null = null;
                         
                         if (numberMatch) {
@@ -3060,7 +3300,6 @@ async function startAgents() {
                           for (const [field, _] of Object.entries(fieldMap)) {
                             if (lowerText.includes(field) || 
                                 (field === 'name' && (lowerText.includes('name') || lowerText.includes('nombre'))) ||
-                                (field === 'location' && (lowerText.includes('location') || lowerText.includes('ubicación') || lowerText.includes('localização'))) ||
                                 (field === 'roles' && (lowerText.includes('role') || lowerText.includes('rol'))) ||
                                 (field === 'interests' && (lowerText.includes('interest') || lowerText.includes('interés'))) ||
                                 (field === 'goals' && lowerText.includes('goal')) ||
@@ -3082,11 +3321,10 @@ async function startAgents() {
                         } else {
                           responseText = `I didn't recognize that field. Please choose from:\n\n` +
                             `1. Name\n` +
-                            `2. Location\n` +
-                            `3. Professional role(s)\n` +
-                            `4. Professional interests\n` +
-                            `5. Professional goals\n` +
-                            `6. Events & conferences attending\n` +
+                            `2. Professional role(s)\n` +
+                            `3. Professional interests\n` +
+                            `4. Professional goals\n` +
+                            `5. Events & conferences attending\n` +
                             `7. Personal social and/or digital links\n` +
                             `8. Telegram handle\n` +
                             `9. Diversity research interest\n` +
@@ -3164,7 +3402,6 @@ async function startAgents() {
                         // Map field names to profile keys
                         const fieldToKey: Record<string, string> = {
                           'name': 'name',
-                          'location': 'location',
                           'roles': 'roles',
                           'interests': 'interests',
                           'goals': 'connectionGoals',
@@ -3589,7 +3826,7 @@ async function startAgents() {
                                   : topMatch.reason; // Will be replaced with icebreaker from engine
                                 
                                 responseText = `🚀 I found a match for you!\n\n` +
-                                  `Meet ${topMatch.profile.name || 'Anonymous'} from ${topMatch.profile.location || 'Earth'}.\n` +
+                                  `Meet ${topMatch.profile.name || 'Anonymous'}.\n` +
                                   `Roles: ${topMatch.profile.roles?.join(', ') || 'Not specified'}\n` +
                                   `Interests: ${topMatch.profile.interests?.join(', ') || 'Not specified'}\n` +
                                   (topMatch.profile.telegramHandle ? `Telegram: @${topMatch.profile.telegramHandle}\n` : '') +
@@ -3670,19 +3907,18 @@ async function startAgents() {
                           // Check if they specified what to update by number or name
                           const updateFields: Record<string, { step: string, prompt: string, number: number }> = {
                             'name': { step: 'UPDATING_NAME', prompt: 'What would you like to change your name to?', number: 1 },
-                            'location': { step: 'UPDATING_LOCATION', prompt: 'What is your new location (city and country)?', number: 2 },
-                            'roles': { step: 'UPDATING_ROLES', prompt: msgs.ROLES, number: 3 },
-                            'interests': { step: 'UPDATING_INTERESTS', prompt: msgs.INTERESTS, number: 4 },
-                            'goals': { step: 'UPDATING_GOALS', prompt: msgs.GOALS, number: 5 },
-                            'events': { step: 'UPDATING_EVENTS', prompt: 'What events will you be attending? (event name, date, location)', number: 6 },
-                            'socials': { step: 'UPDATING_SOCIALS', prompt: 'Share your social media links:', number: 7 },
-                            'telegram': { step: 'UPDATING_TELEGRAM', prompt: 'What is your Telegram handle? (e.g., @username)', number: 8 },
-                            'diversity': { step: 'UPDATING_DIVERSITY', prompt: 'Would you like to be (anonymously) included within our diversity research?\n\n1. Yes\n2. No\n3. Not sure yet\n\nPlease reply with the number (for example: 1)', number: 9 },
-                            'notifications': { step: 'UPDATING_NOTIFICATIONS', prompt: msgs.NOTIFICATIONS, number: 10 }
+                            'roles': { step: 'UPDATING_ROLES', prompt: msgs.ROLES, number: 2 },
+                            'interests': { step: 'UPDATING_INTERESTS', prompt: msgs.INTERESTS, number: 3 },
+                            'goals': { step: 'UPDATING_GOALS', prompt: msgs.GOALS, number: 4 },
+                            'events': { step: 'UPDATING_EVENTS', prompt: 'What events will you be attending? (event name, date, location)', number: 5 },
+                            'socials': { step: 'UPDATING_SOCIALS', prompt: 'Share your social media links:', number: 6 },
+                            'telegram': { step: 'UPDATING_TELEGRAM', prompt: 'What is your Telegram handle? (e.g., @username)', number: 7 },
+                            'diversity': { step: 'UPDATING_DIVERSITY', prompt: 'Would you like to be (anonymously) included within our diversity research?\n\n1. Yes\n2. No\n3. Not sure yet\n\nPlease reply with the number (for example: 1)', number: 8 },
+                            'notifications': { step: 'UPDATING_NOTIFICATIONS', prompt: msgs.NOTIFICATIONS, number: 9 }
                           };
                           
-                          // Check for number input (1-10)
-                          const numberMatch = lowerText.match(/\b([1-9]|10)\b/);
+                          // Check for number input (1-9)
+                          const numberMatch = lowerText.match(/\b([1-9])\b/);
                           let fieldToUpdate: string | null = null;
                           
                           if (numberMatch) {
@@ -3697,7 +3933,6 @@ async function startAgents() {
                             for (const [field, _] of Object.entries(updateFields)) {
                               if (lowerText.includes(field) || 
                                   (field === 'name' && (lowerText.includes('name') || lowerText.includes('nombre'))) ||
-                                  (field === 'location' && (lowerText.includes('location') || lowerText.includes('ubicación') || lowerText.includes('localização'))) ||
                                   (field === 'roles' && (lowerText.includes('role') || lowerText.includes('rol'))) ||
                                   (field === 'interests' && (lowerText.includes('interest') || lowerText.includes('interés'))) ||
                                   (field === 'goals' && lowerText.includes('goal')) ||
@@ -3722,10 +3957,9 @@ async function startAgents() {
                             await updateState('AWAITING_UPDATE_FIELD', {});
                             responseText = `What would you like to update? 📝\n\n` +
                               `1. Name\n` +
-                              `2. Location\n` +
-                              `3. Professional role(s)\n` +
-                              `4. Professional interests\n` +
-                              `5. Professional goals\n` +
+                              `2. Professional role(s)\n` +
+                              `3. Professional interests\n` +
+                              `4. Professional goals\n` +
                               `6. Events & conferences attending\n` +
                               `7. Personal social and/or digital links\n` +
                               `8. Telegram handle\n` +
@@ -3820,7 +4054,6 @@ async function startAgents() {
 
 USER PROFILE:
 - Name: ${state.profile.name}
-- Location: ${state.profile.location || 'Not specified'}
 - Roles: ${state.profile.roles?.join(', ') || 'Not specified'}
 - Interests: ${state.profile.interests?.join(', ') || 'Not specified'}
 - Connection Goals: ${state.profile.connectionGoals?.join(', ') || 'Not specified'}
@@ -4350,6 +4583,15 @@ PERSONALITY:
   } catch (error) {
     console.error('[Background Match Checker] Failed to start:', error);
     // Non-fatal, continue without background checker
+  }
+
+  // Start match request expiration service
+  try {
+    const { startMatchRequestExpirationService } = await import('./services/matchRequestExpirationService.js');
+    startMatchRequestExpirationService(kaiaRuntime);
+  } catch (error) {
+    console.error('[Match Request Expiration] Failed to start:', error);
+    // Non-fatal, continue without expiration service
   }
   
   // ==================== SCHEDULED FOLLOW-UPS SYSTEM ====================
